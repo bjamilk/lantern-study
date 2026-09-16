@@ -325,7 +325,7 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   'services/marketplaceOrders.ts::marketplace_listings': 16,
   'services/marketplaceOrders.ts::marketplace_transactions': 15,
   'services/studyPackFactory.ts::marketplace_listings': 1,
-  'services/supabase.ts::marketplace_listings': 7,
+  'services/supabase.ts::marketplace_listings': 6,
 
   // --- Jobs board (jobs lane). Membership/company/posting joins, single FK
   //     each today.
@@ -361,7 +361,15 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
 
   // --- supabase.ts membership joins not adjacent to the outage table pattern.
   //     group_members->groups and note_collaborators->notes are single-FK today.
-  'services/supabase.ts::achievements': 2,
+  // The gamification embeds moved verbatim out of supabase.ts into the
+  // gamification repository (monolith lane M1c, step 12): both
+  // `user_achievements->achievements`, one `points_transactions->test_results`
+  // and one leaderboard `->marketplace_listings`. Same queries, new file — the
+  // rows moved with them rather than any count changing (supabase.ts drops
+  // achievements entirely, marketplace_listings 7 -> 6, test_results 2 -> 1).
+  'services/data/gamification.ts::achievements': 2,
+  'services/data/gamification.ts::marketplace_listings': 1,
+  'services/data/gamification.ts::test_results': 1,
   'services/supabase.ts::groups': 1,
   // `getPendingGroupInvitesForUser`' group_members->groups embed, moved
   // verbatim out of supabase.ts into the groups repository (monolith lane M1c,
@@ -373,7 +381,7 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   // query, new file: the row moved with it rather than the count changing.
   'services/data/users.ts::groups': 1,
   'services/supabase.ts::notes': 1,
-  'services/supabase.ts::test_results': 2,
+  'services/supabase.ts::test_results': 1,
   // Two of the four `test_sessions->test_results` embeds moved verbatim out of
   // supabase.ts into the tests repository (monolith lane M1c, step 11). Same
   // queries, new file: the rows moved with them rather than the count changing.

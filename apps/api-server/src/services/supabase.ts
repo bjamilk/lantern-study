@@ -128,6 +128,8 @@ export { resolveStudySetIdFromConfigLike };
 import * as adminAnalyticsData from "./data/adminAnalytics";
 import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
 import * as categoriesData from "./data/categories";
+import * as gamificationData from "./data/gamification";
+import type { GamificationSyncResult } from "./data/gamification";
 import * as groupsData from "./data/groups";
 import * as notificationsData from "./data/notifications";
 import * as testsData from "./data/tests";
@@ -322,12 +324,9 @@ import { IMMUTABLE_IMAGE_CACHE_CONTROL } from "./imageProcessing";
 
 type UserStats = typeof initialUserStats;
 
-type GamificationSyncResult = {
-  points: number;
-  badges: User["badges"];
-  stats: UserStats;
-  awardedBadges: User["badges"];
-};
+// `GamificationSyncResult` moved to `data/gamification.ts` (monolith lane M1c,
+// step 12) with the three methods that were its only users. Type-imported
+// above for the delegations' return types.
 
 
 export type ChatMessageMutationStatus =
@@ -5323,6 +5322,18 @@ export class SupabaseService {
   // calls on submit, so scoring a test awards points, badges, streak and
   // activity in one place.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1c, step 12): the bodies now live in
+  // `data/gamification.ts`, and the `GamificationSyncResult` type moved with
+  // them (type-imported back above for these return types).
+  //
+  // Nine of these call a sibling or a profile method. The `deps` literal is
+  // written out INLINE at those nine call sites, and it MUST stay that way:
+  // `supabase.awardBadge.test.ts`, `badgeStatsRecompute.test.ts`,
+  // `supabase.boardMessages.test.ts` and `learningEvents.test.ts` stub exactly
+  // these on a stand-in and drive the entry point through
+  // `SupabaseService.prototype.<m>.call(self, …)`. An instance field holding
+  // the deps reads as `undefined` there, and the arrows read `this.<method>`
+  // at CALL time so a `jest.spyOn` still intercepts.
   // Gamification Methods for API Routes
   async getLeaderboard(
     options: {
@@ -5334,57 +5345,10 @@ export class SupabaseService {
       ambassador?: boolean;
     } = {},
   ): Promise<any[]> {
-    const {
-      page = 1,
-      limit = 50,
-      timeframe = "all",
-      metric = "points",
-      institutionId,
-      ambassador,
-    } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}:${institutionId || ""}:${ambassador ? "1" : "0"}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        let query = this.supabase
-          .from("profiles")
-          .select("id, name, avatar_url, points, stats, is_ambassador, institution_id")
-          .order("points", { ascending: false });
-
-        if (ambassador) {
-          query = query.eq("is_ambassador", true);
-        }
-        if (institutionId) {
-          query = query.eq("institution_id", institutionId);
-        }
-
-        // Apply timeframe filtering if needed (simplified)
-        if (timeframe !== "all") {
-          // In a real implementation, you'd filter based on recent activity
-          // For now, just return all users
-        }
-
-        const { data, error } = await query.range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return (data || []).map((user: any, index: number) => ({
-          rank: offset + index + 1,
-          user: {
-            id: user.id,
-            name: user.name,
-            avatarUrl: user.avatar_url,
-            points: user.points || 0,
-            stats: user.stats || {},
-            campusAmbassador: user.is_ambassador ? 1 : 0,
-          },
-        }));
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return gamificationData.getLeaderboard(
+      this.supabase,
+      options,
+    );
   }
 
   async getAchievements(
@@ -5394,30 +5358,10 @@ export class SupabaseService {
       category?: string;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20, category } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `gamification:achievements:${page}:${limit}:${category || ""}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        let query = this.supabase.from("achievements").select("*");
-
-        if (category) {
-          query = query.eq("category", category);
-        }
-
-        const { data, error } = await query
-          .order("created_at", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return data || [];
-      },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+    return gamificationData.getAchievements(
+      this.supabase,
+      options,
+    );
   }
 
   async getUserAchievements(
@@ -5427,38 +5371,11 @@ export class SupabaseService {
       limit?: number;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20 } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `gamification:user:achievements:${userId}:${page}:${limit}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("user_achievements")
-          .select(
-            `
-          *,
-          achievements (*)
-        `,
-          )
-          .eq("user_id", userId)
-          .order("unlocked_at", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return (
-          data?.map((ua: any) => ({
-            ...ua.achievements,
-            unlockedAt: ua.unlocked_at,
-            progress: ua.progress,
-          })) || []
-        );
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return gamificationData.getUserAchievements(
+      this.supabase,
+      userId,
+      options,
+    );
   }
 
   async awardPoints(
@@ -5467,192 +5384,78 @@ export class SupabaseService {
     reason: string,
     source?: string,
   ): Promise<any> {
-    // Get current points
-    const { data: user, error: userError } = await this.supabase
-      .from("profiles")
-      .select("points")
-      .eq("id", userId)
-      .single();
-
-    if (userError) throw userError;
-
-    const currentPoints = user?.points || 0;
-    const newPoints = currentPoints + points;
-
-    // Update user points
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .update({ points: newPoints })
-      .eq("id", userId)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Optional audit log — table may not exist on older deployments
-    const { error: logError } = await this.supabase
-      .from("points_transactions")
-      .insert({
-        user_id: userId,
-        points,
-        reason,
-        source: source || "manual",
-      });
-
-    if (logError) {
-      logger.warn("points_transactions insert skipped", {
-        userId,
-        code: logError.code,
-        message: logError.message,
-      });
-    }
-
-    // Invalidate caches
-    await cacheService.deletePattern(`gamification:leaderboard:*`);
-    await cacheService.delete(`user:stats:${userId}`);
-    await cacheService.deletePattern(
-      `gamification:user:achievements:${userId}:*`,
-    );
-
-    return {
+    return gamificationData.awardPoints(
+      this.supabase,
       userId,
-      pointsAwarded: points,
-      newTotal: newPoints,
+      points,
       reason,
       source,
-    };
+    );
   }
 
   async awardAchievement(userId: string, achievementId: string): Promise<any> {
-    // Check if user already has this achievement
-    const { data: existing, error: checkError } = await this.supabase
-      .from("user_achievements")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("achievement_id", achievementId)
-      .single();
-
-    if (checkError && checkError.code !== "PGRST116") throw checkError;
-
-    if (existing) {
-      throw new Error("User already has this achievement");
-    }
-
-    // Award the achievement
-    const { data, error } = await this.supabase
-      .from("user_achievements")
-      .insert({
-        user_id: userId,
-        achievement_id: achievementId,
-        unlocked_at: new Date().toISOString(),
-        progress: 100,
-      })
-      .select(
-        `
-        *,
-        achievements (*)
-      `,
-      )
-      .single();
-
-    if (error) throw error;
-
-    // Award points for achievement if configured
-    const achievement = data.achievements;
-    if (achievement.points_reward) {
-      await this.awardPoints(
-        userId,
-        achievement.points_reward,
-        `Achievement unlocked: ${achievement.name}`,
-        "achievement",
-      );
-    }
-
-    // Invalidate caches
-    await cacheService.deletePattern(
-      `gamification:user:achievements:${userId}:*`,
+    return gamificationData.awardAchievement(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+      achievementId,
     );
-
-    return {
-      ...achievement,
-      unlockedAt: data.unlocked_at,
-      progress: data.progress,
-    };
   }
 
   async getUserProgress(userId: string): Promise<any> {
-    const cacheKey = `gamification:user:progress:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Get user stats
-        const user = await this.getUserById(userId);
-        if (!user) throw new Error("User not found");
-
-        // Get achievements progress
-        const { data: achievements, error: achError } = await this.supabase
-          .from("user_achievements")
-          .select("achievement_id, progress")
-          .eq("user_id", userId);
-
-        if (achError) throw achError;
-
-        // Get level info
-        const level = await this.getUserLevel(userId);
-
-        return {
-          userId,
-          points: user.points || 0,
-          level: level.currentLevel,
-          achievementsUnlocked: achievements?.length || 0,
-          nextLevelPoints: level.nextLevelPoints,
-          progressToNextLevel: level.progressToNextLevel,
-          stats: user.stats || {},
-        };
+    return gamificationData.getUserProgress(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
       },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+      userId,
+    );
   }
 
   async getGamificationStats(): Promise<any> {
-    const cacheKey = "gamification:stats";
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Get total users
-        const { count: totalUsers, error: usersError } = await this.supabase
-          .from("profiles")
-          .select("id", { count: "exact", head: true });
-
-        // Get total achievements unlocked
-        const { count: totalAchievements, error: achError } =
-          await this.supabase
-            .from("user_achievements")
-            .select("id", { count: "exact", head: true });
-
-        // Get total points awarded
-        const { data: pointsData, error: pointsError } = await this.supabase
-          .from("profiles")
-          .select("points");
-
-        if (usersError || achError || pointsError) {
-          throw usersError || achError || pointsError;
-        }
-
-        const totalPoints =
-          pointsData?.reduce((sum, user) => sum + (user.points || 0), 0) || 0;
-
-        return {
-          totalUsers: totalUsers || 0,
-          totalAchievements: totalAchievements || 0,
-          totalPoints,
-          averagePointsPerUser: totalUsers ? totalPoints / totalUsers : 0,
-        };
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return gamificationData.getGamificationStats(
+      this.supabase,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -5679,19 +5482,10 @@ export class SupabaseService {
       category?: string;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20, category } = options;
-    if (category) return [];
-    const offset = (Math.max(1, page) - 1) * Math.max(1, limit);
-    return Object.values(BADGE_DEFINITIONS)
-      .map((def) => ({
-        id: def.id,
-        name: def.baseName,
-        description: def.baseDescription(def.levels[0]?.threshold ?? 0),
-        icon: def.icon,
-        metric: def.metric,
-        levels: def.levels,
-      }))
-      .slice(offset, offset + Math.max(1, limit));
+    return gamificationData.getBadges(
+      this.supabase,
+      options,
+    );
   }
 
   /** Badges the user holds, newest first, straight from profiles.badges. */
@@ -5702,23 +5496,11 @@ export class SupabaseService {
       limit?: number;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20 } = options;
-    const offset = (Math.max(1, page) - 1) * Math.max(1, limit);
-
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .select("badges")
-      .eq("id", userId)
-      .maybeSingle();
-    if (error) throw error;
-
-    const badges = Array.isArray(data?.badges) ? [...data.badges] : [];
-    badges.sort(
-      (a: any, b: any) =>
-        Date.parse(String(b?.dateAwarded ?? "")) -
-          Date.parse(String(a?.dateAwarded ?? "")) || 0,
+    return gamificationData.getUserBadges(
+      this.supabase,
+      userId,
+      options,
     );
-    return badges.slice(offset, offset + Math.max(1, limit));
   }
 
   /**
@@ -5738,135 +5520,69 @@ export class SupabaseService {
     badge: ReturnType<typeof createBadge> | null;
     badges: ReturnType<typeof createBadge>[];
   }> {
-    if (
-      typeof badgeId !== "string" ||
-      !Object.prototype.hasOwnProperty.call(BADGE_DEFINITIONS, badgeId)
-    ) {
-      throw Object.assign(
-        new PublicError(
-          `Unknown badge id: ${String(badgeId)}. Known ids: ${Object.keys(BADGE_DEFINITIONS).join(", ")}`,
-        ),
-        { statusCode: 400 },
-      );
-    }
-    const knownId = badgeId as keyof typeof BADGE_DEFINITIONS;
-
-    const { data: profile, error } = await this.supabase
-      .from("profiles")
-      .select("id, badges")
-      .eq("id", userId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!profile) {
-      throw Object.assign(new PublicError("User not found"), {
-        statusCode: 404,
-      });
-    }
-
-    const current: ReturnType<typeof createBadge>[] = Array.isArray(
-      profile.badges,
-    )
-      ? [...profile.badges]
-      : [];
-    const existing = current.find((b: any) => b?.id === knownId);
-    if (existing) {
-      return { awarded: false, badge: existing, badges: current };
-    }
-
-    const badge = createBadge(knownId, 1);
-    const next = [...current, badge];
-
-    // Service-role client: the only role the lockdown trigger lets write here.
-    const { error: writeError } = await this.supabase
-      .from("profiles")
-      .update({ badges: next })
-      .eq("id", userId);
-    if (writeError) throw writeError;
-
-    await cacheService.invalidateUserCache(userId);
-    await cacheService.deletePattern(`gamification:user:badges:${userId}:*`);
-    logger.info("Badge granted manually", { userId, badgeId: knownId, actorId });
-
-    // Phase 3 M: unlocked_badge had no writer. Only the FIRST award reaches
-    // here (the already-owned case returns above), so this cannot spam a feed.
-    void (async () => {
-      const { getActivityFeedService } = await import("./activityFeed");
-      await getActivityFeedService(this).record({
-        actorId: userId,
-        verb: "unlocked_badge",
-        objectType: "badge",
-        objectId: badgeId,
-        audienceType: "followers",
-        payload: { title: (badge as { name?: string } | null)?.name ?? null },
-      });
-    })();
-
-    return { awarded: true, badge, badges: next };
+    return gamificationData.awardBadge(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+      badgeId,
+      actorId,
+    );
   }
 
   async getLevels(): Promise<any[]> {
-    const cacheKey = "gamification:levels";
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("levels")
-          .select("*")
-          .order("level_number", { ascending: true });
-
-        if (error) throw error;
-
-        return data || [];
-      },
-      { ttl: 3600 },
-    ); // Cache for 1 hour
+    return gamificationData.getLevels(
+      this.supabase,
+    );
   }
 
   async getUserLevel(userId: string): Promise<any> {
-    const cacheKey = `gamification:user:level:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const user = await this.getUserById(userId);
-        if (!user) throw new Error("User not found");
-
-        const points = user.points || 0;
-        const levels = await this.getLevels();
-
-        // Find current level
-        let currentLevel = levels[0]; // Default to first level
-        let nextLevel = null;
-
-        for (let i = 0; i < levels.length; i++) {
-          if (points >= levels[i].points_required) {
-            currentLevel = levels[i];
-            nextLevel = levels[i + 1] || null;
-          } else {
-            break;
-          }
-        }
-
-        const progressToNextLevel = nextLevel
-          ? ((points - currentLevel.points_required) /
-              (nextLevel.points_required - currentLevel.points_required)) *
-            100
-          : 100;
-
-        return {
-          currentLevel: currentLevel.level_number,
-          levelName: currentLevel.name,
-          currentPoints: points,
-          pointsRequired: currentLevel.points_required,
-          nextLevelPoints:
-            nextLevel?.points_required || currentLevel.points_required,
-          progressToNextLevel: Math.min(100, Math.max(0, progressToNextLevel)),
-          rewards: currentLevel.rewards || [],
-        };
+    return gamificationData.getUserLevel(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
       },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+      userId,
+    );
   }
 
   async recordStudyActivity(
@@ -5875,82 +5591,57 @@ export class SupabaseService {
     amount = 1,
     activityDate?: string,
   ): Promise<any> {
-    const vAmount = Math.max(Math.floor(Number(amount) || 1), 0);
-    const activityDateStr =
-      activityDate && /^\d{4}-\d{2}-\d{2}$/.test(activityDate)
-        ? activityDate
-        : new Date().toISOString().slice(0, 10);
-
-    const { data, error } = await this.supabase.rpc("record_study_activity", {
-      p_user_id: userId,
-      p_type: type,
-      p_amount: vAmount,
-      p_activity_date: activityDateStr,
-    });
-
-    if (error) throw error;
-    return data;
+    return gamificationData.recordStudyActivity(
+      this.supabase,
+      userId,
+      type,
+      amount,
+      activityDate,
+    );
   }
 
   private profileToGamificationUser(
     profile: Record<string, unknown>,
     statsOverride?: Partial<UserStats>,
   ): User {
-    const normalizedStats = mapUserStatsFromApi(profile.stats || {});
-    return {
-      id: String(profile.id),
-      name: String(profile.name || ""),
-      email: String(profile.email || ""),
-      password: "",
-      phoneNumber: String(profile.phone || ""),
-      avatarUrl: String(profile.avatar_url || profile.avatarUrl || ""),
-      points: Number(profile.points) || 0,
-      badges: (profile.badges as User["badges"]) || [],
-      stats: {
-        ...initialUserStats,
-        ...normalizedStats,
-        ...(statsOverride || {}),
-      },
-    } as User;
+    return gamificationData.profileToGamificationUser(
+      this.supabase,
+      profile,
+      statsOverride,
+    );
   }
 
   async incrementUserStatsAndAwardBadges(
     userId: string,
     increments: Partial<UserStats>,
   ): Promise<GamificationSyncResult> {
-    const profile = await this.getUserById(userId);
-    if (!profile) {
-      throw new Error("User not found");
-    }
-
-    const base = this.profileToGamificationUser(
-      profile as unknown as Record<string, unknown>,
+    return gamificationData.incrementUserStatsAndAwardBadges(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+      increments,
     );
-    const stats = { ...base.stats };
-    for (const key of Object.keys(increments) as (keyof UserStats)[]) {
-      const delta = increments[key];
-      if (typeof delta === "number" && delta !== 0) {
-        stats[key] = (stats[key] || 0) + delta;
-      }
-    }
-
-    const { updatedUser, awardedBadges } = checkAndAwardBadges({
-      ...base,
-      stats,
-    });
-    await this.updateUser(userId, {
-      points: updatedUser.points,
-      badges: updatedUser.badges,
-      stats: updatedUser.stats,
-    });
-    await cacheService.delete(`user:${userId}`);
-
-    return {
-      points: updatedUser.points,
-      badges: updatedUser.badges,
-      stats: updatedUser.stats,
-      awardedBadges,
-    };
   }
 
   /**
@@ -5979,190 +5670,41 @@ export class SupabaseService {
    *                      in place, so buyer_id = "who made the offer".
    */
   async recomputeDerivedUserStats(userId: string): Promise<Partial<UserStats>> {
-    const [
-      sessions,
-      questionCount,
-      topQuestion,
-      groupCount,
-      listingCount,
-      soldListings,
-      completedOrders,
-      fiveStarReviewCount,
-      offerCount,
-      ambassadorFlag,
-    ] = await Promise.all(
-      [
-        this.supabase
-          .from("test_sessions")
-          .select("start_time, test_results (score)")
-          .eq("user_id", userId)
-          .eq("status", "completed"),
-        this.supabase
-          .from("messages")
-          .select("id", { count: "exact", head: true })
-          .eq("sender_id", userId)
-          .eq("type", "QUESTION"),
-        this.supabase
-          .from("messages")
-          .select("upvotes")
-          .eq("sender_id", userId)
-          .eq("type", "QUESTION")
-          .order("upvotes", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        // createGroup writes `admin_ids: [userId]`, so element 0 is the creator;
-        // later admins are appended, leaving that entry intact. Filtering on
-        // `admin_ids->>0` directly would be neater, but supabase-js URL-encodes
-        // column names and PostgREST then fails to read it as a JSON path — so
-        // match on containment, which encodes safely, and check position here.
-        this.supabase
-          .from("groups")
-          .select("admin_ids")
-          .contains("admin_ids", [userId]),
-        this.supabase
-          .from("marketplace_listings")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId),
-        this.supabase
-          .from("marketplace_listings")
-          .select("id")
-          .eq("user_id", userId)
-          .eq("status", "sold"),
-        this.supabase
-          .from("marketplace_orders")
-          .select("listing_id")
-          .eq("seller_id", userId)
-          .eq("status", "completed"),
-        // Reviews carry no seller column, so filter through an inner join on the
-        // listing: `!inner` makes the embedded filter drop parent rows too, and
-        // the exact count is taken over that joined result.
-        this.supabase
-          .from("marketplace_reviews")
-          .select("id, marketplace_listings!inner(user_id)", {
-            count: "exact",
-            head: true,
-          })
-          .eq("rating", 5)
-          .eq("marketplace_listings.user_id", userId),
-        this.supabase
-          .from("marketplace_offers")
-          .select("id", { count: "exact", head: true })
-          .eq("buyer_id", userId),
-        this.supabase
-          .from("profiles")
-          .select("is_ambassador")
-          .eq("id", userId)
-          .maybeSingle(),
-      ],
+    return gamificationData.recomputeDerivedUserStats(
+      this.supabase,
+      userId,
     );
-
-    // Deduplicate by start-time, matching how the dashboard counts. A genuine
-    // double-submit can leave two session rows for one sitting, and the badge
-    // count has to agree with the number the user is shown.
-    const seenStartTimes = new Set<string>();
-    let testsCompleted = 0;
-    let highScoreTests = 0;
-    let perfectScoreTests = 0;
-
-    for (const row of (sessions.data || []) as any[]) {
-      const startTime = String(row.start_time ?? "");
-      if (startTime && seenStartTimes.has(startTime)) continue;
-      if (startTime) seenStartTimes.add(startTime);
-
-      testsCompleted++;
-      const result = Array.isArray(row.test_results)
-        ? row.test_results[0]
-        : row.test_results;
-      const score = Number(result?.score);
-      if (!Number.isFinite(score)) continue;
-      if (score >= 80) highScoreTests++;
-      if (score >= 100) perfectScoreTests++;
-    }
-
-    const derived: Partial<UserStats> = {
-      testsCompleted,
-      highScoreTests,
-      perfectScoreTests,
-    };
-
-    // A failed count must not be mistaken for "zero of them" — leaving the key
-    // out preserves whatever is already stored.
-    if (!questionCount.error && typeof questionCount.count === "number") {
-      derived.questionsCreated = questionCount.count;
-    }
-    if (!groupCount.error && Array.isArray(groupCount.data)) {
-      derived.groupsCreated = (groupCount.data as any[]).filter((row) => {
-        const admins = row?.admin_ids;
-        const first = Array.isArray(admins) ? admins[0] : undefined;
-        return String(first ?? "") === userId;
-      }).length;
-    }
-    if (!topQuestion.error) {
-      derived.questionUpvotesMax = Number(topQuestion.data?.upvotes) || 0;
-    }
-    if (sessions.error) {
-      delete derived.testsCompleted;
-      delete derived.highScoreTests;
-      delete derived.perfectScoreTests;
-      logger.warn("Could not recount test stats; keeping stored values", {
-        userId,
-        error: sessions.error.message,
-      });
-    }
-
-    // Marketplace counters — same rule: a failed read leaves the key out.
-    if (!listingCount.error && typeof listingCount.count === "number") {
-      derived.listingsCreated = listingCount.count;
-    }
-    if (soldListings.error || completedOrders.error) {
-      logger.warn("Could not recount listings sold; keeping stored value", {
-        userId,
-        error:
-          soldListings.error?.message ?? completedOrders.error?.message,
-      });
-    } else {
-      const soldIds = new Set<string>();
-      for (const row of (soldListings.data || []) as any[]) {
-        if (row?.id) soldIds.add(String(row.id));
-      }
-      for (const row of (completedOrders.data || []) as any[]) {
-        if (row?.listing_id) soldIds.add(String(row.listing_id));
-      }
-      derived.listingsSold = soldIds.size;
-    }
-    if (
-      !fiveStarReviewCount.error &&
-      typeof fiveStarReviewCount.count === "number"
-    ) {
-      derived.fiveStarReviews = fiveStarReviewCount.count;
-    }
-    if (!offerCount.error && typeof offerCount.count === "number") {
-      derived.offersMade = offerCount.count;
-    }
-    if (!ambassadorFlag.error) {
-      derived.campusAmbassador =
-        (ambassadorFlag.data as { is_ambassador?: boolean } | null)?.is_ambassador === true
-          ? 1
-          : 0;
-    }
-
-    return derived;
   }
 
   async syncGamificationProgress(
     userId: string,
   ): Promise<GamificationSyncResult> {
-    // Reconcile against source data before re-evaluating. checkAndAwardBadges
-    // only ever looks for currentLevel + 1, so a corrected-downwards count can
-    // never revoke a badge the user already holds.
-    const derived = await this.recomputeDerivedUserStats(userId).catch((err) => {
-      logger.warn("Stat recompute failed; evaluating against stored stats", {
-        userId,
-        err,
-      });
-      return {} as Partial<UserStats>;
-    });
-    return this.syncGamificationProgressWithStats(userId, { stats: derived });
+    return gamificationData.syncGamificationProgress(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+    );
   }
 
   /** Server-only: apply trusted stats before badge evaluation (e.g. after test completion). */
@@ -6173,45 +5715,33 @@ export class SupabaseService {
       activityDate?: string;
     } = {},
   ): Promise<GamificationSyncResult> {
-    const profile = await this.getUserById(userId);
-    if (!profile) {
-      throw new Error("User not found");
-    }
-
-    // What the profile holds now, before any recomputed stats are layered on —
-    // the baseline for deciding whether this sync actually changed anything.
-    const stored = this.profileToGamificationUser(
-      profile as unknown as Record<string, unknown>,
+    return gamificationData.syncGamificationProgressWithStats(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+      options,
     );
-    const user = this.profileToGamificationUser(
-      profile as unknown as Record<string, unknown>,
-      options.stats,
-    );
-    const { updatedUser, awardedBadges } = checkAndAwardBadges(user);
-
-    // Both clients call this on every dashboard load, so writing unconditionally
-    // would mean a profile UPDATE per screen open for no reason. Only persist
-    // when the reconciliation or an award genuinely moved something.
-    const changed =
-      updatedUser.points !== stored.points ||
-      JSON.stringify(updatedUser.stats) !== JSON.stringify(stored.stats) ||
-      JSON.stringify(updatedUser.badges) !== JSON.stringify(stored.badges);
-
-    if (changed) {
-      await this.updateUser(userId, {
-        points: updatedUser.points,
-        badges: updatedUser.badges,
-        stats: updatedUser.stats,
-      });
-      await cacheService.delete(`user:${userId}`);
-    }
-
-    return {
-      points: updatedUser.points,
-      badges: updatedUser.badges,
-      stats: updatedUser.stats,
-      awardedBadges,
-    };
   }
 
   // No `score` parameter: the score of the test that triggered this is read back
@@ -6226,53 +5756,40 @@ export class SupabaseService {
     stats: UserStats;
     awardedBadges: User["badges"];
   }> {
-    const profile = await this.getUserById(userId);
-    if (!profile) {
-      throw new Error("User not found");
-    }
-
-    // Recount from the saved rows instead of incrementing. The result row is
-    // upserted on session_id, so it is idempotent — but the old increment was
-    // not, and re-submitting a test inflated these counters permanently. The
-    // session is marked completed before its result is written, so the test that
-    // triggered this is already included; if that ever changes, the count is one
-    // low until the next sync rather than wrong forever.
-    const stats = {
-      ...this.profileToGamificationUser(
-        profile as unknown as Record<string, unknown>,
-      ).stats,
-      ...(await this.recomputeDerivedUserStats(userId).catch((err) => {
-        logger.warn("Stat recompute failed after test completion", {
-          userId,
-          err,
-        });
-        return {} as Partial<UserStats>;
-      })),
-    };
-
-    const result = await this.syncGamificationProgressWithStats(userId, {
-      stats,
-    });
-    await this.recordStudyActivity(userId, "test", 1, activityDate).catch(
-      (err) => {
-        logger.warn("Failed to record study activity after test", {
-          userId,
-          err,
-        });
+    return gamificationData.applyTestCompletionGamification(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
       },
+      userId,
+      activityDate,
     );
-    await this.recomputeUserStreak(userId, activityDate).catch((err) => {
-      logger.warn("Failed to recompute streak after test", { userId, err });
-    });
-    return result;
   }
 
   async touchLastSeen(userId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq("id", userId);
-    if (error) throw error;
+    return gamificationData.touchLastSeen(
+      this.supabase,
+      userId,
+    );
   }
 
   async getStudyActivity(
@@ -6285,41 +5802,18 @@ export class SupabaseService {
       breakdown: Partial<Record<string, number>>;
     }>
   > {
-    const since = new Date();
-    since.setDate(since.getDate() - Math.max(1, days) + 1);
-    const sinceDate = since.toISOString().slice(0, 10);
-
-    const { data, error } = await this.supabase
-      .from("study_activity")
-      .select(
-        "activity_date, count, test_count, flashcard_count, new_flashcard_count, question_count, game_count, daily_quiz_count",
-      )
-      .eq("user_id", userId)
-      .gte("activity_date", sinceDate)
-      .order("activity_date", { ascending: true });
-
-    if (error) throw error;
-
-    return (data || []).map((row: any) => ({
-      date: row.activity_date,
-      count: row.count ?? 0,
-      breakdown: {
-        test: row.test_count ?? 0,
-        flashcard: row.flashcard_count ?? 0,
-        flashcard_new: row.new_flashcard_count ?? 0,
-        study_question: row.question_count ?? 0,
-        game: row.game_count ?? 0,
-        daily_quiz: row.daily_quiz_count ?? 0,
-      },
-    }));
+    return gamificationData.getStudyActivity(
+      this.supabase,
+      userId,
+      days,
+    );
   }
 
   private parseStreakReferenceDate(referenceDate?: string): Date {
-    if (referenceDate && /^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
-      const [y, m, d] = referenceDate.split("-").map(Number);
-      return new Date(y, m - 1, d);
-    }
-    return new Date();
+    return gamificationData.parseStreakReferenceDate(
+      this.supabase,
+      referenceDate,
+    );
   }
 
   /** Recompute streak from study_activity (heatmap-aligned, client-local dates). */
@@ -6334,44 +5828,33 @@ export class SupabaseService {
     streak_freezes: number;
     updated_at: string;
   }> {
-    const STREAK_LOOKBACK_DAYS = 400;
-    const activityDays = await this.getStudyActivity(
+    return gamificationData.recomputeUserStreak(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
       userId,
-      STREAK_LOOKBACK_DAYS,
+      referenceDate,
     );
-    const ref = this.parseStreakReferenceDate(referenceDate);
-    const { current, longest, lastActiveDate } = computeStudyStreak(
-      activityDays,
-      ref,
-    );
-
-    const { data: existing } = await this.supabase
-      .from("user_streaks")
-      .select("streak_freezes, longest_streak")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const streakFreezes = existing?.streak_freezes ?? 0;
-    const longestStreak = Math.max(existing?.longest_streak ?? 0, longest);
-
-    const { data, error } = await this.supabase
-      .from("user_streaks")
-      .upsert(
-        {
-          user_id: userId,
-          current_streak: current,
-          longest_streak: longestStreak,
-          last_login_date: lastActiveDate,
-          streak_freezes: streakFreezes,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" },
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
   }
 
   // ===========================================================================
