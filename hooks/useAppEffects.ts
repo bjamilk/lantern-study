@@ -118,11 +118,8 @@ import { mergeFetchedGroups } from '../utils/groupListMerge';
 import { isAccessTokenFreshEnough, shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
 import { resetSessionExpiredGuard } from '../services/sessionHandler';
 import { ensureOfflineQueueOwner } from '../services/offlineQueueOwner';
-import {
-    sendPresenceHeartbeat,
-    shouldRunPresenceHeartbeat,
-} from '../services/presenceHeartbeat';
 import { useOfflineQueuePersistence } from './effects/useOfflineQueuePersistence';
+import { usePresenceHeartbeat } from './effects/usePresenceHeartbeat';
 import { useOnlineQueueReplay } from './effects/useOnlineQueueReplay';
 import { useSrsReminders } from './effects/useSrsReminders';
 import { useThemeDomSync } from './effects/useThemeDomSync';
@@ -318,42 +315,7 @@ export function useAppEffects({
     }, [updateDmThreads]);
 
     // --- Presence heartbeat for online status ---
-    // Gate on authTokenReady (same as lifecycle / paused sessions / gamification)
-    // so guest + stale-session landings never POST /presence/heartbeat.
-    // Re-runs on currentUser.id / currentUser.settings / authTokenReady: the settings dep is
-    // what makes toggling "show online status" start or stop the 2-minute interval. The
-    // interval self-cancels on an unrecovered 401/403 so a dead session stops beating.
-    useEffect(() => {
-        const showOnlineStatus = currentUser
-            ? normalizeUserSettings(currentUser.settings).privacy.showOnlineStatus
-            : false;
-        if (!shouldRunPresenceHeartbeat({
-            userId: currentUser?.id,
-            authTokenReady,
-            showOnlineStatus,
-        })) {
-            return;
-        }
-        let cancelled = false;
-        let interval: ReturnType<typeof setInterval> | undefined;
-
-        const beat = async () => {
-            if (cancelled) return;
-            const keepGoing = await sendPresenceHeartbeat();
-            // Unrecovered 401/403 or missing token — stop spamming Unauthorized.
-            if (!keepGoing && interval) {
-                clearInterval(interval);
-                interval = undefined;
-            }
-        };
-
-        void beat();
-        interval = setInterval(() => void beat(), 2 * 60 * 1000);
-        return () => {
-            cancelled = true;
-            if (interval) clearInterval(interval);
-        };
-    }, [currentUser?.id, currentUser?.settings, authTokenReady]);
+    usePresenceHeartbeat({ currentUser, authTokenReady });
 
     // --- Restore session on app load ---
     // Mount-once ([] deps) and deliberately so: it owns the single supabase
