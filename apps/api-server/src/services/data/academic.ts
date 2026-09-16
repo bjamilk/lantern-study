@@ -34,6 +34,7 @@
 import {
   isMissingStudySetColumn,
   isMissingTopicColumn,
+  type CourseFilter,
 } from "../academicCourses";
 import { logger } from "../../utils/logger";
 
@@ -58,6 +59,41 @@ export function resolveCourseIdFromConfigLike(
     ? candidate
     : null;
 }
+
+/**
+ * Pull a study set id off a create payload, wherever the client put it.
+ *
+ * Mirrors `resolveCourseIdFromConfigLike`: a set may arrive top-level
+ * (`studySetId` / `study_set_id`) or on the nested `config`, and a session must
+ * be filed the same way whichever door it came through.
+ *
+ * Moved here from `services/supabase.ts` module scope (monolith lane M1c,
+ * step 11), next to its course twin, so `data/tests.ts` can read it without
+ * importing the facade back. Re-exported from `services/supabase.ts` for
+ * `studySetIdFromConfig.test.ts`.
+ */
+export function resolveStudySetIdFromConfigLike(payload: any): string | null {
+  const candidates = [
+    payload?.studySetId,
+    payload?.study_set_id,
+    payload?.config?.studySetId,
+    payload?.config?.study_set_id,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+/**
+ * A topic filter only narrows a query when it names one; none/invalid do not.
+ *
+ * Moved here from `services/supabase.ts` module scope (monolith lane M1c,
+ * step 11): `data/tests.ts` and the facade both read it.
+ */
+export const topicFilterApplies = (
+  filter: CourseFilter | undefined,
+): boolean => filter?.kind === "course" || filter?.kind === "unfiled";
 
 /**
  * Validates a topic id against a course id, resolving to the id to store or

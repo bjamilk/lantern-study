@@ -373,7 +373,11 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   // query, new file: the row moved with it rather than the count changing.
   'services/data/users.ts::groups': 1,
   'services/supabase.ts::notes': 1,
-  'services/supabase.ts::test_results': 4,
+  'services/supabase.ts::test_results': 2,
+  // Two of the four `test_sessions->test_results` embeds moved verbatim out of
+  // supabase.ts into the tests repository (monolith lane M1c, step 11). Same
+  // queries, new file: the rows moved with them rather than the count changing.
+  'services/data/tests.ts::test_results': 2,
 
   // --- Account lifecycle export. Single FK each today.
   'services/userDataLifecycle.ts::flashcards': 1,

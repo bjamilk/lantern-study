@@ -120,13 +120,30 @@ import * as decksData from "./data/decks";
 import * as uploadsData from "./data/uploads";
 import {
   resolveCourseIdFromConfigLike,
+  resolveStudySetIdFromConfigLike,
+  topicFilterApplies,
   writeWithTopicFallback,
 } from "./data/academic";
+export { resolveStudySetIdFromConfigLike };
 import * as adminAnalyticsData from "./data/adminAnalytics";
 import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
 import * as categoriesData from "./data/categories";
 import * as groupsData from "./data/groups";
 import * as notificationsData from "./data/notifications";
+import * as testsData from "./data/tests";
+import {
+  buildAttemptTally,
+  buildTestProvenance,
+  mapTestListRow,
+  normalizeSourceNoteTitle,
+  topicIdOf,
+} from "./data/testMappers";
+export {
+  buildAttemptTally,
+  buildTestProvenance,
+  mapTestListRow,
+  normalizeSourceNoteTitle,
+};
 import * as offlineBundlesData from "./data/offlineBundles";
 import * as storageAclData from "./data/storageAcl";
 import * as usersData from "./data/users";
@@ -409,20 +426,10 @@ function resolveTopicIdFromConfigLike(
   return payload?.config?.topicId;
 }
 
-/**
- * `topicId` rides on an artefact only once the column exists: absent means
- * "topics are not available yet", null means "no topic". Same rule as
- * LibrarySearchResult.topicId, so a client has one thing to branch on.
- */
-function topicIdOf(row: any): { topicId?: string | null } {
-  return row && typeof row === "object" && "topic_id" in row
-    ? { topicId: row.topic_id ?? null }
-    : {};
-}
-
-/** A topic filter only narrows a query when it names one; none/invalid do not. */
-const topicFilterApplies = (filter: CourseFilter | undefined): boolean =>
-  filter?.kind === "course" || filter?.kind === "unfiled";
+// `topicIdOf` and `topicFilterApplies` moved to `data/testMappers.ts` and
+// `data/academic.ts` respectively (monolith lane M1c, step 11), so
+// `data/tests.ts` can read them without importing this file back. Both are
+// imported above; the remaining call sites here are unchanged.
 
 /**
  * Run a write, retrying it without `topic_id` when that column is not there
@@ -431,25 +438,9 @@ const topicFilterApplies = (filter: CourseFilter | undefined): boolean =>
  * reach here is a clear, and clearing a column that does not exist is a no-op.
  * A missing topic must never fail the note/deck/test/listing it rode in on.
  */
-/**
- * Pull a study set id off a create payload, wherever the client put it.
- *
- * Mirrors `resolveCourseIdFromConfigLike`: a set may arrive top-level
- * (`studySetId` / `study_set_id`) or on the nested `config`, and a session must
- * be filed the same way whichever door it came through.
- */
-export function resolveStudySetIdFromConfigLike(payload: any): string | null {
-  const candidates = [
-    payload?.studySetId,
-    payload?.study_set_id,
-    payload?.config?.studySetId,
-    payload?.config?.study_set_id,
-  ];
-  for (const value of candidates) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return null;
-}
+// `resolveStudySetIdFromConfigLike` moved to `data/academic.ts` (monolith lane
+// M1c, step 11) beside its course twin. Re-exported below so
+// `studySetIdFromConfig.test.ts` keeps importing it from this path.
 
 // `writeWithTopicFallback` moved to `data/academic.ts` (monolith lane M1b,
 // step 7): it is the write half of the course/topic filing that module owns,
@@ -587,213 +578,11 @@ async function assertSellerListingUpdateAllowed(
   if (refusal) throw listingStateError(refusal, 403);
 }
 
-/**
- * A source-note title as clients may print it: a non-empty trimmed string, or
- * null. Anything else (undefined, "", a number a bad write left in config)
- * becomes null so no client ever interpolates it into "From undefined".
- */
-export function normalizeSourceNoteTitle(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, 200) : null;
-}
-
-/**
- * Where a session came from, resolved once here so no client has to know the
- * config key names. Every field is a string or null — never absent — so
- * "From <title>" renders or does not, and never prints "From undefined".
- *
- * Precedence is note → deck → group: a quiz generated from a note that also
- * carries a groupId is a note quiz, because that is the source a student
- * recognises.
- */
-export function buildTestProvenance(session: any): {
-  noteId: string | null;
-  deckId: string | null;
-  groupId: string | null;
-  title: string | null;
-} {
-  const config = (session?.config && typeof session.config === "object" ? session.config : {}) as any;
-  const noteId = typeof config.sourceNoteId === "string" && config.sourceNoteId ? config.sourceNoteId : null;
-  const deckId = typeof config.sourceDeckId === "string" && config.sourceDeckId ? config.sourceDeckId : null;
-  const groupId = typeof config.groupId === "string" && config.groupId ? config.groupId : null;
-  const title = noteId
-    ? normalizeSourceNoteTitle(config.sourceNoteTitle)
-    : deckId
-      ? normalizeSourceNoteTitle(config.sourceDeckTitle)
-      : groupId
-        ? normalizeSourceNoteTitle(config.groupName)
-        : null;
-  return { noteId, deckId, groupId, title };
-}
-
-/**
- * Correct / incorrect / unanswered for one stored session row, plus the same
- * split by reported confidence. Never throws and never returns undefined: a
- * session with no questions tallies to all zeroes, which a client can render.
- *
- * Unanswered is its own number on purpose — see `tallyTestAttempt`.
- */
-export function buildAttemptTally(session: any) {
-  const questions = Array.isArray(session?.questions) ? session.questions : [];
-  return tallyTestAttempt(
-    questions,
-    coerceRawUserAnswers(session?.user_answers ?? session?.userAnswers, questions) as Record<
-      string,
-      unknown
-    >,
-  );
-}
-
-/**
- * One row of GET /api/v1/tests, as every client reads it.
- *
- * Pure and exported because this shape is a contract, not an implementation
- * detail: mobile's "Available Tests" list reads the FLAT fields and web reads
- * the nested `session`, and a personal test that satisfies only one of them
- * is invisible on the other side.
- */
-export function mapTestListRow(session: any, lean: boolean): any {
-  const result = Array.isArray(session.test_results)
-    ? session.test_results[0]
-    : session.test_results;
-  const questions = Array.isArray(session.questions)
-    ? session.questions
-    : [];
-  const answers = coerceRawUserAnswers(session.user_answers, questions);
-  const answeredCount = Object.keys(answers).length;
-  const sessionStatus = session.status ||
-    (session.end_time ? "completed" : "in_progress");
-
-  // Fold per-answer timings into a sum and a count. Lean responses drop
-  // user_answers, so without these the dashboards cannot compute
-  // "Avg / question" or total study time and render a dash. Answers with
-  // no recorded time are excluded from both, so the client can divide
-  // them directly. Kept as sum+count rather than a pre-divided average so
-  // the client can weight correctly when it aggregates across tests.
-  let timeSpentSeconds = 0;
-  let questionsWithTime = 0;
-  for (const answer of Object.values(answers) as any[]) {
-    const spent = answer?.timeSpentSeconds ?? answer?.time_spent_seconds;
-    if (typeof spent === "number" && Number.isFinite(spent)) {
-      timeSpentSeconds += spent;
-      questionsWithTime++;
-    }
-  }
-
-  if (
-    lean &&
-    (sessionStatus === "paused" || sessionStatus === "in_progress")
-  ) {
-    return {
-      id: session.id,
-      sessionKind: session.session_kind || "test",
-      status: sessionStatus,
-      title:
-        session.title ||
-        session.config?.groupName ||
-        (session.session_kind === "study" ? "Study session" : "Test"),
-      answeredCount,
-      totalQuestions: questions.length,
-      currentQuestionIndex: session.current_question_index || 0,
-      remainingTimeSeconds: session.remaining_time_seconds ?? null,
-      startTime: session.start_time || new Date().toISOString(),
-      updatedAt: session.updated_at || session.start_time || new Date().toISOString(),
-      pausedAt: session.paused_at ?? null,
-      groupId: session.config?.groupId ?? null,
-      sourceNoteId: session.config?.sourceNoteId ?? null,
-      sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
-      provenance: buildTestProvenance(session),
-    };
-  }
-
-  // A launchable test: unfinished and carrying questions — exactly what the
-  // mobile "Available Tests" tab lists.
-  const launchable = !session.end_time && questions.length > 0;
-
-  return {
-    id: session.id,
-    // --- Flat mirror: the "Available Tests" contract ---------------------
-    //
-    // The nested `session` below is what web reads. Mobile reads the FLAT row
-    // — `t.questions`, `t.config`, `t.end_time` — so every personal test was
-    // filtered out before it was ever drawn: its questions sat one level in,
-    // `questions.length` was 0, and a quiz saved from a note appeared nowhere
-    // while "No Tests Available" stayed on screen. Same data, one more shape.
-    //
-    // `questions` is mirrored ONLY for a launchable session; a page of
-    // completed history would otherwise carry every question twice.
-    config: session.config || {},
-    questions: lean || !launchable ? [] : questions,
-    title:
-      session.title ||
-      session.config?.name ||
-      session.config?.title ||
-      null,
-    status: sessionStatus,
-    /** What a client may DO with it, independent of the db status. */
-    availability: launchable
-      ? sessionStatus === "paused"
-        ? "paused"
-        : "available"
-      : session.end_time
-        ? "completed"
-        : "empty",
-    session_kind: session.session_kind || "test",
-    sessionKind: session.session_kind || "test",
-    questionCount: questions.length || session.config?.numberOfQuestions || 0,
-    /** Provenance for a quiz generated from a note (config.sourceNoteId). */
-    sourceNoteId: session.config?.sourceNoteId ?? null,
-    /**
-     * The note's own title, persisted into config at creation and backfilled
-     * on read when absent. The list prints "From <title>" under a note quiz,
-     * so a missing field rendered the literal "From undefined" on device
-     * (build 159). Always a string or null — never absent, never undefined.
-     */
-    sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
-    sourceDeckId: session.config?.sourceDeckId ?? null,
-    sourceDeckTitle: normalizeSourceNoteTitle(session.config?.sourceDeckTitle),
-    sourceJobId: session.config?.sourceJobId ?? null,
-    /** @see buildTestProvenance — one object instead of four config lookups. */
-    provenance: buildTestProvenance(session),
-    start_time: session.start_time ?? null,
-    end_time: session.end_time ?? null,
-    // test_sessions has no `created_at` column: `start_time` (DEFAULT NOW()
-    // on insert) is the row's creation date and what the list sorts by. Named
-    // `created_at` because that is the field shipped clients read.
-    created_at: session.start_time ?? session.updated_at ?? null,
-    updated_at: session.updated_at ?? null,
-    // ---------------------------------------------------------------
-    session: {
-      id: session.id,
-      config: session.config || {},
-      questions: lean ? [] : questions,
-      userAnswers: lean ? {} : answers,
-      currentQuestionIndex: session.current_question_index || 0,
-      startTime: session.start_time
-        ? new Date(session.start_time)
-        : new Date(),
-      endTime: session.end_time
-        ? new Date(session.end_time)
-        : undefined,
-      isOffline: session.is_offline || false,
-      sessionKind: session.session_kind || "test",
-      status: sessionStatus,
-      title: session.title || undefined,
-      updatedAt: session.updated_at || undefined,
-      pausedAt: session.paused_at || undefined,
-      remainingTime: session.remaining_time_seconds ?? undefined,
-    },
-    score: result?.score || 0,
-    totalQuestions:
-      result?.total_questions ||
-      questions.length ||
-      0,
-    correctAnswersCount: result?.correct_answers_count || 0,
-    timeSpentSeconds,
-    questionsWithTime,
-  };
-}
+// `normalizeSourceNoteTitle`, `buildTestProvenance`, `buildAttemptTally` and
+// `mapTestListRow` moved to `data/testMappers.ts` (monolith lane M1c, step 11)
+// so `data/tests.ts` can use them without importing this file back. Imported
+// above and re-exported below: every importer, and the public-surface freeze,
+// sees exactly the same four names.
 
 /**
  * A live community mute (20260908120000) blocks EVERY write into that
@@ -4793,6 +4582,20 @@ export class SupabaseService {
   // `getTestById` makes it inside its loader safely because its cache key is
   // per-user (see the notifications banner above for the version that was not).
   // ===========================================================================
+  // EXTRACTED (monolith lane M1c, step 11): the bodies now live in
+  // `data/tests.ts`, and the pure row->DTO shapes they share with this file
+  // (`normalizeSourceNoteTitle`, `buildTestProvenance`, `buildAttemptTally`,
+  // `mapTestListRow`, `topicIdOf`) moved to `data/testMappers.ts`, which this
+  // file imports and re-exports so no importer and no export name changes.
+  //
+  // Fifteen of these call a sibling or a method still in the monolith. The
+  // `deps` literal is written out INLINE at those fifteen call sites, and it
+  // MUST stay that way: `routes/tests.*`, `testProvenance.test.ts`,
+  // `testDraftLifecycle.test.ts` and `learningEvents.test.ts` stub exactly
+  // these on a stand-in and drive the entry point through
+  // `SupabaseService.prototype.<m>.call(self, …)`. An instance field holding
+  // the deps reads as `undefined` there, and the arrows read `this.<method>`
+  // at CALL time so a `jest.spyOn` still intercepts.
   // Test Methods for API Routes
   async getUserTests(
     userId: string,
@@ -4821,232 +4624,41 @@ export class SupabaseService {
       studySetId?: string;
     } = {},
   ): Promise<{ tests: any[]; total: number }> {
-    const {
-      page = 1,
-      limit = 20,
-      status,
-      courseFilter,
-      topicFilter,
-      lean = false,
-      sort = "newest",
-      from,
-      to,
-      studySetId,
-    } = options;
-    const offset = (page - 1) * limit;
-    const sortKey = sort || "newest";
-    const fromKey = from || "";
-    const toKey = to || "";
-
-    // studySetId is part of the key: without it a filtered page and an
-    // unfiltered one would share a cache entry and serve each other's rows.
-    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:topic:${courseFilterKey(topicFilter)}:set:${studySetId || ""}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Completed lean history only needs scores + config for charts, so omit
-        // the questions so all-time pagination stays payload-light. user_answers
-        // IS read, because the dashboard's "Avg / question" and total study time
-        // are derived from per-answer timings — but it is folded into two numbers
-        // below and never sent to the client, so the response stays lean.
-        const completedLean = lean && status === "completed";
-        const selectCols = lean
-          ? `
-          id,
-          start_time,
-          end_time,
-          is_offline,
-          config,
-          course_id,
-          status,
-          session_kind,
-          current_question_index,
-          remaining_time_seconds,
-          paused_at,
-          updated_at,
-          title,
-          ${studySetId ? "study_set_id," : ""}
-          ${completedLean ? "" : "questions,"}
-          user_answers,
-          test_results (
-            score,
-            correct_answers_count,
-            total_questions
-          )
-        `
-          : `
-          *,
-          test_results (
-            score,
-            correct_answers_count,
-            total_questions
-          )
-        `;
-
-        let query = this.supabase
-          .from("test_sessions")
-          .select(selectCols, { count: "exact" })
-          .eq("user_id", userId);
-
-        if (status === "completed") {
-          query = query.eq("status", "completed");
-        } else if (status === "paused") {
-          query = query.eq("status", "paused");
-        } else if (status === "in_progress") {
-          query = query.in("status", ["in_progress", "paused"]);
-        } else if (status === "not_started") {
-          query = query.is("start_time", null);
-        } else if (status === "abandoned") {
-          query = query.eq("status", "abandoned");
-        }
-
-        query = applyCourseFilter(query, "course_id", courseFilter);
-        query = applyCourseFilter(query, "topic_id", topicFilter);
-        if (studySetId) {
-          query = query.eq("study_set_id", studySetId);
-        }
-
-        if (from) {
-          query = query.gte("start_time", from);
-        }
-        if (to) {
-          query = query.lte("start_time", to);
-        }
-
-        const orderByUpdated =
-          status === "paused" || status === "in_progress";
-        if (sortKey === "oldest") {
-          query = query.order(
-            orderByUpdated ? "updated_at" : "start_time",
-            { ascending: true },
-          );
-        } else if (sortKey === "highestScore") {
-          // Prefer score from joined test_results; fall back below if PostgREST rejects the order.
-          query = query
-            .order("score", {
-              referencedTable: "test_results",
-              ascending: false,
-              nullsFirst: false,
-            })
-            .order("start_time", { ascending: false });
-        } else {
-          query = query.order(
-            orderByUpdated ? "updated_at" : "start_time",
-            { ascending: false },
-          );
-        }
-
-        let { data, error, count } = await query.range(
-          offset,
-          offset + limit - 1,
-        );
-
-        if (error && sortKey === "highestScore") {
-          logger.warn("highestScore order failed; falling back to newest", {
-            error: error.message,
-          });
-          let fallback = this.supabase
-            .from("test_sessions")
-            .select(selectCols, { count: "exact" })
-            .eq("user_id", userId);
-          if (status === "completed") fallback = fallback.eq("status", "completed");
-          else if (status === "paused") fallback = fallback.eq("status", "paused");
-          else if (status === "in_progress") {
-            fallback = fallback.in("status", ["in_progress", "paused"]);
-          } else if (status === "not_started")
-            fallback = fallback.is("start_time", null);
-          else if (status === "abandoned")
-            fallback = fallback.eq("status", "abandoned");
-          fallback = applyCourseFilter(fallback, "course_id", courseFilter);
-          fallback = applyCourseFilter(fallback, "topic_id", topicFilter);
-          if (studySetId) fallback = fallback.eq("study_set_id", studySetId);
-          if (from) fallback = fallback.gte("start_time", from);
-          if (to) fallback = fallback.lte("start_time", to);
-          const retry = await fallback
-            .order("start_time", { ascending: false })
-            .range(offset, offset + limit - 1);
-          data = retry.data;
-          error = retry.error;
-          count = retry.count;
-          if (!error && Array.isArray(data)) {
-            data = [...data].sort((a: any, b: any) => {
-              const aScore = Array.isArray(a.test_results)
-                ? a.test_results[0]?.score
-                : a.test_results?.score;
-              const bScore = Array.isArray(b.test_results)
-                ? b.test_results[0]?.score
-                : b.test_results?.score;
-              return (bScore || 0) - (aScore || 0);
-            });
-          }
-        }
-
-        // Before 20260911120000_study_sets.sql no session can be filed to a
-        // set, so a set filter matches nothing. Empty is the honest answer;
-        // dropping the filter would hand back every test the user owns.
-        if (error && studySetId && isMissingStudySetColumn(error)) {
-          logger.warn(
-            "study_set_id missing on test_sessions — set filter matched nothing (apply 20260911120000_study_sets.sql)",
-          );
-          return { tests: [], total: 0 };
-        }
-
-        if (error && topicFilterApplies(topicFilter) && isMissingTopicColumn(error)) {
-          // No session can carry a topic before the migration: a named topic
-          // matches nothing, and "no topic" matches every session.
-          if (topicFilter?.kind === "course") return { tests: [], total: 0 };
-          return this.getUserTests(userId, { ...options, topicFilter: undefined });
-        }
-
-        if (error) throw error;
-
-        const tests = (data || []).map((session: any) =>
-          mapTestListRow(session, lean),
-        );
-
-        // Rows saved before the title was persisted at creation carry only
-        // the note id. One batched query per page fills them in, and the
-        // result is cached with the page, so this costs nothing on a hit.
-        await this.attachSourceNoteTitles(tests, userId);
-
-        return {
-          tests,
-          total: typeof count === "number" ? count : tests.length,
-        };
+    return testsData.getUserTests(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid, options) =>
+          this.createTestResult(id, resultData, uid, options),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
-      { ttl: 300 },
+      userId,
+      options,
     );
   }
 
   async getTestById(testId: string, userId?: string): Promise<any | null> {
-    const cacheKey = userId
-      ? `test:${testId}:user:${userId}`
-      : `test:${testId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("test_sessions")
-          .select("*")
-          .eq("id", testId)
-          .single();
-
-        if (error) {
-          if (error.code === "PGRST116") return null; // Not found
-          throw error;
-        }
-
-        // Check if test belongs to user
-        if (userId && data.user_id !== userId) {
-          return null; // Access denied
-        }
-
-        return data;
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return testsData.getTestById(
+      this.supabase,
+      testId,
+      userId,
+    );
   }
 
   /**
@@ -5066,99 +4678,63 @@ export class SupabaseService {
     testId: string,
     userId: string,
   ): Promise<{ session: any; access: "owner" | "group" } | null> {
-    const owned = await this.getTestById(testId, userId);
-    if (owned) return { session: owned, access: "owner" };
-
-    // Not the owner. The only other readable case is a group session whose
-    // group this caller belongs to; everything else stays a 404.
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .select("*")
-      .eq("id", testId)
-      .maybeSingle();
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-    if (!data) return null;
-
-    const groupId = data.config?.groupId;
-    if (typeof groupId !== "string" || !groupId) return null;
-    if (!(await this.isGroupMember(groupId, userId))) return null;
-
-    return { session: data, access: "group" };
+    return testsData.resolveTestSessionForCaller(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testId,
+      userId,
+    );
   }
 
   async createTest(testConfig: any, userId: string): Promise<any> {
-    // Check if this is a completed test session (has questions and user_answers)
-    const isCompletedSession =
-      testConfig.questions && testConfig.questions.length > 0;
-
-    const courseId = resolveCourseIdFromConfigLike(testConfig);
-    // Topic is validated against the course this session is filed under, so a
-    // wrong-course topic 400s before anything is written.
-    const topicId = await this.resolveArtefactTopic({
-      topicId: resolveTopicIdFromConfigLike(testConfig),
-      courseId,
-    });
-
-    /**
-     * The set this session was taken in.
-     *
-     * Read from the top-level field OR from the config, because the config is
-     * what every client create path already sends and the two doors must file
-     * a session the same way. Without this, `POST /tests` wrote no
-     * `study_set_id` at all: live, all 77 of an account's sessions had none,
-     * so every set room's Test tab — which lists by set — was permanently
-     * empty. `writeWithTopicFallback` drops the column if the study-sets
-     * migration has not been applied yet.
-     */
-    const studySetId = resolveStudySetIdFromConfigLike(testConfig);
-
-    const insertData: any = {
-      user_id: userId,
-      course_id: courseId,
-      ...(topicId !== undefined ? { topic_id: topicId } : {}),
-      ...(studySetId ? { study_set_id: studySetId } : {}),
-    };
-
-    if (isCompletedSession) {
-      // This is a completed test being saved
-      insertData.config = testConfig.config || testConfig;
-      insertData.questions = testConfig.questions || [];
-      insertData.user_answers = testConfig.user_answers || {};
-      insertData.start_time = testConfig.start_time;
-      insertData.end_time = testConfig.end_time;
-      insertData.is_offline = testConfig.is_offline || false;
-      insertData.status = "completed";
-      insertData.session_kind = testConfig.session_kind || testConfig.sessionKind || "test";
-      insertData.title = testConfig.title || null;
-      insertData.current_question_index =
-        typeof testConfig.current_question_index === "number"
-          ? testConfig.current_question_index
-          : 0;
-      insertData.updated_at = new Date().toISOString();
-    } else {
-      // This is a new test configuration
-      insertData.config = testConfig;
-      insertData.questions = [];
-      insertData.user_answers = {};
-      insertData.status = "in_progress";
-      insertData.session_kind = "test";
-      insertData.updated_at = new Date().toISOString();
-    }
-
-    const { data, error } = await writeWithTopicFallback(
-      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
-      insertData,
+    return testsData.createTest(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testConfig,
+      userId,
     );
-
-    if (error) throw error;
-
-    // Invalidate caches
-    await cacheService.deletePattern(`tests:${userId}:*`);
-
-    return data;
   }
 
   /**
@@ -5185,142 +4761,40 @@ export class SupabaseService {
     },
     userId: string,
   ): Promise<any> {
-    const courseId =
-      typeof payload.courseId === "string" && payload.courseId ? payload.courseId : null;
-    const topicId = await this.resolveArtefactTopic({
-      topicId: payload.topicId,
-      courseId,
-    });
-
-    const sourceNoteId =
-      typeof payload.sourceNoteId === "string" && payload.sourceNoteId
-        ? payload.sourceNoteId
-        : null;
-    // Resolve the note's title ONCE, here, so every later read is a plain
-    // config read. The client prints "From <title>" under a note quiz; without
-    // this the field was absent and the list rendered "From undefined".
-    // A client-supplied title is only a fallback, and only for a note the
-    // caller actually linked: it is never trusted over the note's own row.
-    const sourceNoteTitle = sourceNoteId
-      ? (await this.fetchNoteTitles([sourceNoteId], userId)).get(sourceNoteId) ??
-        normalizeSourceNoteTitle((payload.config as any)?.sourceNoteTitle)
-      : null;
-
-    // Same rule as the note above, one source over: the deck's OWN name wins
-    // over anything the client sent, and is resolved once at creation so every
-    // later read is a plain config read.
-    const sourceDeckId =
-      typeof payload.sourceDeckId === "string" && payload.sourceDeckId
-        ? payload.sourceDeckId
-        : null;
-    const sourceDeckTitle = sourceDeckId
-      ? ((await this.fetchDeckTitles([sourceDeckId], userId)).get(sourceDeckId) ??
-        normalizeSourceNoteTitle((payload.config as any)?.sourceDeckTitle))
-      : null;
-
-    const config = {
-      ...(payload.config && typeof payload.config === "object" ? payload.config : {}),
-      title: payload.title,
-      // The mobile Tests list names a session from `config.name` (then
-      // `testName`); without it a refetch renamed every note quiz "Untitled
-      // Test" the moment it left the client-side insert behind.
-      name: payload.title,
-      numberOfQuestions: payload.questions.length,
-      courseId,
-      // Provenance lives in config, not a column: no migration is needed for
-      // the note link, and the client reads it straight back off the session.
-      ...(sourceNoteId ? { sourceNoteId } : {}),
-      // Always written, so a client-supplied value can never outlive the
-      // resolved one (or survive on a test that links to no note at all).
-      sourceNoteTitle,
-      ...(sourceDeckId ? { sourceDeckId } : {}),
-      sourceDeckTitle,
-      ...(payload.sourceJobId ? { sourceJobId: payload.sourceJobId } : {}),
-      source: sourceNoteId
-        ? "note"
-        : sourceDeckId
-          ? "deck"
-          : (payload.config as any)?.source || "personal",
-    };
-
-    const studySetId =
-      typeof payload.studySetId === "string" && payload.studySetId ? payload.studySetId : null;
-
-    const { data, error } = await writeWithTopicFallback(
-      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
+    return testsData.createPersonalTest(
+      this.supabase,
       {
-        user_id: userId,
-        course_id: courseId,
-        ...(topicId !== undefined ? { topic_id: topicId } : {}),
-        ...(studySetId ? { study_set_id: studySetId } : {}),
-        config,
-        questions: payload.questions,
-        user_answers: {},
-        // No end_time and a non-empty question list is exactly what the mobile
-        // Tests list filters for; anything else would silently not appear.
-        status: "in_progress",
-        session_kind: "test",
-        title: payload.title,
-        current_question_index: 0,
-        is_offline: false,
-        updated_at: new Date().toISOString(),
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
+      payload,
+      userId,
     );
-
-    if (error) throw error;
-
-    await cacheService.deletePattern(`tests:${userId}:*`);
-
-    return data;
   }
 
   mapTestSessionRowToClient(session: any) {
-    const questions = Array.isArray(session.questions) ? session.questions : [];
-    // Legacy submit stored Object.values(userAnswers) as a JSON array; draft
-    // complete stores a Record. Coerce both so history hydrate keeps answers.
-    const answers = coerceRawUserAnswers(
-      session.user_answers ?? session.userAnswers,
-      questions,
+    return testsData.mapTestSessionRowToClient(
+      this.supabase,
+      session,
     );
-    return {
-      id: session.id,
-      config: session.config || {},
-      courseId: session.course_id ?? session.config?.courseId ?? null,
-      studySetId: session.study_set_id ?? session.config?.studySetId ?? null,
-      ...topicIdOf(session),
-      questions,
-      userAnswers: answers,
-      currentQuestionIndex: session.current_question_index || 0,
-      startTime: session.start_time ? new Date(session.start_time) : new Date(),
-      endTime: session.end_time ? new Date(session.end_time) : undefined,
-      remainingTime:
-        typeof session.remaining_time_seconds === "number"
-          ? session.remaining_time_seconds
-          : undefined,
-      isOffline: session.is_offline || false,
-      sessionKind: session.session_kind || "test",
-      status: session.status || "in_progress",
-      title: session.title || undefined,
-      updatedAt: session.updated_at || undefined,
-      pausedAt: session.paused_at || undefined,
-      userId: session.user_id,
-      // Everything a launch needs without a second read: how many questions
-      // there are, and where the test came from. `sourceNoteId` is how a
-      // generated quiz links back to the note that produced it.
-      questionCount: questions.length || session.config?.numberOfQuestions || 0,
-      sourceNoteId: session.config?.sourceNoteId ?? null,
-      /** @see mapTestListRow — same contract: a string or null, never absent. */
-      sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
-      sourceDeckId: session.config?.sourceDeckId ?? null,
-      sourceDeckTitle: normalizeSourceNoteTitle(session.config?.sourceDeckTitle),
-      sourceJobId: session.config?.sourceJobId ?? null,
-      /**
-       * Resolved source of the session — {noteId, deckId, groupId, title}, each
-       * a string or null. This is what a retake reads to name what it is
-       * relaunching; it never has to parse `config` itself.
-       */
-      provenance: buildTestProvenance(session),
-    };
   }
 
   /**
@@ -5333,30 +4807,11 @@ export class SupabaseService {
     noteIds: string[],
     userId: string,
   ): Promise<Map<string, string>> {
-    const titles = new Map<string, string>();
-    const ids = Array.from(
-      new Set(noteIds.filter((id): id is string => typeof id === "string" && !!id)),
+    return testsData.fetchNoteTitles(
+      this.supabase,
+      noteIds,
+      userId,
     );
-    if (ids.length === 0 || !userId) return titles;
-    try {
-      const { data, error } = await this.supabase
-        .from("notes")
-        .select("id, title")
-        .eq("user_id", userId)
-        .in("id", ids);
-      if (error) throw error;
-      for (const note of (data || []) as any[]) {
-        const title = normalizeSourceNoteTitle(note?.title);
-        if (note?.id && title) titles.set(String(note.id), title);
-      }
-    } catch (err) {
-      logger.warn("Could not resolve source note titles", {
-        userId,
-        count: ids.length,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return titles;
   }
 
   /**
@@ -5369,30 +4824,11 @@ export class SupabaseService {
     deckIds: string[],
     userId: string,
   ): Promise<Map<string, string>> {
-    const titles = new Map<string, string>();
-    const ids = Array.from(
-      new Set(deckIds.filter((id): id is string => typeof id === "string" && !!id)),
+    return testsData.fetchDeckTitles(
+      this.supabase,
+      deckIds,
+      userId,
     );
-    if (ids.length === 0 || !userId) return titles;
-    try {
-      const { data, error } = await this.supabase
-        .from("decks")
-        .select("id, name")
-        .eq("user_id", userId)
-        .in("id", ids);
-      if (error) throw error;
-      for (const deck of (data || []) as any[]) {
-        const title = normalizeSourceNoteTitle(deck?.name);
-        if (deck?.id && title) titles.set(String(deck.id), title);
-      }
-    } catch (err) {
-      logger.warn("Could not resolve source deck titles", {
-        userId,
-        count: ids.length,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return titles;
   }
 
   /**
@@ -5404,15 +4840,33 @@ export class SupabaseService {
     source: { noteId?: string | null; deckId?: string | null },
     userId: string,
   ): Promise<string | null> {
-    if (typeof source.noteId === "string" && source.noteId) {
-      const found = (await this.fetchNoteTitles([source.noteId], userId)).get(source.noteId);
-      if (found) return found;
-    }
-    if (typeof source.deckId === "string" && source.deckId) {
-      const found = (await this.fetchDeckTitles([source.deckId], userId)).get(source.deckId);
-      if (found) return found;
-    }
-    return null;
+    return testsData.resolvePersonalTestSourceTitle(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      source,
+      userId,
+    );
   }
 
   /**
@@ -5423,22 +4877,33 @@ export class SupabaseService {
   async attachSourceNoteTitles<
     T extends { sourceNoteId?: string | null; sourceNoteTitle?: string | null },
   >(rows: T[], userId: string): Promise<T[]> {
-    const missing = rows.filter(
-      (row) =>
-        row &&
-        typeof row.sourceNoteId === "string" &&
-        !!row.sourceNoteId &&
-        !row.sourceNoteTitle,
-    );
-    if (missing.length === 0) return rows;
-    const titles = await this.fetchNoteTitles(
-      missing.map((row) => row.sourceNoteId as string),
+    return testsData.attachSourceNoteTitles(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      rows,
       userId,
     );
-    for (const row of missing) {
-      row.sourceNoteTitle = titles.get(row.sourceNoteId as string) ?? null;
-    }
-    return rows;
   }
 
   async createTestDraft(
@@ -5462,46 +4927,33 @@ export class SupabaseService {
     },
     userId: string,
   ): Promise<any> {
-    const now = new Date().toISOString();
-    const courseId = resolveCourseIdFromConfigLike(payload);
-    // A paused session belongs to the room it was started in, exactly as a
-    // finished one does — otherwise resuming it would move it out of the set.
-    const studySetId = resolveStudySetIdFromConfigLike(payload);
-    const topicId = await this.resolveArtefactTopic({
-      topicId: resolveTopicIdFromConfigLike(payload),
-      courseId,
-    });
-    const insertData: any = {
-      user_id: userId,
-      config: payload.config || {},
-      course_id: courseId,
-      ...(topicId !== undefined ? { topic_id: topicId } : {}),
-      ...(studySetId ? { study_set_id: studySetId } : {}),
-      questions: Array.isArray(payload.questions) ? payload.questions : [],
-      user_answers: payload.user_answers || {},
-      start_time: payload.start_time || now,
-      end_time: null,
-      is_offline: payload.is_offline || false,
-      status: "in_progress",
-      session_kind: payload.session_kind === "study" ? "study" : "test",
-      current_question_index: Math.max(0, payload.current_question_index || 0),
-      remaining_time_seconds:
-        typeof payload.remaining_time_seconds === "number"
-          ? payload.remaining_time_seconds
-          : null,
-      title: payload.title || null,
-      updated_at: now,
-      paused_at: null,
-    };
-
-    const { data, error } = await writeWithTopicFallback(
-      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
-      insertData,
+    return testsData.createTestDraft(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      payload,
+      userId,
     );
-
-    if (error) throw error;
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    return this.mapTestSessionRowToClient(data);
   }
 
   async updateTestDraft(
@@ -5516,62 +4968,34 @@ export class SupabaseService {
       config?: Record<string, unknown>;
     },
   ): Promise<any | null> {
-    const existing = await this.getTestById(draftId, userId);
-    if (!existing) return null;
-    if (existing.status === "completed" || existing.status === "abandoned") {
-      throw new Error("Cannot update a finished session");
-    }
-    if (existing.end_time) {
-      throw new Error("Cannot update a finished session");
-    }
-
-    const now = new Date().toISOString();
-    const patch: any = { updated_at: now };
-    // Answers pass through untouched EXCEPT `confidence`, which is validated
-    // down to 'sure' | 'unsure' or removed. An unrecognised value stored here
-    // would be read back as a confidence level of its own by every analysis.
-    if (updates.user_answers !== undefined) {
-      patch.user_answers = sanitizeAnswerConfidences(updates.user_answers);
-    }
-    if (typeof updates.current_question_index === "number") {
-      patch.current_question_index = Math.max(0, updates.current_question_index);
-    }
-    if (updates.remaining_time_seconds !== undefined) {
-      patch.remaining_time_seconds = updates.remaining_time_seconds;
-    }
-    if (updates.title !== undefined) patch.title = updates.title;
-    if (updates.config && typeof updates.config === "object" && !Array.isArray(updates.config)) {
-      const existingConfig =
-        existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
-          ? existing.config
-          : {};
-      patch.config = { ...existingConfig, ...updates.config };
-    }
-    if (updates.status === "paused") {
-      patch.status = "paused";
-      patch.paused_at = now;
-    } else if (updates.status === "in_progress") {
-      patch.status = "in_progress";
-      patch.paused_at = null;
-    }
-
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update(patch)
-      .eq("id", draftId)
-      .eq("user_id", userId)
-      .in("status", ["in_progress", "paused"])
-      .is("end_time", null)
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) return null;
-
-    await cacheService.delete(`test:${draftId}`);
-    await cacheService.delete(`test:${draftId}:user:${userId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    return this.mapTestSessionRowToClient(data);
+    return testsData.updateTestDraft(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      draftId,
+      userId,
+      updates,
+    );
   }
 
   async completeTestDraft(
@@ -5589,163 +5013,72 @@ export class SupabaseService {
       surface?: LearningSurface;
     },
   ): Promise<any> {
-    const existing = await this.getTestById(draftId, userId);
-    if (!existing) throw new Error("Session not found");
-    if (existing.status === "completed") {
-      throw new Error("Session already completed");
-    }
-    if (existing.status === "abandoned") {
-      throw new Error("Session was abandoned");
-    }
-
-    const now = new Date().toISOString();
-    const answers = sanitizeAnswerConfidences(
-      options?.user_answers ?? existing.user_answers ?? {},
-    );
-    const sessionKind = existing.session_kind === "study" ? "study" : "test";
-    const existingConfig =
-      existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
-        ? existing.config
-        : {};
-    const configPatch =
-      options?.config && typeof options.config === "object" && !Array.isArray(options.config)
-        ? options.config
-        : null;
-    const nextConfig = configPatch ? { ...existingConfig, ...configPatch } : existingConfig;
-
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update({
-        user_answers: answers,
-        end_time: now,
-        status: "completed",
-        updated_at: now,
-        remaining_time_seconds: null,
-        paused_at: null,
-        ...(configPatch ? { config: nextConfig } : {}),
-      })
-      .eq("id", draftId)
-      .eq("user_id", userId)
-      .in("status", ["in_progress", "paused"])
-      .is("end_time", null)
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) throw new Error("Session already completed");
-
-    await cacheService.delete(`test:${draftId}`);
-    await cacheService.delete(`test:${draftId}:user:${userId}`);
-
-    if (sessionKind === "study") {
-      // Study sessions still affect lean history lists / draft caches.
-      await cacheService.deletePattern(`tests:${userId}:*`);
-      // learning_events: study sessions never reach createTestResult, so emit
-      // their question_answered rows here (same once-per-session guard).
-      await recordTestSessionAnswers(this, {
-        session: data,
-        userId,
-        surface: options?.surface ?? "api",
-      });
-      return {
-        session: this.mapTestSessionRowToClient(data),
-        sessionKind: "study",
-        score: null,
-        totalQuestions: Array.isArray(data.questions) ? data.questions.length : 0,
-        correctAnswersCount: null,
-      };
-    }
-
-    // createTestResult invalidates tests:${userId}:* after the score row lands.
-    const result = await this.createTestResult(
-      draftId,
+    return testsData.completeTestDraft(
+      this.supabase,
       {
-        score: options?.score ?? 0,
-        correctAnswersCount: options?.correctAnswersCount ?? 0,
-        totalQuestions:
-          options?.totalQuestions ??
-          (Array.isArray(data.questions) ? data.questions.length : 0),
-        activityDate: options?.activityDate,
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
+      draftId,
       userId,
-      { surface: options?.surface ?? "api" },
+      options,
     );
-
-    return {
-      session: this.mapTestSessionRowToClient(data),
-      sessionKind: "test",
-      ...result,
-    };
   }
 
   async abandonTestDraft(draftId: string, userId: string): Promise<boolean> {
-    const now = new Date().toISOString();
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update({
-        status: "abandoned",
-        updated_at: now,
-        remaining_time_seconds: null,
-      })
-      .eq("id", draftId)
-      .eq("user_id", userId)
-      .in("status", ["in_progress", "paused"])
-      .is("end_time", null)
-      .select("id")
-      .maybeSingle();
-
-    if (error) throw error;
-    await cacheService.delete(`test:${draftId}`);
-    await cacheService.delete(`test:${draftId}:user:${userId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    return !!data;
+    return testsData.abandonTestDraft(
+      this.supabase,
+      draftId,
+      userId,
+    );
   }
 
   async startTest(testId: string, userId: string): Promise<any | null> {
-    // Get test first
-    const test = await this.getTestById(testId, userId);
-    if (!test) return null;
-
-    // Check if test has already been started (has questions)
-    if (test.questions && test.questions.length > 0) {
-      throw new Error("Test has already been started");
-    }
-
-    // Generate questions based on config (simplified - in real app this would be more complex)
-    const questions = this.generateTestQuestions(test.config);
-
-    // RC-04: only the first start wins; empty questions array is the CAS precondition.
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update({
-        start_time: new Date().toISOString(),
-        questions,
-      })
-      .eq("id", testId)
-      .eq("user_id", userId)
-      .eq("questions", [])
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (!data) {
-      // Bypass stale pre-start cache from the concurrent loser path.
-      await cacheService.delete(`test:${testId}`);
-      await cacheService.delete(`test:${testId}:user:${userId}`);
-      const existing = await this.getTestById(testId, userId);
-      if (existing?.questions && existing.questions.length > 0) {
-        return existing;
-      }
-      throw new Error("Test has already been started");
-    }
-
-    // Invalidate caches
-    await cacheService.delete(`test:${testId}`);
-    await cacheService.delete(`test:${testId}:user:${userId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
-
-    return data;
+    return testsData.startTest(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testId,
+      userId,
+    );
   }
 
   async submitTest(
@@ -5753,66 +5086,34 @@ export class SupabaseService {
     userId: string,
     answers: any[],
   ): Promise<any> {
-    // Get test first
-    const test = await this.getTestById(testId, userId);
-    if (!test) throw new Error("Test not found");
-
-    // Calculate score
-    const score = this.calculateTestScore(test.questions, answers);
-    const correctAnswers = Math.round((score / 100) * test.questions.length);
-
-    // Atomic complete: only the first concurrent submit wins (CONC-02).
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update({
-        end_time: new Date().toISOString(),
-        // Array form preserved; only `confidence` is validated. @see sanitizeAnswerConfidences
-        user_answers: sanitizeAnswerConfidences(answers),
-        status: "completed",
-        updated_at: new Date().toISOString(),
-        remaining_time_seconds: null,
-        paused_at: null,
-      })
-      .eq("id", testId)
-      .eq("user_id", userId)
-      .is("end_time", null)
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) {
-      throw new Error("Test has already been completed");
-    }
-
-    // Upsert result — UNIQUE(session_id) prevents duplicates under races.
-    const { error: resultError } = await this.supabase
-      .from("test_results")
-      .upsert(
-        {
-          session_id: testId,
-          score,
-          total_questions: test.questions.length,
-          correct_answers_count: correctAnswers,
-        },
-        { onConflict: "session_id", ignoreDuplicates: true },
-      );
-
-    if (resultError) throw resultError;
-
-    // Update user stats
-    await this.updateUserStats(userId, score);
-
-    // Invalidate caches
-    await cacheService.delete(`test:${testId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    await cacheService.delete(`user:stats:${userId}`);
-
-    return {
-      test: data,
-      score,
-      totalQuestions: test.questions.length,
-      correctAnswers,
-    };
+    return testsData.submitTest(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testId,
+      userId,
+      answers,
+    );
   }
 
   async createTestResult(
@@ -5829,361 +5130,160 @@ export class SupabaseService {
       surface?: LearningSurface;
     } = {},
   ): Promise<any> {
-    let score = resultData.score;
-    let correctAnswersCount = resultData.correctAnswersCount;
-    let totalQuestions = resultData.totalQuestions;
-
-    const test = userId
-      ? await this.getTestById(testId, userId)
-      : await this.getTestById(testId);
-    if (test?.questions?.length && test.user_answers?.length) {
-      score = this.calculateTestScore(test.questions, test.user_answers);
-      totalQuestions = test.questions.length;
-      correctAnswersCount = Math.round((score / 100) * totalQuestions);
-    }
-
-    const { data, error } = await this.supabase
-      .from("test_results")
-      .upsert(
-        {
-          session_id: testId,
-          score,
-          correct_answers_count: correctAnswersCount,
-          total_questions: totalQuestions,
-        },
-        { onConflict: "session_id" },
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // learning_events: one question_answered per attempted answer. This is the
-    // single function both completion paths call (completeTestDraft and
-    // POST /tests/:id/results), and recordTestSessionAnswers dedupes on
-    // (user_id, session_id) so a session never emits twice. Never throws.
-    const eventUserId = userId || (test?.user_id as string | undefined);
-    if (test && eventUserId) {
-      await recordTestSessionAnswers(this, {
-        session: test,
-        userId: eventUserId,
-        surface: options.surface ?? "api",
-      });
-    }
-
-    // Invalidate caches. Dashboard Group Performance is built from lean completed
-    // history (`tests:${userId}:*` / `/dashboard/summary`), so drop those AFTER
-    // the result row exists — earlier deletes race with a refill that still
-    // lacks score/correctAnswersCount.
-    await cacheService.delete(`test:results:${testId}`);
-    if (userId) {
-      await cacheService.deletePattern(`tests:${userId}:*`);
-      await cacheService.deletePattern(`tests:stats:performance:${userId}:*`);
-      await cacheService.delete(`tests:stats:subject:${userId}`);
-    }
-
-    let gamification:
-      | {
-          points: number;
-          badges: User["badges"];
-          stats: UserStats;
-          awardedBadges: User["badges"];
-        }
-      | undefined;
-    if (userId) {
-      try {
-        gamification = await this.applyTestCompletionGamification(
-          userId,
-          resultData.activityDate,
-        );
-        await cacheService.invalidateUserCache(userId);
-      } catch (err) {
-        logger.warn("Test result gamification sync failed", {
-          userId,
-          testId,
-          err,
-        });
-      }
-    }
-
-    return gamification ? { ...data, gamification } : data;
+    return testsData.createTestResult(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testId,
+      resultData,
+      userId,
+      options,
+    );
   }
 
   async getTestResults(testId: string, userId?: string): Promise<any | null> {
-    const cacheKey = `test:results:${testId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("test_results")
-          .select("*")
-          .eq("session_id", testId)
-          .single();
-
-        if (error) {
-          if (error.code === "PGRST116") return null; // Not found
-          throw error;
-        }
-
-        // Check access if userId provided
-        const test = userId
-          ? await this.getTestById(testId, userId)
-          : await this.getTestById(testId);
-        if (userId && !test) return null;
-
-        // `correct_answers_count` alone cannot tell a client whether the rest
-        // were wrong or never reached, so every results screen guessed
-        // (total - correct) and called them all missed. The tally splits the
-        // three apart, and carries the confidence the student reported.
-        return { ...data, tally: buildAttemptTally(test) };
+    return testsData.getTestResults(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+      testId,
+      userId,
+    );
   }
 
   async getTestQuestions(testId: string, userId?: string): Promise<any[]> {
-    const cacheKey = `test:questions:${testId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const test = await this.getTestById(testId, userId);
-        if (!test) return [];
-
-        return test.questions || [];
+    return testsData.getTestQuestions(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+      testId,
+      userId,
+    );
   }
 
   async deleteTest(testId: string): Promise<boolean> {
-    // Delete test results first
-    const { error: resultsError } = await this.supabase
-      .from("test_results")
-      .delete()
-      .eq("session_id", testId);
-
-    if (resultsError) throw resultsError;
-
-    // Delete the test session
-    const { error } = await this.supabase
-      .from("test_sessions")
-      .delete()
-      .eq("id", testId);
-
-    if (error) throw error;
-
-    // Invalidate caches
-    await cacheService.delete(`test:${testId}`);
-    await cacheService.delete(`test:results:${testId}`);
-    await cacheService.delete(`test:questions:${testId}`);
-    await cacheService.deletePattern(`tests:*`);
-
-    return true;
+    return testsData.deleteTest(
+      this.supabase,
+      testId,
+    );
   }
 
   async deleteCompletedTestSession(
     sessionId: string,
     userId: string,
   ): Promise<boolean> {
-    const { data: session, error: fetchError } = await this.supabase
-      .from("test_sessions")
-      .select("id, user_id, end_time")
-      .eq("id", sessionId)
-      .maybeSingle();
-
-    if (fetchError) throw fetchError;
-    if (!session || session.user_id !== userId) return false;
-    if (!session.end_time) {
-      throw new Error("Cannot delete an in-progress test session");
-    }
-
-    return this.deleteTest(sessionId);
+    return testsData.deleteCompletedTestSession(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      sessionId,
+      userId,
+    );
   }
 
   async clearCompletedTestHistory(userId: string): Promise<number> {
-    const { data: sessions, error } = await this.supabase
-      .from("test_sessions")
-      .select("id")
-      .eq("user_id", userId)
-      .not("end_time", "is", null);
-
-    if (error) throw error;
-    if (!sessions?.length) return 0;
-
-    const sessionIds = sessions.map((row: { id: string }) => row.id);
-
-    const { error: resultsError } = await this.supabase
-      .from("test_results")
-      .delete()
-      .in("session_id", sessionIds);
-
-    if (resultsError) throw resultsError;
-
-    const { error: sessionsError } = await this.supabase
-      .from("test_sessions")
-      .delete()
-      .in("id", sessionIds);
-
-    if (sessionsError) throw sessionsError;
-
-    for (const sessionId of sessionIds) {
-      await cacheService.delete(`test:${sessionId}`);
-      await cacheService.delete(`test:results:${sessionId}`);
-      await cacheService.delete(`test:questions:${sessionId}`);
-    }
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    await cacheService.delete(`user:${userId}:test-results`);
-    await cacheService.delete(`tests:stats:subject:${userId}`);
-    await cacheService.deletePattern(`tests:stats:performance:${userId}:*`);
-    await cacheService.delete(`user:stats:${userId}`);
-
-    return sessionIds.length;
+    return testsData.clearCompletedTestHistory(
+      this.supabase,
+      userId,
+    );
   }
 
   async getSubjectStats(userId: string): Promise<any> {
-    const cacheKey = `tests:stats:subject:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("test_sessions")
-          .select(
-            `
-          config,
-          course_id,
-          test_results (score)
-        `,
-          )
-          .eq("user_id", userId)
-          .not("end_time", "is", null); // Only completed tests
-
-        if (error) throw error;
-
-        // Group by course (test_sessions.course_id; label = course code).
-        // Sessions without a course fall into "General". config.subject was
-        // never written by any client, so it is no longer consulted.
-        const courseIds = Array.from(
-          new Set(
-            (data || [])
-              .map((test: any) => test.course_id ?? test.config?.courseId)
-              .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
-          ),
-        );
-        const courseLabels = new Map<string, string>();
-        if (courseIds.length > 0) {
-          const { data: courseRows, error: courseError } = await this.supabase
-            .from("courses")
-            .select("id, code")
-            .in("id", courseIds);
-          if (!courseError && courseRows) {
-            for (const row of courseRows as Array<{ id: string; code: string }>) {
-              courseLabels.set(row.id, row.code);
-            }
-          }
-        }
-
-        const subjectStats: { [key: string]: any } = {};
-        data?.forEach((test: any) => {
-          const courseId: string | null =
-            test.course_id ?? test.config?.courseId ?? null;
-          const subject =
-            (courseId && courseLabels.get(courseId)) || "General";
-          const key = courseId && courseLabels.has(courseId) ? courseId : "general";
-          const score = test.test_results?.[0]?.score;
-          if (score !== undefined) {
-            if (!subjectStats[key]) {
-              subjectStats[key] = {
-                subject,
-                courseId: courseId && courseLabels.has(courseId) ? courseId : null,
-                testsTaken: 0,
-                averageScore: 0,
-                scores: [],
-              };
-            }
-            subjectStats[key].testsTaken++;
-            subjectStats[key].scores.push(score);
-          }
-        });
-
-        // Calculate averages
-        Object.values(subjectStats).forEach((stats: any) => {
-          stats.averageScore =
-            stats.scores.reduce(
-              (sum: number, score: number) => sum + score,
-              0,
-            ) / stats.scores.length;
-          delete stats.scores;
-        });
-
-        return Object.values(subjectStats);
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return testsData.getSubjectStats(
+      this.supabase,
+      userId,
+    );
   }
 
   async getPerformanceStats(
     userId: string,
     period: string = "month",
   ): Promise<any> {
-    const cacheKey = `tests:stats:performance:${userId}:${period}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Calculate date range based on period
-        const now = new Date();
-        let startDate: Date;
-
-        switch (period) {
-          case "week":
-            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            break;
-          case "month":
-            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            break;
-          case "year":
-            startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-            break;
-          default:
-            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        }
-
-        const { data, error } = await this.supabase
-          .from("test_sessions")
-          .select(
-            `
-          start_time,
-          test_results (score)
-        `,
-          )
-          .eq("user_id", userId)
-          .not("end_time", "is", null) // Only completed tests
-          .gte("start_time", startDate.toISOString());
-
-        if (error) throw error;
-
-        const scores =
-          data
-            ?.map((test: any) => test.test_results?.[0]?.score)
-            .filter((score) => score !== undefined) || [];
-        const averageScore =
-          scores.length > 0
-            ? scores.reduce((sum, score) => sum + score, 0) / scores.length
-            : 0;
-
-        return {
-          period,
-          testsTaken: scores.length,
-          averageScore: Math.round(averageScore * 100) / 100,
-          highestScore: scores.length > 0 ? Math.max(...scores) : 0,
-          lowestScore: scores.length > 0 ? Math.min(...scores) : 0,
-        };
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return testsData.getPerformanceStats(
+      this.supabase,
+      userId,
+      period,
+    );
   }
 
   async getTestTemplates(
@@ -6194,34 +5294,10 @@ export class SupabaseService {
       difficulty?: string;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20, subject, difficulty } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `tests:templates:${page}:${limit}:${subject || ""}:${difficulty || ""}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        let query = this.supabase.from("test_templates").select("*");
-
-        if (subject) {
-          query = query.eq("subject", subject);
-        }
-
-        if (difficulty) {
-          query = query.eq("difficulty", difficulty);
-        }
-
-        const { data, error } = await query
-          .order("created_at", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return data || [];
-      },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+    return testsData.getTestTemplates(
+      this.supabase,
+      options,
+    );
   }
 
   // ===========================================================================
