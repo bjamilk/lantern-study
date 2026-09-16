@@ -57,7 +57,7 @@ import type {
     UserAnswerRecord,
 } from '../types';
 import type { Location } from 'react-router-dom';
-import { COMMUNITY_COPY, studyGroupAnnouncement } from '@lantern/shared/network';
+import { COMMUNITY_COPY } from '@lantern/shared/network';
 import type { CommunityDetail, MyCommunity } from '@lantern/shared/network';
 import { isQuizzableNote, parseStudySetPath } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../services/ai';
@@ -66,6 +66,7 @@ import type { PendingFlashcardReview } from '@lantern/shared/utils/offlineReview
 import type { UserSettings } from '@lantern/shared/settings/userSettings';
 import { confirmDialog } from '../stores/confirmStore';
 import { sendMessage as sendGroupMessage } from '../services/supabase';
+import { announceStudyGroupToBoard } from '../utils/boardHandoff';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useLectureRecordingStore } from '../stores/lectureRecordingStore';
@@ -694,13 +695,7 @@ export const SCREEN_REGISTRY: Record<AppMode, ScreenEntry> = {
                             // leaves a plain TEXT pointer behind on that board, so
                             // the conversation keeps a link to what it produced.
                             // Fire-and-forget — the handoff must not wait on it.
-                            if (preset.announceInGroupId && currentUser) {
-                                void sendGroupMessage(
-                                    preset.announceInGroupId,
-                                    currentUser.id,
-                                    studyGroupAnnouncement(currentUser.name, group.name),
-                                ).catch(() => undefined);
-                            }
+                            announceStudyGroupToBoard(preset, currentUser, group.name, sendGroupMessage);
                             // The handoff is SHOWN, not inferred (§7): the user
                             // physically lands in the Chat tab, with a toast that
                             // says the group is also listed in the community.
