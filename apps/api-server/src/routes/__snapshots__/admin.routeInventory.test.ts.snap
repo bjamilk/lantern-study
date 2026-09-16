@@ -47,5 +47,6 @@ GET /jobs/companies [anon#0]
 PATCH /jobs/companies/:id/verification [anon#0]
 GET /jobs/reports [anon#0]
 PATCH /jobs/reports/:id [middleware, handleValidationErrors, anon#2]
-PATCH /jobs/postings/:id/school-approval [anon#0]"
+PATCH /jobs/postings/:id/school-approval [anon#0]
+USE / [adminErrorHandler]"
 `;

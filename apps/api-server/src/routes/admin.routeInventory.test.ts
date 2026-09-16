@@ -135,7 +135,13 @@ const DOCUMENTED_ADDITIONS: string[] = [];
  * middleware. An entry lands here in the same commit that introduces it, so
  * every non-route layer the refactor adds is a line a reviewer has to read.
  */
-const DOCUMENTED_USE_ADDITIONS: string[] = [];
+const DOCUMENTED_USE_ADDITIONS: string[] = [
+  // Step 2: the router-scoped error middleware that lets the 47 handlers drop
+  // their hand-rolled try/catch and use `asyncHandler` while still answering
+  // with this router's own body shape (`{success:false, error}`) rather than
+  // the global handler's (`{error, message, timestamp, path}`).
+  'USE / [adminErrorHandler]',
+];
 
 /**
  * Middleware-chain changes the refactor is allowed to have made. Empty by
