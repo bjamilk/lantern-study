@@ -15,6 +15,10 @@
  * This is the same family as every other site in #108, wearing a different
  * spelling. It gets its own commit because the spelling is the point: a
  * rejection handler that looks like error handling and is not.
+ *
+ * It stays BEST-EFFORT after the fix — the caller is already carrying the
+ * side-effect error, and that is the one that matters — but at ERROR level,
+ * because the note is the only trace that the cancellation did not finish.
  */
 import { scriptedDb, writePayload, type Call } from '../testSupport/scriptedDb';
 
@@ -111,18 +115,23 @@ describe('a cancel whose side effect failed', () => {
   });
 });
 
-describe('TODAY: the note write failing too', () => {
-  it('cannot run its own rejection handler, so nothing is said at all', async () => {
-    // `.then(undefined, handler)` waits for a rejection that never comes. The
-    // cancellation is half-finished, the note is missing, and the only record
-    // is the refund error the caller sees.
+describe('the note write failing too', () => {
+  it('reports at ERROR level and still rethrows the side-effect error', async () => {
+    // The note is the only trace that a cancelled order's refund or stock
+    // restore did not finish, so losing it silently is exactly the failure it
+    // exists to prevent. Still best-effort: the caller is already carrying the
+    // error that matters.
     const { run } = await cancelWith(true);
     await expect(run()).rejects.toThrow(/refund declined/);
-    expect(logger.error).not.toHaveBeenCalledWith(
-      'Failed to record cancellation note',
-      expect.anything(),
+    expect(logger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({
+        table: 'marketplace_orders',
+        orderId: 'ord_1',
+        reason: 'cancellation_note',
+        code: '40001',
+      }),
     );
-    expect(logger.error).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
   });
 });

@@ -71,6 +71,7 @@
 import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { cacheService } from './cache';
 import { logger } from '../utils/logger';
+import { bestEffortWrite } from './data/writeResult';
 import { isDigitalListingKind } from '@lantern/shared/marketplace';
 // PublicError messages survive production error masking (clientErrorMessage);
 // every throw in this service is written for the end user.
@@ -730,16 +731,28 @@ export class MarketplaceOrdersService {
           const note = `Cancelled, but a side effect failed: ${
             err instanceof Error ? err.message : String(err)
           }`.slice(0, 500);
-          await this.db
-            .from('marketplace_orders')
-            .update({ cancellation_note: note })
-            .eq('id', orderId)
-            .then(undefined, (noteErr: unknown) => {
-              logger.error('Failed to record cancellation note', {
-                orderId,
-                error: noteErr instanceof Error ? noteErr.message : String(noteErr),
-              });
-            });
+          // BEST EFFORT at ERROR level (#108). This used to end in
+          // `.then(undefined, handler)` — a REJECTION handler, on a call that
+          // never rejects, so the log it promised had never once run. The note
+          // is the only trace that a cancelled order's refund or stock restore
+          // did not finish, so losing it silently is exactly the failure it
+          // exists to prevent.
+          //
+          // Still best-effort: the caller is already carrying the side-effect
+          // error, and that is the one that matters.
+          bestEffortWrite(
+            await this.db
+              .from('marketplace_orders')
+              .update({ cancellation_note: note })
+              .eq('id', orderId),
+            {
+              table: 'marketplace_orders',
+              op: 'update',
+              orderId,
+              reason: 'cancellation_note',
+            },
+            'error',
+          );
           throw err;
         }
         break;
