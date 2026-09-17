@@ -169,6 +169,35 @@ interface AICompanionPanelProps {
   /** Show the close control on a rail so the note can take the column back. */
   closable?: boolean;
   /**
+   * What the close control does, when the host wants something other than
+   * shutting the companion.
+   *
+   * The set room COLLAPSES its rail rather than closing it (issue #105): the
+   * companion goes back to a 48px column the student can reopen, and the choice
+   * is remembered. Without this the only close a rail could offer was the
+   * store's, which the room cannot tell apart from "the student never opened
+   * it". Defaults to the store's `close`.
+   */
+  onClose?: () => void;
+  /** The close control's label, when "Close AI companion" is not what it does. */
+  closeLabel?: string;
+  /**
+   * Bump to move focus into the composer.
+   *
+   * `isOpen` already focuses on a false→true transition, which covers a
+   * companion that was shut. A DOCKED rail is different: it is mounted and may
+   * already be open, so "Ask Lantern" would otherwise leave focus on the tile
+   * that was clicked. A counter rather than a boolean, because the second ask
+   * has to move focus as much as the first.
+   */
+  focusComposerSignal?: number;
+  /**
+   * The overlay's scrim. The global companion's backdrop is `md:hidden` — a
+   * drawer that follows every screen must not dim the app it is describing —
+   * but the set room's overlay IS modal over the studio and says so.
+   */
+  drawerBackdropClassName?: string;
+  /**
    * Drawer width only. The global companion stays `max-w-sm`; Study can pass
    * a wider class so the chat matches the docked rail.
    */
@@ -295,7 +324,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   theme = 'light',
   variant = 'drawer',
   closable = false,
+  onClose,
+  closeLabel,
+  focusComposerSignal = 0,
   drawerMaxWidthClass = 'max-w-sm',
+  drawerBackdropClassName = 'bg-black/20 md:hidden',
   onTurnInto,
   turnIntoExisting,
   onTurnIntoMessage,
@@ -588,6 +621,15 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
+
+  // A host asking for focus explicitly. The effect above only fires on a
+  // false→true transition of `isOpen`, so a DOCKED rail that is already open
+  // would leave focus on the tile the student pressed — see `focusComposerSignal`.
+  useEffect(() => {
+    if (!focusComposerSignal) return;
+    const timer = setTimeout(() => inputRef.current?.focus(), 100);
+    return () => clearTimeout(timer);
+  }, [focusComposerSignal]);
 
   // Mirror of `input` for the callbacks that run outside render (dictation's
   // `onstop`, the failed-send restore) and would otherwise read a stale value.
@@ -1168,9 +1210,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             </button>
             {(variant !== 'rail' || closable) && (
             <button
-              onClick={close}
-              title="Close"
-              aria-label="Close AI companion"
+              onClick={onClose ?? close}
+              title={closeLabel ?? 'Close'}
+              aria-label={closeLabel ?? 'Close AI companion'}
               className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
             >
               <AppIcon name="close" size={20} />
@@ -1613,6 +1655,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   if (variant === 'rail') {
     return (
       <aside
+        // The id is the other half of the collapsed rail's `aria-controls`:
+        // the button says it controls this, and this is what appears.
+        id="ai-companion-panel"
         className={`h-full min-h-0 min-w-0 overflow-hidden flex flex-col ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
         aria-labelledby="ai-companion-title"
       >
@@ -1628,7 +1673,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
       ariaLabelledBy="ai-companion-title"
       maxWidthClass={drawerMaxWidthClass}
       zIndexClass="z-[70]"
-      backdropClassName="bg-black/20 md:hidden"
+      backdropClassName={drawerBackdropClassName}
       panelClassName={`!p-0 min-w-0 overflow-x-hidden shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
       loading={isSending}
       closeOnBackdrop={!isSending}
