@@ -21,6 +21,15 @@ Worse for tests: the ~60 route suites inject a bare stand-in into `initialize*Ro
 never load the real data modules. (b) would need `jest.mock('../services/data/<domain>')`
 per suite — a rewrite each. (a) leaves the seam alone: a suite regroups its `jest.fn()`s.
 
+### Follow-up, not fixed here
+
+`getClient()` escapes flip to `dataLayer.getClient()` unchanged — raw queries in
+route files, 84 sites: marketplace/offers 15, aiCompanion 11, users 8,
+gamification 8, budget 8, marketplace/seller 6, marketplace/listings 5,
+marketplace/orders 4, marketplace/discovery 4, groups 4, sitemap 3,
+marketplace/cart 2, auth 2, and one each in tests, marketplace/payments,
+analytics and ai. They belong in `services/data/*` like the admin queries did.
+
 ### Mock-update pattern (mechanical, one shape for every suite)
 
 ```ts
@@ -34,6 +43,9 @@ mod.initializeGroupRoutes({                 // was: { getGroupById, getUserById,
 The stubs are untouched; they move under the namespace that owns them.
 `jest.mock('../services/supabase', …)` is dropped from a flipped suite — the route no
 longer imports it (the `DataLayer` type import is erased at compile time).
+
+Where the stand-in is not a literal — a factory shared by twenty tests, or a `Proxy` —
+`stubDataLayer(flat)` (`services/data/testStub.ts`, test only) adapts it in one line.
 
 ### Not a god object
 
