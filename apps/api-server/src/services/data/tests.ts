@@ -50,8 +50,13 @@
  * `services/testProvenance.test.ts`, `testDraftLifecycle.test.ts` and
  * `learningEvents.test.ts` stub exactly these on a `SupabaseService` stand-in
  * and drive the entry point through `SupabaseService.prototype.<m>.call(self, …)`,
- * so a sibling call would step around the stub. The facade builds the `deps`
- * literal INLINE at each call site as arrows over `this`.
+ * so a sibling call would step around the stub.
+ *
+ * `deps` is built ONCE per domain in `data/index.ts`, as arrows that read
+ * through the layer at CALL time. (It used to be built INLINE by the
+ * `SupabaseService` facade, as arrows over `this`; the facade is deleted —
+ * monolith lane M3 — and the property that matters, late binding, is the
+ * same.)
  *
  * `deps.recordTestSessionAnswers` is the learning-events writer, narrowed
  * (monolith lane M3, Phase B) from the whole `SupabaseService` it used to be

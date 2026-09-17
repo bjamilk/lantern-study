@@ -47,8 +47,12 @@
  * `supabase.boardMessages.test.ts` and `learningEvents.test.ts` stub exactly
  * these on a `SupabaseService` stand-in and drive the entry point through
  * `SupabaseService.prototype.<m>.call(self, …)`, so a sibling call would step
- * around the stub. The facade builds the `deps` literal INLINE at each call
- * site as arrows over `this`.
+ * around the stub. *
+ * `deps` is built ONCE per domain in `data/index.ts`, as arrows that read
+ * through the layer at CALL time. (It used to be built INLINE by the
+ * `SupabaseService` facade, as arrows over `this`; the facade is deleted —
+ * monolith lane M3 — and the property that matters, late binding, is the
+ * same.)
  *
  * `deps.recordActivity` is the activity feed's `record`, narrowed (monolith
  * lane M3) from the whole `SupabaseService` the feed service takes. The lazy
