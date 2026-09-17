@@ -9,9 +9,6 @@ jest.mock('../middleware/auth', () => ({
     next();
   },
 }));
-jest.mock('../services/supabase', () => ({
-  SupabaseService: class {},
-}));
 
 import express from 'express';
 import http from 'http';

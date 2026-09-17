@@ -7,10 +7,10 @@
  * one mounted behind `optionalAuthMiddleware` + `applyPublicRateLimits`;
  * messages are not.
  *
- * Exports `initializeMessageRoutes(supabase, cache)`, called from server.ts
+ * Exports `initializeMessageRoutes(layer, cache)`, called from server.ts
  * boot, plus the router itself. Both service handles are module-level
  * singletons: a route that runs before initialization has an undefined
- * `supabaseService`.
+ * `dataLayer`.
  *
  * Rate limiting: the global tier only, except the three upload routes
  * (`/upload-image`, `/upload-audio`, `/upload-question-image`), which add
@@ -21,13 +21,13 @@
  * ---------------------------
  * Two levels, and the difference matters:
  *
- *  - `supabaseService.getAuthorizedGroupMessage(messageId, userId)` proves
+ *  - `dataLayer.groups.getAuthorizedGroupMessage(messageId, userId)` proves
  *    MEMBERSHIP only: it returns the row when the caller belongs to the
  *    message's group, whoever wrote it. It is the read/participate predicate —
  *    good enough for reacting, reposting, voting and bookmarking. It is NOT an
  *    ownership check.
  *  - author-or-group-admin (`row.sender_id === userId ||
- *    supabaseService.isGroupAdmin(row.group_id, userId)`) is the standard for
+ *    dataLayer.groups.isGroupAdmin(row.group_id, userId)`) is the standard for
  *    any WRITE onto someone else's message. Both `/:messageId/status` and
  *    `/:messageId/update` hold to it.
  *
@@ -89,7 +89,12 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePinMessage, validatePagination } from '../middleware/validation';
-import {
+import type { DataLayer } from '../services/data';
+// Type only (erased at compile time): the three result shapes are re-exported
+// by the facade for this file, and the five `services/*` collaborators below
+// still take the `SupabaseService` facade, so a flipped route hands them
+// `dataLayer.legacyService`.
+import type {
   BoardRepostResult,
   ChatMessageMutationResult,
   MessagePinResult,
@@ -188,12 +193,21 @@ const sendChatMutationResult = (
 };
 
 // Initialize services (will be injected in main server)
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
+// TRANSITIONAL (M2c): five collaborators in `services/` still take the whole
+// `SupabaseService` facade — `communityModeration`, `learningEvents`,
+// `messageReactions`, `activityFeed` and `learningConnections`. Until those
+// importers are flipped too, this route hands them `dataLayer.legacyService`.
+// Read through a function, not captured at init, so an overridden
+// `legacyService` on the injected layer is honoured. Seven call sites; they go
+// away with the facade.
+const legacyService = () => dataLayer.legacyService as SupabaseService;
+
 // Initialize function to be called from main server
-export const initializeMessageRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeMessageRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -235,7 +249,7 @@ router.get(
     const pattern = `%${q.replace(/[,()%_]/g, ' ').trim()}%`;
     if (pattern === '%%') return res.json({ results: [] });
 
-    const client = supabaseService.getClient();
+    const client = dataLayer.getClient();
 
     try {
       // --- resolve the group and thread scopes the caller may search ---
@@ -396,7 +410,7 @@ router.post(
     }
 
     try {
-      const result = await supabaseService.uploadChatImage({
+      const result = await dataLayer.uploads.uploadChatImage({
         fileName,
         base64Data,
         contentType: normalizedType,
@@ -445,7 +459,7 @@ router.post(
     }
 
     try {
-      const result = await supabaseService.uploadChatAudio({
+      const result = await dataLayer.uploads.uploadChatAudio({
         fileName,
         base64Data,
         contentType: resolvedType,
@@ -490,7 +504,7 @@ router.post(
     }
 
     try {
-      const result = await supabaseService.uploadQuestionImage({
+      const result = await dataLayer.uploads.uploadQuestionImage({
         fileName,
         base64Data,
         contentType: normalizedType,
@@ -531,7 +545,7 @@ router.get(
 
     logger.debug('Fetching user votes for group', { groupId, userId });
 
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -539,7 +553,7 @@ router.get(
       });
     }
 
-    const votes = await supabaseService.getUserVotesForGroup(groupId, userId);
+    const votes = await dataLayer.groupMessages.getUserVotesForGroup(groupId, userId);
 
     res.json({
       success: true,
@@ -570,7 +584,7 @@ router.get(
 
     logger.debug('Fetching group messages', { groupId, page: parsedPage, limit: parsedLimit, before, after, userId, profile, rootsOnly: parsedRootsOnly });
 
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -579,7 +593,7 @@ router.get(
     }
 
     // Service-layer cache holds unenriched rows; receipts are viewer-specific.
-    const messages = await supabaseService.getGroupMessages(groupId, {
+    const messages = await dataLayer.groupMessages.getGroupMessages(groupId, {
       page: parsedPage,
       limit: parsedLimit,
       before: before as string,
@@ -618,7 +632,7 @@ router.get(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -626,7 +640,7 @@ router.get(
       });
     }
 
-    const message = await supabaseService.getPinnedMessage(groupId);
+    const message = await dataLayer.chatSend.getPinnedMessage(groupId);
     res.json({ success: true, data: { message: message ?? null } });
   })
 );
@@ -649,7 +663,7 @@ router.put(
     const { messageId } = req.params;
     const pinned = req.body?.pinned === true;
 
-    const result: MessagePinResult = await supabaseService.setMessagePin(
+    const result: MessagePinResult = await dataLayer.chatSend.setMessagePin(
       messageId,
       userId,
       pinned
@@ -744,12 +758,12 @@ router.post(
     }
 
     // Same access rule as reading the board: an active membership, or 404.
-    const target = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    const target = await dataLayer.groups.getAuthorizedGroupMessage(messageId, userId);
     if (!target) {
       return res.status(404).json({ success: false, error: 'Post not found or access denied' });
     }
 
-    const result: BoardRepostResult = await supabaseService.createBoardRepost(
+    const result: BoardRepostResult = await dataLayer.boardActions.createBoardRepost(
       String((target as any).group_id),
       userId,
       messageId,
@@ -779,7 +793,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const result = await supabaseService.undoBoardRepost(req.params.messageId, userId);
+    const result = await dataLayer.boardActions.undoBoardRepost(req.params.messageId, userId);
     if (result.status !== 'ok') {
       return res.status(404).json({ success: false, error: 'Repost not found' });
     }
@@ -798,7 +812,7 @@ router.get(
 
     const limit = parseInt(String(req.query?.limit ?? ''), 10);
     const before = typeof req.query?.before === 'string' ? req.query.before : undefined;
-    const page = await supabaseService.listBookmarkedPosts(userId, {
+    const page = await dataLayer.boardActions.listBookmarkedPosts(userId, {
       limit: Number.isFinite(limit) ? limit : undefined,
       before,
     });
@@ -829,7 +843,7 @@ router.put(
         error: `Import at most ${BOARD_BOOKMARK_IMPORT_MAX} bookmarks at a time`,
       });
     }
-    const result = await supabaseService.importMessageBookmarks(
+    const result = await dataLayer.boardActions.importMessageBookmarks(
       userId,
       raw.filter((id: unknown): id is string => typeof id === 'string')
     );
@@ -855,11 +869,11 @@ router.get(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const isMember = await supabaseService.isGroupMember(groupId, userId);
+    const isMember = await dataLayer.groups.isGroupMember(groupId, userId);
     if (!isMember) {
       return res.status(404).json({ success: false, error: 'Group not found' });
     }
-    const data = await supabaseService.getBookmarkedMessageIdsForGroup(groupId, userId);
+    const data = await dataLayer.boardActions.getBookmarkedMessageIdsForGroup(groupId, userId);
     return res.json({ success: true, data });
   })
 );
@@ -875,7 +889,7 @@ router.put(
     if (!userId) return;
 
     const bookmarked = req.body?.bookmarked === true;
-    const result = await supabaseService.setMessageBookmark(
+    const result = await dataLayer.boardActions.setMessageBookmark(
       req.params.messageId,
       userId,
       bookmarked
@@ -912,7 +926,7 @@ router.get(
     if (!userId) return;
 
     const { groupId, rootId } = req.params;
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -920,7 +934,7 @@ router.get(
       });
     }
 
-    const messages = await supabaseService.getGroupThread(groupId, rootId, userId);
+    const messages = await dataLayer.chatSend.getGroupThread(groupId, rootId, userId);
     res.json({
       success: true,
       data: messages,
@@ -942,7 +956,7 @@ router.get(
 
     logger.debug('Fetching user votes for group', { groupId, userId });
 
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -950,7 +964,7 @@ router.get(
       });
     }
 
-    const votes = await supabaseService.getUserVotesForGroup(groupId, userId);
+    const votes = await dataLayer.groupMessages.getUserVotesForGroup(groupId, userId);
 
     res.json({
       success: true,
@@ -983,7 +997,7 @@ router.post(
 
     logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId, clientMessageId });
 
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1008,7 +1022,7 @@ router.post(
       }
     }
 
-    const message = await supabaseService.sendMessage(groupId, userId, content, clientMessageId, {
+    const message = await dataLayer.chatSend.sendMessage(groupId, userId, content, clientMessageId, {
       // Written on BOARDS only — the service re-checks `board.isBoard`, so the
       // same call against a group chat ignores it rather than 400ing.
       imageUrl: typeof imageUrl === 'string' && imageUrl ? imageUrl : undefined,
@@ -1041,7 +1055,7 @@ router.post(
       postKind === 'announcement' &&
       (group as { communityId?: string | null })?.communityId
     ) {
-      await getCommunityModerationService(supabaseService)
+      await getCommunityModerationService(legacyService())
         .enforceAnnouncementCap((group as { communityId: string }).communityId)
         .catch(() => []);
     }
@@ -1055,7 +1069,7 @@ router.post(
     // learning_events: group_question_posted (type QUESTION only; plain chat
     // is not learning activity). course_id from the group. Never throws.
     if (String(message?.type || '').toUpperCase() === 'QUESTION') {
-      await recordLearningEvent(supabaseService, {
+      await recordLearningEvent(legacyService(), {
         userId,
         eventType: 'group_question_posted',
         targetType: 'question',
@@ -1095,7 +1109,7 @@ router.get(
     try {
       // participant_ids is jsonb — pass a JSON string so PostgREST uses cs.["uuid"]
       // (a JS array becomes Postgres {uuid} and fails with 22P02 invalid json).
-      const { data: threads, error } = await supabaseService.getClient()
+      const { data: threads, error } = await dataLayer.getClient()
         .from('dm_threads')
         .select('id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by, history_cleared_at, status, requested_by')
         .contains('participant_ids', JSON.stringify([userId]))
@@ -1133,7 +1147,7 @@ router.get(
 
       let profilesMap: Record<string, any> = {};
       if (otherUserIds.length > 0) {
-        const { data: profiles } = await supabaseService.getClient()
+        const { data: profiles } = await dataLayer.getClient()
           .from('profiles')
           .select('id, name, avatar_url')
           .in('id', otherUserIds);
@@ -1205,7 +1219,7 @@ router.post(
     if (!userId) return;
     const { threadId } = req.params;
     try {
-      const data = await supabaseService.acceptDmMessageRequest(threadId, userId);
+      const data = await dataLayer.directMessages.acceptDmMessageRequest(threadId, userId);
       res.json({ success: true, data });
     } catch (error: any) {
       const msg = error?.message || 'Failed to accept message request';
@@ -1225,7 +1239,7 @@ router.post(
     if (!userId) return;
     const { threadId } = req.params;
     try {
-      const data = await supabaseService.declineDmMessageRequest(threadId, userId);
+      const data = await dataLayer.directMessages.declineDmMessageRequest(threadId, userId);
       res.json({ success: true, data });
     } catch (error: any) {
       const msg = error?.message || 'Failed to decline message request';
@@ -1252,7 +1266,7 @@ router.get(
         return res.json({ success: true, data: cached });
       }
 
-      const unreadCounts = await supabaseService.getAllDMUnreadCounts(userId);
+      const unreadCounts = await dataLayer.readState.getAllDMUnreadCounts(userId);
       await cacheService.set(cacheKey, unreadCounts, CacheTTL.unreadCounts);
 
       res.json({
@@ -1280,7 +1294,7 @@ router.get(
 
     const { threadId, rootId } = req.params;
     try {
-      const messages = await supabaseService.getDmThread(threadId, rootId, userId);
+      const messages = await dataLayer.chatSend.getDmThread(threadId, rootId, userId);
       res.json({
         success: true,
         data: messages,
@@ -1306,7 +1320,7 @@ router.post(
 
       const { threadId } = req.params;
 
-      const result = await supabaseService.markDMAsRead(threadId, userId);
+      const result = await dataLayer.readState.markDMAsRead(threadId, userId);
 
       res.json({
         success: result.success,
@@ -1336,7 +1350,7 @@ router.put(
 
       const { threadId } = req.params;
 
-      const success = await supabaseService.archiveDmThread(threadId, userId);
+      const success = await dataLayer.readState.archiveDmThread(threadId, userId);
       if (!success) {
         return res.status(404).json({ success: false, error: 'DM thread not found or you are not a participant' });
       }
@@ -1357,7 +1371,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { threadId } = req.params;
-    const status = await supabaseService.getChatMute(userId, 'dm', threadId);
+    const status = await dataLayer.readState.getChatMute(userId, 'dm', threadId);
     res.json({ success: true, data: status });
   })
 );
@@ -1377,7 +1391,7 @@ router.put(
         error: 'Provide duration (1h|8h|24h|7d) or durationMinutes (1-43200)',
       });
     }
-    const result = await supabaseService.setChatMute(
+    const result = await dataLayer.readState.setChatMute(
       userId,
       'dm',
       threadId,
@@ -1401,7 +1415,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { threadId } = req.params;
-    const success = await supabaseService.clearChatMute(userId, 'dm', threadId);
+    const success = await dataLayer.readState.clearChatMute(userId, 'dm', threadId);
     if (!success) {
       return res.status(404).json({
         success: false,
@@ -1423,7 +1437,7 @@ router.put(
 
       const { threadId } = req.params;
 
-      const success = await supabaseService.unarchiveDmThread(threadId, userId);
+      const success = await dataLayer.readState.unarchiveDmThread(threadId, userId);
       if (!success) {
         return res.status(404).json({ success: false, error: 'DM thread not found' });
       }
@@ -1447,7 +1461,7 @@ router.delete(
 
       const { threadId } = req.params;
 
-      const success = await supabaseService.deleteDmThread(threadId, userId);
+      const success = await dataLayer.readState.deleteDmThread(threadId, userId);
 
       if (!success) {
         return res.status(404).json({
@@ -1500,7 +1514,7 @@ router.put(
       });
     }
 
-    const result = await supabaseService.editChatMessage('dm', messageId, userId, content);
+    const result = await dataLayer.groupMessages.editChatMessage('dm', messageId, userId, content);
     return sendChatMutationResult(res, result, 'edited');
   })
 );
@@ -1515,7 +1529,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const result = await supabaseService.removeChatMessage(
+    const result = await dataLayer.groupMessages.removeChatMessage(
       'dm',
       req.params.messageId,
       userId
@@ -1542,7 +1556,7 @@ router.get(
     let message = await cacheService.get(cacheKey);
 
     if (!message) {
-      message = await supabaseService.getMessageById(messageId, userId);
+      message = await dataLayer.groupMessages.getMessageById(messageId, userId);
 
       if (!message) {
         return res.status(404).json({
@@ -1559,7 +1573,7 @@ router.get(
       if (senderId !== userId) {
         const groupId = msg.groupId ?? msg.group_id;
         if (groupId) {
-          const group = await supabaseService.getGroupById(String(groupId), userId);
+          const group = await dataLayer.groups.getGroupById(String(groupId), userId);
           if (!group) {
             return res.status(403).json({ success: false, error: 'Access denied' });
           }
@@ -1595,7 +1609,7 @@ router.put(
       });
     }
 
-    const result = await supabaseService.editChatMessage('group', messageId, userId, content);
+    const result = await dataLayer.groupMessages.editChatMessage('group', messageId, userId, content);
     return sendChatMutationResult(res, result, 'edited');
   })
 );
@@ -1610,7 +1624,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const result = await supabaseService.removeChatMessage(
+    const result = await dataLayer.groupMessages.removeChatMessage(
       'group',
       req.params.messageId,
       userId
@@ -1650,7 +1664,7 @@ router.get(
 
     try {
       // Receipts are viewer-specific; do not serve a shared cache of enriched DMs.
-      const messages = await supabaseService.getDirectMessages(
+      const messages = await dataLayer.directMessages.getDirectMessages(
         authUserId,
         otherUserId as string,
         {
@@ -1717,7 +1731,7 @@ router.post(
     }
 
     try {
-      const message = await supabaseService.sendDirectMessage(senderId, recipientId, content, {
+      const message = await dataLayer.directMessages.sendDirectMessage(senderId, recipientId, content, {
         clientMessageId,
         replyToMessageId: typeof replyToMessageId === 'string' ? replyToMessageId : undefined,
       });
@@ -1771,12 +1785,12 @@ router.post(
       });
     }
 
-    const authorized = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    const authorized = await dataLayer.groups.getAuthorizedGroupMessage(messageId, userId);
     if (!authorized) {
       return res.status(404).json({ success: false, error: 'Message not found' });
     }
 
-    const result = await supabaseService.voteQuestion(messageId, userId, voteType);
+    const result = await dataLayer.groupMessages.voteQuestion(messageId, userId, voteType);
 
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
@@ -1786,7 +1800,7 @@ router.post(
     // 'up' counts. Actor = the question's author (they did the helping).
     if (voteType === 'up' && authorized.sender_id) {
       const { getLearningConnectionsService } = await import('../services/learningConnections');
-      await getLearningConnectionsService(supabaseService).record({
+      await getLearningConnectionsService(legacyService()).record({
         actorId: authorized.sender_id,
         beneficiaryId: userId,
         kind: 'question_voted',
@@ -1814,12 +1828,12 @@ router.delete(
 
     logger.debug('Removing vote from message', { messageId, userId });
 
-    const authorized = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    const authorized = await dataLayer.groups.getAuthorizedGroupMessage(messageId, userId);
     if (!authorized) {
       return res.status(404).json({ success: false, error: 'Message not found' });
     }
 
-    const result = await supabaseService.removeVote(messageId, userId);
+    const result = await dataLayer.groupMessages.removeVote(messageId, userId);
 
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
@@ -1854,9 +1868,9 @@ router.delete(
 // path, not just the SQL.
 // ===========================================================================
 async function authorizeReactionTarget(messageId: string, userId: string) {
-  const group = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+  const group = await dataLayer.groups.getAuthorizedGroupMessage(messageId, userId);
   if (group) return { scope: 'group' as const, groupId: (group as any).group_id ?? null };
-  const dm = await supabaseService.getAuthorizedDmMessage(messageId, userId);
+  const dm = await dataLayer.groups.getAuthorizedDmMessage(messageId, userId);
   if (dm) return { scope: 'dm' as const, threadId: dm.threadId };
   return null;
 }
@@ -1886,8 +1900,8 @@ router.post(
       return res.status(404).json({ success: false, error: 'Message not found' });
     }
 
-    const existing = await supabaseService.countDistinctReactionEmoji(messageId, target.scope);
-    const already = await supabaseService.readMessageReactions(messageId, target.scope);
+    const existing = await dataLayer.groupMessages.countDistinctReactionEmoji(messageId, target.scope);
+    const already = await dataLayer.groupMessages.readMessageReactions(messageId, target.scope);
     if (
       existing >= CHAT_REACTION_MAX_DISTINCT_PER_MESSAGE &&
       !(emoji in already.reactions)
@@ -1900,7 +1914,7 @@ router.post(
 
     try {
       const result = await addMessageReaction(
-        supabaseService,
+        legacyService(),
         messageId,
         userId,
         emoji,
@@ -1948,7 +1962,7 @@ router.delete(
 
     try {
       const result = await removeMessageReaction(
-        supabaseService,
+        legacyService(),
         messageId,
         userId,
         emoji,
@@ -1978,11 +1992,11 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { groupId } = req.params;
-    const isMember = await supabaseService.isGroupMember(groupId, userId);
+    const isMember = await dataLayer.groups.isGroupMember(groupId, userId);
     if (!isMember) {
       return res.status(404).json({ success: false, error: 'Group not found' });
     }
-    const data = await supabaseService.getUserReactionsForGroup(groupId, userId);
+    const data = await dataLayer.groupMessages.getUserReactionsForGroup(groupId, userId);
     res.json({ success: true, data });
   })
 );
@@ -1995,11 +2009,11 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { threadId } = req.params;
-    const allowed = await supabaseService.isDmThreadParticipant(threadId, userId);
+    const allowed = await dataLayer.groups.isDmThreadParticipant(threadId, userId);
     if (!allowed) {
       return res.status(404).json({ success: false, error: 'Conversation not found' });
     }
-    const data = await supabaseService.getUserReactionsForThread(threadId, userId);
+    const data = await dataLayer.groupMessages.getUserReactionsForThread(threadId, userId);
     res.json({ success: true, data });
   })
 );
@@ -2037,13 +2051,13 @@ router.put(
       });
     }
 
-    const authorized = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    const authorized = await dataLayer.groups.getAuthorizedGroupMessage(messageId, userId);
     if (!authorized) {
       return res.status(404).json({ success: false, error: 'Message not found' });
     }
 
     const isSender = authorized.sender_id === userId;
-    const isAdmin = await supabaseService.isGroupAdmin(authorized.group_id, userId);
+    const isAdmin = await dataLayer.groups.isGroupAdmin(authorized.group_id, userId);
     if (!isSender && !isAdmin) {
       return res.status(403).json({
         success: false,
@@ -2060,7 +2074,7 @@ router.put(
     // that status; there is no backfill and no migration.
     let peerUpvotes: number | undefined;
     if (questionStatus === 'VERIFIED') {
-      peerUpvotes = await supabaseService.countPeerUpvotesForMessage(
+      peerUpvotes = await dataLayer.groupMessages.countPeerUpvotesForMessage(
         messageId,
         authorized.sender_id
       );
@@ -2073,7 +2087,7 @@ router.put(
       }
     }
 
-    const result = await supabaseService.updateQuestionStatus(messageId, questionStatus);
+    const result = await dataLayer.groupMessages.updateQuestionStatus(messageId, questionStatus);
 
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);
@@ -2082,7 +2096,7 @@ router.put(
     // on VERIFIED — an answer being confirmed correct is the newsworthy moment.
     if (questionStatus === 'VERIFIED' && authorized.type === 'QUESTION') {
       const { getActivityFeedService } = await import('../services/activityFeed');
-      await getActivityFeedService(supabaseService).record({
+      await getActivityFeedService(legacyService()).record({
         actorId: userId,
         verb: 'answered_question',
         objectType: 'question',
@@ -2101,7 +2115,7 @@ router.put(
     // question_verified connection.
     if (questionStatus === 'VERIFIED' && authorized.type === 'QUESTION' && authorized.sender_id) {
       const { getLearningConnectionsService } = await import('../services/learningConnections');
-      await getLearningConnectionsService(supabaseService).record({
+      await getLearningConnectionsService(legacyService()).record({
         actorId: authorized.sender_id,
         beneficiaryId: userId,
         kind: 'question_verified',
@@ -2140,7 +2154,7 @@ router.put(
 
     logger.debug('Updating message', { messageId, userId });
 
-    const authorized = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
+    const authorized = await dataLayer.groups.getAuthorizedGroupMessage(messageId, userId);
     if (!authorized) {
       return res.status(404).json({ success: false, error: 'Message not found' });
     }
@@ -2157,7 +2171,7 @@ router.put(
     // write on someone else's message: hold it to the same author-or-admin
     // rule the /status route above uses.
     const isSender = authorized.sender_id === userId;
-    const isAdmin = await supabaseService.isGroupAdmin(authorized.group_id, userId);
+    const isAdmin = await dataLayer.groups.isGroupAdmin(authorized.group_id, userId);
     if (!isSender && !isAdmin) {
       return res.status(403).json({
         success: false,
@@ -2165,7 +2179,7 @@ router.put(
       });
     }
 
-    const result = await supabaseService.updateMessageFlagged(messageId, flagIds);
+    const result = await dataLayer.groupMessages.updateMessageFlagged(messageId, flagIds);
 
     // Invalidate message cache
     await cacheService.delete(`message:${messageId}`);

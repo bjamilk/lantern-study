@@ -22,9 +22,6 @@ jest.mock('../middleware/auth', () => ({
     next();
   },
 }));
-jest.mock('../services/supabase', () => ({
-  SupabaseService: class {},
-}));
 jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
@@ -84,10 +81,8 @@ describe('PUT /messages/:messageId/status — peer verification', () => {
     const mod = require('./messages');
     mod.initializeMessageRoutes(
       {
-        getAuthorizedGroupMessage,
-        isGroupAdmin,
-        countPeerUpvotesForMessage,
-        updateQuestionStatus,
+        groups: { getAuthorizedGroupMessage, isGroupAdmin },
+        groupMessages: { countPeerUpvotesForMessage, updateQuestionStatus },
         getClient: () => {
           throw new Error('routes must not touch the database directly');
         },
