@@ -491,7 +491,11 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   // supabase.ts into the users repository (monolith lane M1b, step 6). Same
   // query, new file: the row moved with it rather than the count changing.
   'services/data/users.ts::groups': 1,
-  'services/supabase.ts::notes': 1,
+  // `getNotes`' note_collaborators->notes embed, moved verbatim out of
+  // supabase.ts into the notes repository (monolith lane M1g, step 18) with
+  // the NOTES section it sat in. Same query, new file: the row moved with it
+  // rather than the count changing — supabase.ts drops to zero.
+  'services/data/notes.ts::notes': 1,
   'services/supabase.ts::test_results': 1,
   // Two of the four `test_sessions->test_results` embeds moved verbatim out of
   // supabase.ts into the tests repository (monolith lane M1c, step 11). Same
@@ -734,9 +738,14 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
     // note_collaborators -> profiles and message_bookmarks -> messages were the
     // two latent single-FK embeds fixed with the guard. If either reverts to a
     // bare form it will reappear in the scan; pin the named forms directly too.
-    expect(supabase).toContain('profiles!note_collaborators_user_id_fkey(');
+    // The note_collaborators -> profiles embed moved verbatim into the notes
+    // repository with `getNoteCollaborators` (monolith lane M1g, step 18), so
+    // it is pinned where the query now lives. The pin moved with the code;
+    // neither embed stopped being checked.
+    const notes = readFileSync(join(API_SRC, 'services/data/notes.ts'), 'utf8');
+    expect(notes).toContain('profiles!note_collaborators_user_id_fkey(');
     expect(boardActions).toContain('messages!message_bookmarks_message_id_fkey!inner(');
-    expect(supabase).not.toContain('.select("*, profiles(id, name, avatar_url)")');
+    expect(notes).not.toContain('.select("*, profiles(id, name, avatar_url)")');
     expect(boardActions).not.toContain('.select("message_id, messages!inner(group_id)")');
   });
 });
