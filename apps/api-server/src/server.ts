@@ -262,19 +262,19 @@ async function initializeServices() {
     initializeUserRoutes(supabaseService, cacheService);
     initializeGroupRoutes(dataLayer, cacheService);
     initializeMessageRoutes(supabaseService, cacheService);
-    initializeNotificationRoutes(supabaseService, cacheService);
+    initializeNotificationRoutes(dataLayer, cacheService);
     initializeTestRoutes(supabaseService, cacheService);
-    initializeGamificationRoutes(supabaseService, cacheService);
+    initializeGamificationRoutes(dataLayer, cacheService);
     initializeDeckRoutes(supabaseService, cacheService);
     initializeFlashcardRoutes(supabaseService, cacheService);
     initializeUserStatsRoutes(dataLayer, cacheService);
     initializeDashboardRoutes(dataLayer, cacheService);
     initializePreferencesRoutes(dataLayer, cacheService);
     initializeMarketplaceRoutes(supabaseService, cacheService);
-    initializePaystackWebhookRoutes(supabaseService);
+    initializePaystackWebhookRoutes(dataLayer);
     initializeJobsBoardRoutes(supabaseService, cacheService);
     initializeSitemapRoutes(dataLayer, cacheService);
-    initializeOfflineBundlesRoutes(supabaseService, cacheService);
+    initializeOfflineBundlesRoutes(dataLayer, cacheService);
     initializeAdminRoutes(supabaseService, cacheService);
     initializeAICompanionRoutes(supabaseService);
     initializeAIRoutes(supabaseService);
@@ -282,7 +282,7 @@ async function initializeServices() {
     initializeNotesRoutes(supabaseService, cacheService);
     initializeChallengeRoutes(supabaseService, cacheService);
     initializeAuthRoutes(supabaseService, cacheService);
-    initializeStorageRoutes(supabaseService);
+    initializeStorageRoutes(dataLayer);
     initializeAnalyticsRoutes(dataLayer);
     initializeCourseRoutes(dataLayer, cacheService);
     initializeUserCourseRoutes(dataLayer, cacheService);
@@ -308,7 +308,7 @@ async function initializeServices() {
     initializeRecurringBudgetService(supabaseService);
 
     const { initializeBudgetRoutes } = await import('./routes/budget');
-    initializeBudgetRoutes(supabaseService, cacheService);
+    initializeBudgetRoutes(dataLayer, cacheService);
 
     // Background cron: run in-process only when BullMQ is off. With BullMQ
     // enabled the dedicated worker owns these, and starting them here too would

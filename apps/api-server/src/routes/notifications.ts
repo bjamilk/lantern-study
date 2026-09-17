@@ -5,7 +5,7 @@ import { handleValidationErrors, validateCreateNotification, validatePagination 
 import { requireAuthUserId } from '../utils/requestAuth';
 import { assertLivePlatformAdmin, isLivePlatformAdmin } from '../utils/platformAdminAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { Notification } from '../types/index';
@@ -13,12 +13,12 @@ import { Notification } from '../types/index';
 const router = Router();
 
 // Initialize services (will be injected in main server)
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
 // Initialize function to be called from main server
-export const initializeNotificationRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeNotificationRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -50,7 +50,7 @@ router.get(
     let notifications = await cacheService.get(cacheKey) as Notification[];
 
     if (!notifications) {
-      notifications = await supabaseService.getUserNotifications(userId, {
+      notifications = await dataLayer.notifications.getUserNotifications(userId, {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         unreadOnly: unreadOnly === 'true',
@@ -87,7 +87,7 @@ router.get(
     let stats = await cacheService.get(cacheKey);
 
     if (!stats) {
-      stats = await supabaseService.getNotificationStats(userId);
+      stats = await dataLayer.notifications.getNotificationStats(userId);
 
       // Cache for 1 minute (stats change frequently)
       await cacheService.set(cacheKey, stats, 60);
@@ -116,7 +116,7 @@ router.get(
     let notification = await cacheService.get(cacheKey);
 
     if (!notification) {
-      notification = await supabaseService.getNotificationById(notificationId, userId);
+      notification = await dataLayer.notifications.getNotificationById(notificationId, userId);
 
       if (!notification) {
         return res.status(404).json({
@@ -156,7 +156,7 @@ router.post(
     if (targetUserId && targetUserId !== requestingUserId) {
       if (await isLivePlatformAdmin(requestingUserId)) {
         finalUserId = targetUserId;
-      } else if (await supabaseService.canNotifyUser(requestingUserId, targetUserId, link)) {
+      } else if (await dataLayer.groups.canNotifyUser(requestingUserId, targetUserId, link)) {
         finalUserId = targetUserId;
       } else {
         return res.status(403).json({
@@ -166,7 +166,7 @@ router.post(
       }
     }
 
-    const notification = await supabaseService.createNotification(finalUserId, {
+    const notification = await dataLayer.notifications.createNotification(finalUserId, {
       message,
       link,
       type,
@@ -194,7 +194,7 @@ router.put(
 
     logger.debug('Marking notification as read', { notificationId, userId });
 
-    const notification = await supabaseService.getNotificationById(notificationId, userId);
+    const notification = await dataLayer.notifications.getNotificationById(notificationId, userId);
     if (!notification) {
       return res.status(404).json({
         success: false,
@@ -210,7 +210,7 @@ router.put(
       });
     }
 
-    const updatedNotification = await supabaseService.markNotificationAsRead(notificationId);
+    const updatedNotification = await dataLayer.notifications.markNotificationAsRead(notificationId);
 
     // Invalidate caches
     await invalidateNotificationCaches(userId, notificationId);
@@ -232,7 +232,7 @@ router.put(
 
     logger.debug('Marking all notifications as read', { userId });
 
-    const updatedCount = await supabaseService.markAllNotificationsAsRead(userId);
+    const updatedCount = await dataLayer.notifications.markAllNotificationsAsRead(userId);
 
     // Invalidate user's notification cache
     await invalidateNotificationCaches(userId);
@@ -257,7 +257,7 @@ router.delete(
 
     logger.debug('Deleting notification', { notificationId, userId });
 
-    const notification = await supabaseService.getNotificationById(notificationId, userId);
+    const notification = await dataLayer.notifications.getNotificationById(notificationId, userId);
     if (!notification) {
       return res.status(404).json({
         success: false,
@@ -273,7 +273,7 @@ router.delete(
       });
     }
 
-    const deleted = await supabaseService.deleteNotification(notificationId);
+    const deleted = await dataLayer.notifications.deleteNotification(notificationId);
 
     if (!deleted) {
       return res.status(404).json({
@@ -302,7 +302,7 @@ router.delete(
 
     logger.debug('Deleting all notifications', { userId });
 
-    const deletedCount = await supabaseService.deleteAllNotifications(userId);
+    const deletedCount = await dataLayer.notifications.deleteAllNotifications(userId);
 
     // Invalidate caches
     await invalidateNotificationCaches(userId);
@@ -343,7 +343,7 @@ router.post(
 
     if (!(await assertLivePlatformAdmin(req, res))) return;
 
-    const createdNotifications = await supabaseService.createBulkNotifications(notifications);
+    const createdNotifications = await dataLayer.notifications.createBulkNotifications(notifications);
 
     // Invalidate notification caches for affected users
     const affectedUserIds = [...new Set(notifications.map(n => n.userId))];

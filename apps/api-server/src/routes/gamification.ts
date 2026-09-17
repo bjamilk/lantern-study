@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateUserId, validatePagination } from '../middleware/validation';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
@@ -27,12 +27,12 @@ import { resolveAllowedActivityDate } from '../utils/activityDate';
 const router = Router();
 
 // Initialize services (will be injected in main server)
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
 // Initialize function to be called from main server
-export const initializeGamificationRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeGamificationRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -58,7 +58,7 @@ router.get(
     let leaderboard = await cacheService.get(cacheKey) as any[];
 
     if (!leaderboard) {
-      leaderboard = await supabaseService.getLeaderboard({
+      leaderboard = await dataLayer.gamification.getLeaderboard({
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         timeframe: timeframe as string,
@@ -101,7 +101,7 @@ router.get(
     let achievements = await cacheService.get(cacheKey) as any[];
 
     if (!achievements) {
-      achievements = await supabaseService.getAchievements({
+      achievements = await dataLayer.gamification.getAchievements({
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         category: category as string,
@@ -151,7 +151,7 @@ router.get(
     let achievements = await cacheService.get(cacheKey) as any[];
 
     if (!achievements) {
-      achievements = await supabaseService.getUserAchievements(userId, {
+      achievements = await dataLayer.gamification.getUserAchievements(userId, {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
       });
@@ -203,7 +203,7 @@ router.post(
 
     if (!(await assertLivePlatformAdmin(req, res))) return;
 
-    const result = await supabaseService.awardPoints(userId, points, reason, source);
+    const result = await dataLayer.gamification.awardPoints(userId, points, reason, source);
 
     // Invalidate caches
     await cacheService.deletePattern(`gamification:leaderboard:*`);
@@ -241,7 +241,7 @@ router.post(
 
     if (!(await assertLivePlatformAdmin(req, res))) return;
 
-    const result = await supabaseService.awardAchievement(userId, achievementId);
+    const result = await dataLayer.gamification.awardAchievement(userId, achievementId);
 
     // Invalidate caches
     await cacheService.deletePattern(`gamification:user:achievements:${userId}:*`);
@@ -279,7 +279,7 @@ router.get(
     let progress = await cacheService.get(cacheKey);
 
     if (!progress) {
-      progress = await supabaseService.getUserProgress(userId);
+      progress = await dataLayer.gamification.getUserProgress(userId);
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, progress, 300);
@@ -306,7 +306,7 @@ router.get(
     let stats = await cacheService.get(cacheKey);
 
     if (!stats) {
-      stats = await supabaseService.getGamificationStats();
+      stats = await dataLayer.gamification.getGamificationStats();
 
       // Cache for 10 minutes
       await cacheService.set(cacheKey, stats, 600);
@@ -337,7 +337,7 @@ router.get(
     let badges = await cacheService.get(cacheKey) as any[];
 
     if (!badges) {
-      badges = await supabaseService.getBadges({
+      badges = await dataLayer.gamification.getBadges({
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         category: category as string,
@@ -387,7 +387,7 @@ router.get(
     let badges = await cacheService.get(cacheKey) as any[];
 
     if (!badges) {
-      badges = await supabaseService.getUserBadges(userId, {
+      badges = await dataLayer.gamification.getUserBadges(userId, {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
       });
@@ -432,7 +432,7 @@ router.post(
 
     if (!(await assertLivePlatformAdmin(req, res))) return;
 
-    const result = await supabaseService.awardBadge(userId, badgeId);
+    const result = await dataLayer.gamification.awardBadge(userId, badgeId);
 
     // Invalidate caches
     await cacheService.deletePattern(`gamification:user:badges:${userId}:*`);
@@ -458,7 +458,7 @@ router.get(
     let levels = await cacheService.get(cacheKey);
 
     if (!levels) {
-      levels = await supabaseService.getLevels();
+      levels = await dataLayer.gamification.getLevels();
 
       // Cache for 60 minutes (levels don't change often)
       await cacheService.set(cacheKey, levels, 3600);
@@ -497,7 +497,7 @@ router.get(
     let level = await cacheService.get(cacheKey);
 
     if (!level) {
-      level = await supabaseService.getUserLevel(userId);
+      level = await dataLayer.gamification.getUserLevel(userId);
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, level, 300);
@@ -534,7 +534,7 @@ function resolveQuestDate(input?: unknown): string {
 }
 
 async function ensureDailyQuests(userId: string, questDate: string) {
-  const client = supabaseService.getClient();
+  const client = dataLayer.getClient();
   const { error: insertError } = await client
     .from('daily_quests')
     .upsert(
@@ -565,7 +565,7 @@ router.post(
     const { activityDate } = req.body ?? {};
     const referenceDate = resolveAllowedActivityDate(activityDate);
 
-    const data = await supabaseService.recomputeUserStreak(userId, referenceDate);
+    const data = await dataLayer.gamification.recomputeUserStreak(userId, referenceDate);
     let awarded = 0;
     let walletBalance = await getWalletService().getWalletBalance(userId);
     const milestone = streakMilestoneFor(data.current_streak);
@@ -594,7 +594,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const data = await supabaseService.syncGamificationProgress(userId);
+      const data = await dataLayer.gamification.syncGamificationProgress(userId);
       await cacheService.delete(`user:${userId}`);
       res.json({ success: true, data });
     } catch (err: any) {
@@ -639,13 +639,13 @@ router.post(
 
     const date = resolveAllowedActivityDate(activityDate);
 
-    const data = await supabaseService.recordStudyActivity(
+    const data = await dataLayer.gamification.recordStudyActivity(
       userId,
       type,
       Math.floor(parsedAmount),
       date
     );
-    const streak = await supabaseService.recomputeUserStreak(userId, date);
+    const streak = await dataLayer.gamification.recomputeUserStreak(userId, date);
 
     // Volume XP with diminishing returns and quality weighting. The activity
     // row returns post-increment counts, so prior = updated − this recording.
@@ -661,7 +661,7 @@ router.post(
         scorePercent: parsedScore,
       });
       if (xpAwarded > 0) {
-        await supabaseService.awardPoints(userId, xpAwarded, `Study activity: ${type}`, 'study_activity');
+        await dataLayer.gamification.awardPoints(userId, xpAwarded, `Study activity: ${type}`, 'study_activity');
         await cacheService.delete(`user:stats:${userId}`);
       }
     } catch (xpError) {
@@ -746,7 +746,7 @@ router.get(
         : viewerId;
 
     if (targetUserId !== viewerId) {
-      const targetUser = await supabaseService.getUserById(targetUserId);
+      const targetUser = await dataLayer.users.getUserById(targetUserId);
       if (!targetUser) {
         return res.status(404).json({ success: false, error: 'User not found' });
       }
@@ -755,7 +755,7 @@ router.get(
       }
     }
 
-    const data = await supabaseService.getStudyActivity(targetUserId, days);
+    const data = await dataLayer.gamification.getStudyActivity(targetUserId, days);
     res.json({ success: true, data });
   })
 );
@@ -770,7 +770,7 @@ router.get(
 
     const activityDate = resolveAllowedActivityDate(req.query.activityDate);
 
-    const data = await supabaseService.recomputeUserStreak(userId, activityDate);
+    const data = await dataLayer.gamification.recomputeUserStreak(userId, activityDate);
     res.json({ success: true, data });
   })
 );
@@ -784,7 +784,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { data: streak } = await supabaseService.getClient()
+    const { data: streak } = await dataLayer.getClient()
       .from('user_streaks')
       .select('*')
       .eq('user_id', userId)
@@ -796,7 +796,7 @@ router.post(
 
     const today = new Date().toISOString().split('T')[0];
     const data = await req.runIdempotent!(async () => {
-      const { data: updated, error } = await supabaseService.getClient()
+      const { data: updated, error } = await dataLayer.getClient()
         .from('user_streaks')
         .update({
           streak_freezes: streak.streak_freezes - 1,
@@ -830,7 +830,7 @@ router.post(
       `${userId}:streak_freeze_purchase:${Math.floor(Date.now() / 300_000)}`;
 
     const payload = await withIdempotency(
-      supabaseService.getClient(),
+      dataLayer.getClient(),
       userId,
       'streak_freeze_purchase',
       idempotencyKey,
@@ -853,7 +853,7 @@ router.post(
           throw err;
         }
 
-        const { data: streak, error: fetchErr } = await supabaseService.getClient()
+        const { data: streak, error: fetchErr } = await dataLayer.getClient()
           .from('user_streaks')
           .select('*')
           .eq('user_id', userId)
@@ -864,7 +864,7 @@ router.post(
           throw fetchErr;
         }
 
-        const { data, error } = await supabaseService.getClient()
+        const { data, error } = await dataLayer.getClient()
           .from('user_streaks')
           .upsert({
             user_id: userId,
@@ -935,7 +935,7 @@ router.post(
     const questDate = resolveQuestDate(activityDate);
     await ensureDailyQuests(userId, questDate);
 
-    const { data: quest } = await supabaseService.getClient()
+    const { data: quest } = await dataLayer.getClient()
       .from('daily_quests')
       .select('*')
       .eq('user_id', userId)
@@ -951,7 +951,7 @@ router.post(
     const completed = newProgress >= quest.target_count;
     const wasCompleted = !!quest.completed;
 
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('daily_quests')
       .update({ progress_count: newProgress, completed })
       .eq('id', quest.id)
@@ -963,7 +963,7 @@ router.post(
     if (completed && !wasCompleted) {
       const rewardXp = Number(quest.reward_xp ?? 0);
       if (rewardXp > 0) {
-        await supabaseService.awardPoints(userId, rewardXp, 'Daily quest completed', 'daily_quest');
+        await dataLayer.gamification.awardPoints(userId, rewardXp, 'Daily quest completed', 'daily_quest');
         await cacheService.delete(`user:${userId}`);
       }
     }

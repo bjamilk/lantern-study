@@ -3,18 +3,18 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { AuthenticatedRequest } from '../types';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { clientErrorMessage } from '../utils/safeError';
 import { COURSE_FILTER_INVALID_MESSAGE, parseCourseFilter } from '../services/academicCourses';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-export const initializeOfflineBundlesRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeOfflineBundlesRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -30,7 +30,7 @@ router.get(
     if (courseFilter.kind === 'invalid') {
       return res.status(400).json({ success: false, error: COURSE_FILTER_INVALID_MESSAGE });
     }
-    const bundles = await supabaseService.getOfflineBundles(userId, { courseFilter });
+    const bundles = await dataLayer.offlineBundles.getOfflineBundles(userId, { courseFilter });
     res.json({ success: true, data: bundles });
   })
 );
@@ -57,7 +57,7 @@ router.post(
     }
 
     try {
-      await supabaseService.saveOfflineBundle(userId, bundle);
+      await dataLayer.offlineBundles.saveOfflineBundle(userId, bundle);
       res.json({ success: true });
     } catch (err: any) {
       res.status(err.statusCode || 400).json({
@@ -80,7 +80,7 @@ router.delete(
       return res.status(400).json({ success: false, error: 'bundleId is required' });
     }
 
-    await supabaseService.deleteOfflineBundle(userId, bundleId as string);
+    await dataLayer.offlineBundles.deleteOfflineBundle(userId, bundleId as string);
     res.json({ success: true });
   })
 );
