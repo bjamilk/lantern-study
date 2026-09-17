@@ -247,13 +247,11 @@ router.get('/history', async (req: Request, res: Response) => {
     }
 
     const readHistory = (columns: string) =>
-      client
-        .from('ai_companion_messages')
-        .select(columns)
-        .eq('user_id', userId)
-        .eq('conversation_id', resolvedConversationId)
-        .order('created_at', { ascending: true })
-        .limit(50);
+      dataLayer.aiCompanion.listConversationMessages(
+        userId,
+        resolvedConversationId as string,
+        columns
+      );
 
     let { data, error } = await readHistory(HISTORY_COLUMNS);
     // Before the citations migration is applied the column is simply absent;
@@ -292,11 +290,7 @@ router.delete('/history', async (req: Request, res: Response) => {
         res.status(404).json({ error: 'Conversation not found' });
         return;
       }
-      const { error } = await client
-        .from('ai_companion_conversations')
-        .delete()
-        .eq('id', conversationId)
-        .eq('user_id', userId);
+      const { error } = await dataLayer.aiCompanion.deleteConversation(userId, conversationId);
       if (error) throw error;
       res.json({ success: true, conversationId, noteContextId: owned.note_context_id });
       return;
@@ -305,11 +299,7 @@ router.delete('/history', async (req: Request, res: Response) => {
     // Legacy: clear latest (or all matching) note-scoped messages + their conversations.
     const latest = await findLatestConversationForNoteScope(client, userId, noteContextId);
     if (latest) {
-      const { error } = await client
-        .from('ai_companion_conversations')
-        .delete()
-        .eq('id', latest.id)
-        .eq('user_id', userId);
+      const { error } = await dataLayer.aiCompanion.deleteConversation(userId, latest.id);
       if (error) throw error;
       res.json({ success: true, conversationId: latest.id, noteContextId });
       return;
@@ -336,14 +326,11 @@ router.post('/feedback', async (req: Request, res: Response) => {
   }
 
   try {
-    const { data, error } = await dataLayer.getClient()
-      .from('ai_companion_messages')
-      .update({ feedback: cleared ? null : rating })
-      .eq('id', messageId)
-      .eq('user_id', userId)
-      .eq('role', 'assistant')
-      .select('id')
-      .maybeSingle();
+    const { data, error } = await dataLayer.aiCompanion.setMessageFeedback(
+      userId,
+      messageId,
+      cleared ? null : rating
+    );
 
     if (error) throw error;
     if (!data) {
@@ -371,9 +358,16 @@ router.post('/analytics', async (req: Request, res: Response) => {
   }
 
   try {
-    await dataLayer.getClient()
-      .from('ai_analytics')
-      .insert({ user_id: userId, event, metadata: metadata || {}, created_at: new Date().toISOString() });
+    // KNOWN ISSUE (tracked, found during R2): this catch cannot fire on a
+    // database error — PostgREST resolves with `{error}` rather than throwing —
+    // so a failed insert is still answered `{success: true}`. Left exactly as it
+    // was; R2 moves queries, it does not fix them.
+    await dataLayer.aiCompanion.recordAnalyticsEvent(
+      userId,
+      event,
+      metadata || {},
+      new Date().toISOString()
+    );
 
     res.json({ success: true });
   } catch (err: any) {
@@ -577,9 +571,10 @@ async function persistCompanionExchange(params: {
   } = params;
   const client = dataLayer.getClient();
   const now = new Date().toISOString();
+  // `user_id` is stamped by the data functions below, from the `userId`
+  // argument, so a row cannot be written under another student's id.
   const rows = [
     {
-      user_id: userId,
       role: 'user' as const,
       content: message,
       created_at: now,
@@ -587,7 +582,6 @@ async function persistCompanionExchange(params: {
       conversation_id: conversationId,
     },
     {
-      user_id: userId,
       role: 'assistant' as const,
       content: reply,
       actions: actions.length ? actions : null,
@@ -606,30 +600,33 @@ async function persistCompanionExchange(params: {
   const rowsWithoutCitations = rows.map(({ citations: _drop, ...rest }) => rest);
 
   if (selectIds) {
-    let { data, error } = await client
-      .from('ai_companion_messages')
-      .insert(rows)
-      .select('id, role');
+    let { data, error } = await dataLayer.aiCompanion.insertConversationMessagesReturningIds(
+      userId,
+      rows
+    );
     if (error && isMissingCitationsColumn(error)) {
       console.warn(
         'ai_companion_messages.citations missing — saved without chips (apply 20260912090000_companion_message_citations.sql)'
       );
-      ({ data, error } = await client
-        .from('ai_companion_messages')
-        .insert(rowsWithoutCitations)
-        .select('id, role'));
+      ({ data, error } = await dataLayer.aiCompanion.insertConversationMessagesReturningIds(
+        userId,
+        rowsWithoutCitations
+      ));
     }
     if (error) throw error;
     await touchConversation(client, userId, conversationId);
     return (data || []) as Array<{ id: string; role: string }>;
   }
 
-  let { error } = await client.from('ai_companion_messages').insert(rows);
+  let { error } = await dataLayer.aiCompanion.insertConversationMessages(userId, rows);
   if (error && isMissingCitationsColumn(error)) {
     console.warn(
       'ai_companion_messages.citations missing — saved without chips (apply 20260912090000_companion_message_citations.sql)'
     );
-    ({ error } = await client.from('ai_companion_messages').insert(rowsWithoutCitations));
+    ({ error } = await dataLayer.aiCompanion.insertConversationMessages(
+      userId,
+      rowsWithoutCitations
+    ));
   }
   if (error) throw error;
   await touchConversation(client, userId, conversationId);
@@ -690,13 +687,12 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
         // Conversation's note scope wins over client once the thread exists.
         const effectiveNoteId = conversation.note_context_id ?? threadNoteId;
 
-        const { data: historyRows } = await client
-          .from('ai_companion_messages')
-          .select('role, content')
-          .eq('user_id', userId)
-          .eq('conversation_id', conversation.id)
-          .order('created_at', { ascending: false })
-          .limit(20);
+        const { data: historyRows } =
+          await dataLayer.aiCompanion.listRecentConversationMessages(
+            userId,
+            conversation.id,
+            20
+          );
 
         const history = (historyRows || []).reverse() as Array<{
           role: 'user' | 'assistant';
@@ -824,13 +820,11 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     );
     const effectiveNoteId = conversation.note_context_id ?? threadNoteId;
 
-    const { data: historyRows } = await client
-      .from('ai_companion_messages')
-      .select('role, content')
-      .eq('user_id', userId)
-      .eq('conversation_id', conversation.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
+    const { data: historyRows } = await dataLayer.aiCompanion.listRecentConversationMessages(
+      userId,
+      conversation.id,
+      20
+    );
 
     const history = (historyRows || []).reverse() as Array<{
       role: 'user' | 'assistant';

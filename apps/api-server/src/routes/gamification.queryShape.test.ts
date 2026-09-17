@@ -53,6 +53,7 @@ jest.mock('../services/idempotency', () => ({
 }));
 
 import router, { initializeGamificationRoutes } from './gamification';
+import * as gamificationData from '../services/data/gamification';
 
 let walletStub: Record<string, jest.Mock>;
 
@@ -157,17 +158,28 @@ async function runRoute(
 }
 
 /**
- * Init the family with a recording client. `gamification` carries the stubs for
- * the data-layer methods the route ALREADY used before this lane (awardPoints,
- * recomputeUserStreak, …) plus, after the extraction, the moved ones.
+ * Init the family with a `gamification` namespace bound to the recording
+ * client, exactly the way `data/index.ts` binds it to the real one: the route
+ * calls `dataLayer.gamification.<fn>(…)`, the REAL data module builds the chain,
+ * the recorder captures it. So the trace is still the query the database would
+ * see, end to end, and a change in either half shows up here.
+ *
+ * `overrides` supplies the handful of gamification methods the route used
+ * BEFORE this lane (`awardPoints`, `recomputeUserStreak`, …), which are not
+ * queries this test is freezing.
  */
 function initWith(
   result?: Result | ((table: string, nth: number) => Result),
-  gamification: Record<string, unknown> = {},
+  overrides: Record<string, unknown> = {},
 ) {
   const rec = recorder(result);
+  const bound = Object.fromEntries(
+    Object.entries(gamificationData)
+      .filter(([, fn]) => typeof fn === 'function')
+      .map(([name, fn]) => [name, (...args: unknown[]) => (fn as any)(rec.client, ...args)]),
+  );
   initializeGamificationRoutes(
-    { getClient: () => rec.client, gamification } as any,
+    { getClient: () => rec.client, gamification: { ...bound, ...overrides } } as any,
     { get: jest.fn(async () => null), set: jest.fn(async () => {}), delete: jest.fn(async () => {}) } as any,
   );
   return rec;

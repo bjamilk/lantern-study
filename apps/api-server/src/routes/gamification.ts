@@ -534,21 +534,15 @@ function resolveQuestDate(input?: unknown): string {
 }
 
 async function ensureDailyQuests(userId: string, questDate: string) {
-  const client = dataLayer.getClient();
-  const { error: insertError } = await client
-    .from('daily_quests')
-    .upsert(
-      DAILY_QUEST_TEMPLATES.map((t) => ({ ...t, user_id: userId, quest_date: questDate })),
-      { onConflict: 'user_id,quest_date,quest_type', ignoreDuplicates: true }
-    );
+  const { error: insertError } = await dataLayer.gamification.seedDailyQuests(
+    userId,
+    questDate,
+    DAILY_QUEST_TEMPLATES
+  );
 
   if (insertError && insertError.code !== '23505') throw insertError;
 
-  const { data, error } = await client
-    .from('daily_quests')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('quest_date', questDate);
+  const { data, error } = await dataLayer.gamification.listDailyQuests(userId, questDate);
 
   if (error) throw error;
   return data ?? [];
@@ -784,11 +778,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { data: streak } = await dataLayer.getClient()
-      .from('user_streaks')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: streak } = await dataLayer.gamification.getUserStreakRow(userId);
 
     if (!streak || (streak.streak_freezes ?? 0) <= 0) {
       return res.status(400).json({ success: false, error: 'No streak freezes available' });
@@ -796,16 +786,11 @@ router.post(
 
     const today = new Date().toISOString().split('T')[0];
     const data = await req.runIdempotent!(async () => {
-      const { data: updated, error } = await dataLayer.getClient()
-        .from('user_streaks')
-        .update({
-          streak_freezes: streak.streak_freezes - 1,
-          last_login_date: today,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', userId)
-        .select()
-        .single();
+      const { data: updated, error } = await dataLayer.gamification.spendStreakFreeze(
+        userId,
+        streak.streak_freezes - 1,
+        today
+      );
 
       if (error) throw error;
       return { streak: updated as Record<string, unknown> };
@@ -853,29 +838,20 @@ router.post(
           throw err;
         }
 
-        const { data: streak, error: fetchErr } = await dataLayer.getClient()
-          .from('user_streaks')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle();
+        const { data: streak, error: fetchErr } =
+          await dataLayer.gamification.getUserStreakRow(userId);
 
         if (fetchErr) {
           await wallet.adjustWallet(userId, STREAK_FREEZE_COST, 'streak_freeze_refund');
           throw fetchErr;
         }
 
-        const { data, error } = await dataLayer.getClient()
-          .from('user_streaks')
-          .upsert({
-            user_id: userId,
-            current_streak: streak?.current_streak ?? 0,
-            longest_streak: streak?.longest_streak ?? 0,
-            last_login_date: streak?.last_login_date ?? null,
-            streak_freezes: (streak?.streak_freezes ?? 0) + 1,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'user_id' })
-          .select()
-          .single();
+        const { data, error } = await dataLayer.gamification.grantStreakFreeze(userId, {
+          current_streak: streak?.current_streak ?? 0,
+          longest_streak: streak?.longest_streak ?? 0,
+          last_login_date: streak?.last_login_date ?? null,
+          streak_freezes: (streak?.streak_freezes ?? 0) + 1,
+        });
 
         if (error) {
           await wallet.adjustWallet(userId, STREAK_FREEZE_COST, 'streak_freeze_refund');
@@ -935,13 +911,11 @@ router.post(
     const questDate = resolveQuestDate(activityDate);
     await ensureDailyQuests(userId, questDate);
 
-    const { data: quest } = await dataLayer.getClient()
-      .from('daily_quests')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('quest_date', questDate)
-      .eq('quest_type', questType)
-      .maybeSingle();
+    const { data: quest } = await dataLayer.gamification.getDailyQuest(
+      userId,
+      questDate,
+      questType
+    );
 
     if (!quest) {
       return res.json({ success: true, data: null, skipped: true });
@@ -951,12 +925,14 @@ router.post(
     const completed = newProgress >= quest.target_count;
     const wasCompleted = !!quest.completed;
 
-    const { data, error } = await dataLayer.getClient()
-      .from('daily_quests')
-      .update({ progress_count: newProgress, completed })
-      .eq('id', quest.id)
-      .select()
-      .single();
+    // By quest id alone, no owner filter — safe only because `quest` came from
+    // the owner-scoped read above. See the function's comment in
+    // `services/data/gamification.ts`.
+    const { data, error } = await dataLayer.gamification.updateDailyQuestProgress(
+      quest.id,
+      newProgress,
+      completed
+    );
 
     if (error) throw error;
 

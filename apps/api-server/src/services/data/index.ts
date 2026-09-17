@@ -50,6 +50,7 @@
 
 import type { DataClient } from "./client";
 import * as academicData from "./academic";
+import * as aiCompanionData from "./aiCompanion";
 import * as adminAnalyticsData from "./adminAnalytics";
 import * as boardActionsData from "./boardActions";
 import * as budgetData from "./budget";
@@ -506,6 +507,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
 
   layer.getClient = () => client;
   layer.academic = createAcademicApi(client, resolveTopicForArtefact);
+  layer.aiCompanion = createAiCompanionApi(client);
   layer.adminAnalytics = createAdminAnalyticsApi(client);
   layer.boardActions = createBoardActionsApi(client, boardActionsDeps);
   layer.budget = createBudgetApi(client);
@@ -578,6 +580,20 @@ function createBoardActionsApi(
     readBoardContextForGroups: bindDb(client, boardActionsData.readBoardContextForGroups),
     toBoardPostShape: bindDeps(boardActionsDeps, boardActionsData.toBoardPostShape),
     communityMemberRole: bindDb(client, boardActionsData.communityMemberRole),
+  };
+}
+
+function createAiCompanionApi(
+  client: DataClient,
+) {
+  return {
+    listConversationMessages: bindDb(client, aiCompanionData.listConversationMessages),
+    listRecentConversationMessages: bindDb(client, aiCompanionData.listRecentConversationMessages),
+    insertConversationMessages: bindDb(client, aiCompanionData.insertConversationMessages),
+    insertConversationMessagesReturningIds: bindDb(client, aiCompanionData.insertConversationMessagesReturningIds),
+    setMessageFeedback: bindDb(client, aiCompanionData.setMessageFeedback),
+    deleteConversation: bindDb(client, aiCompanionData.deleteConversation),
+    recordAnalyticsEvent: bindDb(client, aiCompanionData.recordAnalyticsEvent),
   };
 }
 
@@ -704,6 +720,14 @@ function createGamificationApi(
 ) {
   return {
     getLeaderboard: bindDb(client, gamificationData.getLeaderboard),
+    // Moved out of `routes/gamification.ts` (lane R2, PR 2a).
+    getUserStreakRow: bindDb(client, gamificationData.getUserStreakRow),
+    spendStreakFreeze: bindDb(client, gamificationData.spendStreakFreeze),
+    grantStreakFreeze: bindDb(client, gamificationData.grantStreakFreeze),
+    seedDailyQuests: bindDb(client, gamificationData.seedDailyQuests),
+    listDailyQuests: bindDb(client, gamificationData.listDailyQuests),
+    getDailyQuest: bindDb(client, gamificationData.getDailyQuest),
+    updateDailyQuestProgress: bindDb(client, gamificationData.updateDailyQuestProgress),
     getAchievements: bindDb(client, gamificationData.getAchievements),
     getUserAchievements: bindDb(client, gamificationData.getUserAchievements),
     awardPoints: bindDb(client, gamificationData.awardPoints),
@@ -1131,6 +1155,7 @@ export type DataLayer = {
   getClient: () => DataClient;
   academic: AcademicApi;
   adminAnalytics: AdminAnalyticsApi;
+  aiCompanion: AiCompanionApi;
   boardActions: BoardActionsApi;
   budget: BudgetApi;
   categories: CategoriesApi;
@@ -1156,6 +1181,7 @@ export type DataLayer = {
 export type AcademicApi = ReturnType<typeof createAcademicApi>;
 export type AdminAnalyticsApi = ReturnType<typeof createAdminAnalyticsApi>;
 export type BoardActionsApi = ReturnType<typeof createBoardActionsApi>;
+export type AiCompanionApi = ReturnType<typeof createAiCompanionApi>;
 export type BudgetApi = ReturnType<typeof createBudgetApi>;
 export type CategoriesApi = ReturnType<typeof createCategoriesApi>;
 export type ChatSendApi = ReturnType<typeof createChatSendApi>;

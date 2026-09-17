@@ -65,6 +65,7 @@ jest.mock('../services/companionConversations', () => ({
 }));
 
 import router, { initializeAICompanionRoutes } from './aiCompanion';
+import * as aiCompanionData from '../services/data/aiCompanion';
 
 let getOwnedConversation: jest.Mock;
 let findLatestConversationForNoteScope: jest.Mock;
@@ -163,12 +164,27 @@ async function runRoute(
   return res;
 }
 
+/**
+ * Init the family with an `aiCompanion` namespace bound to the recording
+ * client, exactly the way `data/index.ts` binds it to the real one: the route
+ * calls `dataLayer.aiCompanion.<fn>(…)`, the REAL data module builds the chain,
+ * the recorder captures it. The trace is still the query the database would
+ * see, end to end, so a change in either half shows up here.
+ */
 function initWith(
   result?: Result | ((table: string, nth: number) => Result),
-  aiCompanion: Record<string, unknown> = {},
+  overrides: Record<string, unknown> = {},
 ) {
   const rec = recorder(result);
-  initializeAICompanionRoutes({ getClient: () => rec.client, aiCompanion } as any);
+  const bound = Object.fromEntries(
+    Object.entries(aiCompanionData)
+      .filter(([, fn]) => typeof fn === 'function')
+      .map(([name, fn]) => [name, (...args: unknown[]) => (fn as any)(rec.client, ...args)]),
+  );
+  initializeAICompanionRoutes({
+    getClient: () => rec.client,
+    aiCompanion: { ...bound, ...overrides },
+  } as any);
   return rec;
 }
 

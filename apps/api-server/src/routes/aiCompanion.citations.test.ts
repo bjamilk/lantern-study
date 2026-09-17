@@ -36,6 +36,20 @@ jest.mock('../middleware/aiRateLimit', () => ({
 }));
 
 import router, { initializeAICompanionRoutes } from './aiCompanion';
+import * as aiCompanionData from '../services/data/aiCompanion';
+import { bindDataModule } from '../services/data/testStub';
+
+/**
+ * The companion's message queries moved into `services/data/aiCompanion.ts`
+ * (lane R2), so the route reaches them through the layer. This suite drives a
+ * FAKE POSTGREST CLIENT rather than stubbing those functions, so it binds the
+ * real module to that client — the chain this suite asserts on is unchanged.
+ */
+const initRoutes = (client: unknown) =>
+  initializeAICompanionRoutes({
+    getClient: () => client,
+    aiCompanion: bindDataModule(aiCompanionData, client),
+  } as any);
 
 const CITATION = {
   noteId: '99999999-8888-4777-8666-555555555555',
@@ -137,7 +151,7 @@ describe('companion stream citations', () => {
 
   it('sends citations on the done frame', async () => {
     const { client } = makeClient();
-    initializeAICompanionRoutes({ getClient: () => client } as any);
+    initRoutes(client);
 
     const done = (await runStream()).find((frame) => frame.done);
     expect(done).toBeDefined();
@@ -147,7 +161,7 @@ describe('companion stream citations', () => {
 
   it('stores the citations on the assistant row, so a reloaded thread keeps its chips', async () => {
     const { client, inserted } = makeClient();
-    initializeAICompanionRoutes({ getClient: () => client } as any);
+    initRoutes(client);
 
     await runStream();
 
@@ -161,7 +175,7 @@ describe('companion stream citations', () => {
   it('sends null rather than an empty citation when the answer is ungrounded', async () => {
     companionChat.mockResolvedValue({ reply: 'A general answer', actions: [], citations: null });
     const { client, inserted } = makeClient();
-    initializeAICompanionRoutes({ getClient: () => client } as any);
+    initRoutes(client);
 
     const done = (await runStream()).find((frame) => frame.done);
     expect(done.citations).toBeNull();
@@ -172,7 +186,7 @@ describe('companion stream citations', () => {
 
   it('still saves the exchange on a database without the citations column', async () => {
     const { client, inserted } = makeClient({ insertFailsOnCitations: true });
-    initializeAICompanionRoutes({ getClient: () => client } as any);
+    initRoutes(client);
 
     const frames = await runStream();
 

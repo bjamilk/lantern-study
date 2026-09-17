@@ -59,20 +59,26 @@ const SERVICES_DIR = __dirname;
 const DATA_DIR = path.join(SERVICES_DIR, 'data');
 
 /**
- * The 58 distinct table literals reached through `.from("…")` by the data
+ * The 62 distinct table literals reached through `.from("…")` by the data
  * layer, captured from the untouched 18,257-line `services/supabase.ts`.
  *
- * 57 of them are that original capture. `user_budgets` is the one addition
- * (monolith lane R2): it was ALWAYS queried by the server, but only ever from
- * `routes/budget.ts` and `routes/users.ts`, which this scan does not cover, so
- * the freeze had never seen it. Moving the route's query into
- * `services/data/budget.ts` brings the table into scope for the first time. No
- * table was added to the product, and no query changed. Nine more tables are in
- * the same position and will arrive the same way — they are listed in
+ * 57 of them are that original capture. The other five arrived with monolith
+ * lane R2, which moves the queries route files still built by hand into
+ * `services/data/*`. Each was ALWAYS queried by the server, but only ever from a
+ * route file, which this scan does not cover — so the freeze had never seen it,
+ * and the move brings it into scope for the first time. No table was added to
+ * the product and no query changed. Each carries a comment naming the route it
+ * came from, and enters this list in the same commit as the query that brings
+ * it: an inventory-only commit is red either way, because the assertion below is
+ * set EQUALITY. The remaining route-only tables are listed in
  * `apps/api-server/docs/route-queries-plan.md`.
  */
 const FROZEN_TABLES: readonly string[] = [
   'achievements',
+  // From `routes/aiCompanion.ts` (lane R2, PR 2a).
+  'ai_analytics',
+  'ai_companion_conversations',
+  'ai_companion_messages',
   'budget_transactions',
   'chat_message_audit',
   'chat_mutes',
@@ -82,6 +88,8 @@ const FROZEN_TABLES: readonly string[] = [
   'creator_stats',
   'custom_categories',
   'deck_collaborators',
+  // From `routes/gamification.ts` (lane R2, PR 2a).
+  'daily_quests',
   'decks',
   'dm_messages',
   'dm_read_status',
@@ -218,9 +226,9 @@ function scan(): Scan {
 describe('services data layer table inventory', () => {
   const scanned = scan();
 
-  it('touches exactly the frozen set of 58 tables', () => {
+  it('touches exactly the frozen set of 62 tables', () => {
     expect([...scanned.tables].sort()).toEqual([...FROZEN_TABLES].sort());
-    expect(FROZEN_TABLES).toHaveLength(58);
+    expect(FROZEN_TABLES).toHaveLength(62);
   });
 
   it('reaches exactly the frozen set of storage bucket literals', () => {
