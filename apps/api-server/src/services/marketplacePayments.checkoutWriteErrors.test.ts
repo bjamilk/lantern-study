@@ -16,6 +16,14 @@
  * modelled as supabase-js really behaves — the await RESOLVES, nothing rejects
  * — so a `try/catch` would not see it either.
  *
+ * ## What each failure now does
+ *
+ * Retiring a stale session and linking the orders are MUST-SUCCEED: nothing
+ * external has happened yet, so the request stops and no charge is opened. The
+ * checkout mirror and the access code are BEST-EFFORT: the first is a display
+ * field, and the second is written when the Paystack session is already live,
+ * where throwing would strand a real charge.
+ *
  * ## The gotcha
  *
  * Both flows write to `marketplace_payments` more than once, and the resume
@@ -200,28 +208,48 @@ describe('unified cart checkout, with every write succeeding', () => {
   });
 });
 
-describe('TODAY: unified cart checkout, one write failing', () => {
-  it('sends the buyer to Paystack when the checkout link fails', async () => {
+describe('unified cart checkout, one write failing', () => {
+  it('still sends the buyer to Paystack when the checkout MIRROR fails, and warns', async () => {
+    // BEST EFFORT: `checkouts.payment_id` is a display field. Fulfilment walks
+    // `payments.checkout_id` → orders, so nothing about settlement depends on
+    // it.
     const { service } = await serviceFor('checkout_link');
     const session = await service.createCheckoutCharge(CART_INPUT);
     expect(session.authorizationUrl).toBe('https://checkout.paystack.com/acc_new');
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'marketplace_checkouts', checkoutId: 'chk_1', code: '40001' }),
+    );
   });
 
-  it('sends the buyer to Paystack when the ORDER link fails', async () => {
+  it('does NOT call Paystack when the order link fails', async () => {
+    // MUST SUCCEED: unlinked orders are never advanced by the webhook, so the
+    // buyer would pay and nothing would move. `createFromCart` cancels the
+    // orders and fails the checkout when this throws.
     const { service } = await serviceFor('order_link');
-    const session = await service.createCheckoutCharge(CART_INPUT);
-    expect(session.authorizationUrl).toBe('https://checkout.paystack.com/acc_new');
-    expect(mockInitializePaystackTransaction).toHaveBeenCalledTimes(1);
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    await expect(service.createCheckoutCharge(CART_INPUT)).rejects.toThrow(/marketplace_orders/);
+    expect(mockInitializePaystackTransaction).not.toHaveBeenCalled();
   });
 
-  it('returns the URL and says nothing when the access-code store fails', async () => {
+  it('throws a typed WriteFailedError naming the checkout and both orders', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
+    const { service } = await serviceFor('order_link');
+    const error = await service.createCheckoutCharge(CART_INPUT).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WriteFailedError);
+    expect((error as InstanceType<typeof WriteFailedError>).code).toBe('40001');
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({ checkoutId: 'chk_1', paymentId: 'pay_new', orderCount: 2 }),
+    );
+  });
+
+  it('still returns the URL when the access-code store fails, and warns', async () => {
     const { service } = await serviceFor('access_code');
     const session = await service.createCheckoutCharge(CART_INPUT);
     expect(session.authorizationUrl).toBe('https://checkout.paystack.com/acc_new');
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'marketplace_payments', paymentId: 'pay_new' }),
+    );
   });
 });
 
@@ -235,8 +263,6 @@ describe('resume / offer-accept, with every write succeeding', () => {
     });
     expect(session.authorizationUrl).toBe('https://checkout.paystack.com/acc_new');
     expect(session.payment.id).toBe('pay_new');
-    // The retire write is the one this flow turns on: it must have run, and it
-    // must be conditional on the row still being `initialized`.
     const retire = calls.find((call) => which(call) === 'supersede');
     expect(retire).toBeDefined();
     expect(retire?.ops).toContainEqual({ fn: 'eq', args: ['status', 'initialized'] });
@@ -245,38 +271,55 @@ describe('resume / offer-accept, with every write succeeding', () => {
   });
 });
 
-describe('TODAY: resume / offer-accept, one write failing', () => {
-  it('inserts the replacement anyway when retiring the stale row fails', async () => {
-    // The stale row is left `initialized`, so a late charge.success against its
-    // reference can still settle the order on the OLD split — and there is now
-    // a second, live session for the same order.
+describe('resume / offer-accept, one write failing', () => {
+  it('does NOT insert a replacement or call Paystack when retiring the stale row fails', async () => {
+    // MUST SUCCEED: the whole point of retiring first is that a late
+    // charge.success on the old reference must not settle the order on the old
+    // split. Carrying on would leave the order with TWO live sessions.
     const { service, calls } = await serviceFor('supersede');
-    const session = await service.createCheckoutForExistingOrder({
-      orderId: 'ord_1',
-      buyerId: 'buyer_1',
-      buyerEmail: 'buyer@example.test',
-    });
-    expect(session.payment.id).toBe('pay_new');
-    expect(calls.some((call) => call.ops.some((op) => op.fn === 'insert'))).toBe(true);
-    expect(mockInitializePaystackTransaction).toHaveBeenCalledTimes(1);
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    await expect(
+      service.createCheckoutForExistingOrder({
+        orderId: 'ord_1',
+        buyerId: 'buyer_1',
+        buyerEmail: 'buyer@example.test',
+      }),
+    ).rejects.toThrow(/marketplace_payments/);
+    expect(calls.some((call) => call.ops.some((op) => op.fn === 'insert'))).toBe(false);
+    expect(mockInitializePaystackTransaction).not.toHaveBeenCalled();
   });
 
-  it('sends the buyer to Paystack when the order link fails', async () => {
+  it('names the stale payment and the order it belonged to', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
+    const { service } = await serviceFor('supersede');
+    const error = await service
+      .createCheckoutForExistingOrder({
+        orderId: 'ord_1',
+        buyerId: 'buyer_1',
+        buyerEmail: 'buyer@example.test',
+      })
+      .catch((err: unknown) => err);
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({
+        paymentId: 'pay_old',
+        orderId: 'ord_1',
+        reason: 'supersede_stale_session',
+      }),
+    );
+  });
+
+  it('does NOT call Paystack when the order link fails', async () => {
     const { service } = await serviceFor('order_link');
-    const session = await service.createCheckoutForExistingOrder({
-      orderId: 'ord_1',
-      buyerId: 'buyer_1',
-      buyerEmail: 'buyer@example.test',
-    });
-    expect(session.authorizationUrl).toBe('https://checkout.paystack.com/acc_new');
-    expect(mockInitializePaystackTransaction).toHaveBeenCalledTimes(1);
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    await expect(
+      service.createCheckoutForExistingOrder({
+        orderId: 'ord_1',
+        buyerId: 'buyer_1',
+        buyerEmail: 'buyer@example.test',
+      }),
+    ).rejects.toThrow(/marketplace_orders/);
+    expect(mockInitializePaystackTransaction).not.toHaveBeenCalled();
   });
 
-  it('returns the URL and says nothing when the access-code store fails', async () => {
+  it('still returns the URL when the access-code store fails, and warns', async () => {
     const { service } = await serviceFor('access_code');
     const session = await service.createCheckoutForExistingOrder({
       orderId: 'ord_1',
@@ -284,6 +327,9 @@ describe('TODAY: resume / offer-accept, one write failing', () => {
       buyerEmail: 'buyer@example.test',
     });
     expect(session.authorizationUrl).toBe('https://checkout.paystack.com/acc_new');
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'marketplace_payments', paymentId: 'pay_new' }),
+    );
   });
 });

@@ -468,18 +468,44 @@ export class MarketplacePaymentsService {
       .single();
     if (payErr || !payment) throw payErr || new Error('Failed to create checkout payment');
 
-    await this.db
-      .from('marketplace_checkouts')
-      .update({ payment_id: payment.id, updated_at: new Date().toISOString() })
-      .eq('id', input.checkoutId);
+    // BEST EFFORT (#108): `checkouts.payment_id` is a display mirror. Every
+    // money decision walks the other way — `payments.checkout_id` finds the
+    // orders — so a missed mirror costs the checkout page a field, not a
+    // settlement. (The issue frames this as must-succeed; it is not.)
+    bestEffortWrite(
+      await this.db
+        .from('marketplace_checkouts')
+        .update({ payment_id: payment.id, updated_at: new Date().toISOString() })
+        .eq('id', input.checkoutId),
+      {
+        table: 'marketplace_checkouts',
+        op: 'update',
+        checkoutId: input.checkoutId,
+        paymentId: payment.id,
+      },
+    );
 
-    await this.db
-      .from('marketplace_orders')
-      .update({ payment_id: payment.id, status: 'awaiting_payment' })
-      .in(
-        'id',
-        input.orders.map((order) => order.id),
-      );
+    // MUST SUCCEED (#108): the link `fulfillOrdersForPayment` walks. Unlinked
+    // orders left in the cart's pre-payment state are never advanced by the
+    // webhook, so the buyer pays and nothing moves. Nothing external has
+    // happened yet, and `createFromCart` already cancels these orders and marks
+    // the checkout `failed` when this throws.
+    mustWrite(
+      await this.db
+        .from('marketplace_orders')
+        .update({ payment_id: payment.id, status: 'awaiting_payment' })
+        .in(
+          'id',
+          input.orders.map((order) => order.id),
+        ),
+      {
+        table: 'marketplace_orders',
+        op: 'update',
+        checkoutId: input.checkoutId,
+        paymentId: payment.id,
+        orderCount: input.orders.length,
+      },
+    );
 
     const init = await initializePaystackTransaction({
       email: input.buyerEmail,
@@ -493,19 +519,30 @@ export class MarketplacePaymentsService {
       },
     });
 
-    await this.db
-      .from('marketplace_payments')
-      .update({
-        paystack_access_code: init.accessCode,
-        updated_at: new Date().toISOString(),
-        metadata: {
-          checkoutId: input.checkoutId,
-          orderIds: input.orders.map((order) => order.id),
-          source: 'unified_checkout',
-          authorizationUrl: init.authorizationUrl,
-        },
-      })
-      .eq('id', payment.id);
+    // BEST EFFORT (#108): the session is live and the URL is in the response
+    // below, so throwing would strand a real charge the buyer never sees. Only
+    // resume degrades without the stored code.
+    bestEffortWrite(
+      await this.db
+        .from('marketplace_payments')
+        .update({
+          paystack_access_code: init.accessCode,
+          updated_at: new Date().toISOString(),
+          metadata: {
+            checkoutId: input.checkoutId,
+            orderIds: input.orders.map((order) => order.id),
+            source: 'unified_checkout',
+            authorizationUrl: init.authorizationUrl,
+          },
+        })
+        .eq('id', payment.id),
+      {
+        table: 'marketplace_payments',
+        op: 'update',
+        paymentId: payment.id,
+        checkoutId: input.checkoutId,
+      },
+    );
 
     return {
       paymentId: payment.id,
@@ -673,19 +710,33 @@ export class MarketplacePaymentsService {
         // against a retired row as a settlement mismatch, which is loud.
         supersededPaymentId = existing.id;
         const now = new Date().toISOString();
-        await this.db
-          .from('marketplace_payments')
-          .update({
-            status: 'failed',
-            metadata: {
-              ...((existing.metadata as Record<string, unknown> | null) || {}),
-              superseded_reason: 'split_changed',
-              superseded_at: now,
-            },
-            updated_at: now,
-          })
-          .eq('id', existing.id)
-          .eq('status', 'initialized');
+        // MUST SUCCEED (#108): this is the invariant the comment above states.
+        // If the stale row is not retired and we insert a replacement anyway,
+        // the order has TWO live sessions and the old one's `charge.success`
+        // can still settle it on the old split — the exact outcome retiring it
+        // first exists to prevent. Nothing external has happened yet.
+        mustWrite(
+          await this.db
+            .from('marketplace_payments')
+            .update({
+              status: 'failed',
+              metadata: {
+                ...((existing.metadata as Record<string, unknown> | null) || {}),
+                superseded_reason: 'split_changed',
+                superseded_at: now,
+              },
+              updated_at: now,
+            })
+            .eq('id', existing.id)
+            .eq('status', 'initialized'),
+          {
+            table: 'marketplace_payments',
+            op: 'update',
+            paymentId: existing.id,
+            orderId: order.id,
+            reason: 'supersede_stale_session',
+          },
+        );
       }
     }
 
@@ -723,10 +774,16 @@ export class MarketplacePaymentsService {
       .single();
     if (payErr || !payment) throw payErr || new Error('Failed to create payment');
 
-    await this.db
-      .from('marketplace_orders')
-      .update({ payment_id: payment.id, status: 'awaiting_payment' })
-      .eq('id', order.id);
+    // MUST SUCCEED (#108): same link, same reason as the buy-now path — an
+    // order that does not carry `payment_id` is one the webhook cannot settle.
+    // Nothing external has happened yet.
+    mustWrite(
+      await this.db
+        .from('marketplace_orders')
+        .update({ payment_id: payment.id, status: 'awaiting_payment' })
+        .eq('id', order.id),
+      { table: 'marketplace_orders', op: 'update', orderId: order.id, paymentId: payment.id },
+    );
 
     const init = await initializePaystackTransaction({
       email: input.buyerEmail,
@@ -741,18 +798,23 @@ export class MarketplacePaymentsService {
       },
     });
 
-    await this.db
-      .from('marketplace_payments')
-      .update({
-        paystack_access_code: init.accessCode,
-        updated_at: new Date().toISOString(),
-        metadata: {
-          source: 'offer_accept',
-          listingId: order.listing_id,
-          authorizationUrl: init.authorizationUrl,
-        },
-      })
-      .eq('id', payment.id);
+    // BEST EFFORT (#108): as the other two charge paths — the session is live
+    // and the URL is already in the response.
+    bestEffortWrite(
+      await this.db
+        .from('marketplace_payments')
+        .update({
+          paystack_access_code: init.accessCode,
+          updated_at: new Date().toISOString(),
+          metadata: {
+            source: 'offer_accept',
+            listingId: order.listing_id,
+            authorizationUrl: init.authorizationUrl,
+          },
+        })
+        .eq('id', payment.id),
+      { table: 'marketplace_payments', op: 'update', paymentId: payment.id, orderId: order.id },
+    );
 
     const refreshed = await this.orders.getOrderById(order.id, input.buyerId);
     return {
