@@ -52,6 +52,7 @@ import type { DataClient } from "./client";
 import * as academicData from "./academic";
 import * as adminAnalyticsData from "./adminAnalytics";
 import * as boardActionsData from "./boardActions";
+import * as budgetData from "./budget";
 import * as categoriesData from "./categories";
 import * as chatSendData from "./chatSend";
 import * as clientData from "./client";
@@ -507,6 +508,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   layer.academic = createAcademicApi(client, resolveTopicForArtefact);
   layer.adminAnalytics = createAdminAnalyticsApi(client);
   layer.boardActions = createBoardActionsApi(client, boardActionsDeps);
+  layer.budget = createBudgetApi(client);
   layer.categories = createCategoriesApi(client);
   layer.chatSend = createChatSendApi(client, chatSendDeps);
   layer.client = createClientApi(client);
@@ -576,6 +578,21 @@ function createBoardActionsApi(
     readBoardContextForGroups: bindDb(client, boardActionsData.readBoardContextForGroups),
     toBoardPostShape: bindDeps(boardActionsDeps, boardActionsData.toBoardPostShape),
     communityMemberRole: bindDb(client, boardActionsData.communityMemberRole),
+  };
+}
+
+function createBudgetApi(
+  client: DataClient,
+) {
+  return {
+    insertBudgetTransaction: bindDb(client, budgetData.insertBudgetTransaction),
+    listBudgetTransactions: bindDb(client, budgetData.listBudgetTransactions),
+    listBudgetTransactionsInRange: bindDb(client, budgetData.listBudgetTransactionsInRange),
+    findBudgetTransactionOwner: bindDb(client, budgetData.findBudgetTransactionOwner),
+    upsertBudgetTransaction: bindDb(client, budgetData.upsertBudgetTransaction),
+    listCategoryExpensesForMonth: bindDb(client, budgetData.listCategoryExpensesForMonth),
+    deleteBudgetTransaction: bindDb(client, budgetData.deleteBudgetTransaction),
+    getMonthlyBudget: bindDb(client, budgetData.getMonthlyBudget),
   };
 }
 
@@ -1115,6 +1132,7 @@ export type DataLayer = {
   academic: AcademicApi;
   adminAnalytics: AdminAnalyticsApi;
   boardActions: BoardActionsApi;
+  budget: BudgetApi;
   categories: CategoriesApi;
   chatSend: ChatSendApi;
   client: ClientApi;
@@ -1138,6 +1156,7 @@ export type DataLayer = {
 export type AcademicApi = ReturnType<typeof createAcademicApi>;
 export type AdminAnalyticsApi = ReturnType<typeof createAdminAnalyticsApi>;
 export type BoardActionsApi = ReturnType<typeof createBoardActionsApi>;
+export type BudgetApi = ReturnType<typeof createBudgetApi>;
 export type CategoriesApi = ReturnType<typeof createCategoriesApi>;
 export type ChatSendApi = ReturnType<typeof createChatSendApi>;
 export type ClientApi = ReturnType<typeof createClientApi>;

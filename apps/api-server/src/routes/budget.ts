@@ -147,17 +147,14 @@ router.post(
 
         const txId = randomUUID();
         const date = new Date().toISOString().split('T')[0];
-        const { error: txError } = await dataLayer.getClient()
-          .from('budget_transactions')
-          .insert({
-            id: txId,
-            user_id: userId,
-            type: 'investment',
-            amount,
-            category: 'savings',
-            description: `Savings: ${goal.name}`,
-            date,
-          });
+        const { error: txError } = await dataLayer.budget.insertBudgetTransaction(userId, {
+          id: txId,
+          type: 'investment',
+          amount,
+          category: 'savings',
+          description: `Savings: ${goal.name}`,
+          date,
+        });
 
         if (txError) {
           logger.error('Failed to insert savings contribution transaction', { userId, goalId, txError });
@@ -217,12 +214,7 @@ router.post(
     const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
     const monthYear = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, '0')}`;
 
-    const { data: budgetRow } = await dataLayer.getClient()
-      .from('user_budgets')
-      .select('monthly_limit')
-      .eq('user_id', userId)
-      .eq('month_year', monthYear)
-      .maybeSingle();
+    const { data: budgetRow } = await dataLayer.budget.getMonthlyBudget(userId, monthYear);
 
     const monthlyLimit = Number(budgetRow?.monthly_limit) || 0;
     if (monthlyLimit <= 0) {
@@ -236,12 +228,11 @@ router.post(
     const nextMonth = new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1));
     const monthEnd = nextMonth.toISOString().slice(0, 10);
 
-    const { data: txs } = await dataLayer.getClient()
-      .from('budget_transactions')
-      .select('amount, type, date')
-      .eq('user_id', userId)
-      .gte('date', monthStart)
-      .lt('date', monthEnd);
+    const { data: txs } = await dataLayer.budget.listBudgetTransactionsInRange(
+      userId,
+      monthStart,
+      monthEnd
+    );
 
     const expenses = (txs || [])
       .filter((t: any) => t.type === 'expense')
@@ -292,11 +283,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { data, error } = await dataLayer.getClient()
-      .from('budget_transactions')
-      .select('id, user_id, type, amount, category, description, date')
-      .eq('user_id', userId)
-      .order('date', { ascending: false });
+    const { data, error } = await dataLayer.budget.listBudgetTransactions(userId);
     if (error) throw error;
 
     res.json({ success: true, data: data || [] });
@@ -328,11 +315,11 @@ router.post(
         return res.status(400).json({ success: false, error: 'Invalid transaction id' });
       }
 
-      const { data: existing, error: existingError } = await dataLayer.getClient()
-        .from('budget_transactions')
-        .select('user_id')
-        .eq('id', trimmedId)
-        .maybeSingle();
+      // Looked up by id ALONE, on purpose: an owner filter would make another
+      // user's id look free. The 403 below is the ownership decision, and it
+      // stays here in the route. See gotcha 2 in `services/data/budget.ts`.
+      const { data: existing, error: existingError } =
+        await dataLayer.budget.findBudgetTransactionOwner(trimmedId);
 
       if (existingError) throw existingError;
       if (existing && existing.user_id !== userId) {
@@ -344,20 +331,14 @@ router.post(
     const cat = typeof category === 'string' ? category : 'other';
 
     const data = await req.runIdempotent!(async () => {
-      const { error } = await dataLayer.getClient()
-        .from('budget_transactions')
-        .upsert(
-          {
-            id: txId,
-            user_id: userId,
-            type,
-            amount: amt,
-            category: cat,
-            description: typeof description === 'string' ? description : '',
-            date: txDate,
-          },
-          { onConflict: 'id' }
-        );
+      const { error } = await dataLayer.budget.upsertBudgetTransaction(userId, {
+        id: txId,
+        type,
+        amount: amt,
+        category: cat,
+        description: typeof description === 'string' ? description : '',
+        date: txDate,
+      });
 
       if (error) throw error;
 
@@ -376,14 +357,13 @@ router.post(
           const [y, m] = monthYear.split('-').map(Number);
           const nextMonthFirst =
             m >= 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
-          const { data: monthTxs, error: spentErr } = await dataLayer.getClient()
-            .from('budget_transactions')
-            .select('amount')
-            .eq('user_id', userId)
-            .eq('type', 'expense')
-            .eq('category', cat)
-            .gte('date', `${monthYear}-01`)
-            .lt('date', nextMonthFirst);
+          const { data: monthTxs, error: spentErr } =
+            await dataLayer.budget.listCategoryExpensesForMonth(
+              userId,
+              cat,
+              `${monthYear}-01`,
+              nextMonthFirst
+            );
           if (spentErr) throw spentErr;
           categorySpent = (monthTxs || []).reduce((s: number, t: any) => s + Number(t.amount || 0), 0);
           categoryOverspend = categorySpent > categoryLimit;
@@ -427,13 +407,10 @@ router.delete(
     if (!userId) return;
     const { transactionId } = req.params;
 
-    const { data, error } = await dataLayer.getClient()
-      .from('budget_transactions')
-      .delete()
-      .eq('id', transactionId)
-      .eq('user_id', userId)
-      .select('id')
-      .maybeSingle();
+    const { data, error } = await dataLayer.budget.deleteBudgetTransaction(
+      userId,
+      transactionId
+    );
 
     if (error) throw error;
     if (!data) {
