@@ -66,7 +66,7 @@ because one `const client` can hold several chains. Measured at `920b5461`:
 on a client it builds ITSELF with `createClient` — a liveness probe deliberately
 independent of the data layer, so it is not a `getClient()` escape and is out of scope.
 
-27 queries is the same order as PR 2b's 25, so this stays ONE pull request; no 3a/3b split.
+27 queries is the same order as PR 2b's 25, so this stayed ONE pull request; no 3a/3b split.
 
 Queries inside a `withIdempotency` callback move as functions CALLED FROM INSIDE that same
 callback. Nothing crosses the idempotency boundary in either direction.
@@ -104,3 +104,24 @@ PR 2b. The inventory is at 65, and only the two marketplace tables are left for 
 No table is being ADDED to the product; each was always queried, just not from a scanned
 directory. Each is added in the commit that moves its query, with the reason in the
 message — an inventory-only commit is red either way, since the assertion is equality.
+
+
+## Done — lane R2 is complete
+
+**No inline query remains under `routes/**`.** Every `.from()`, `.rpc()` and
+`auth.admin.*` call in the route layer is gone (`routes/health.ts` keeps one
+`.from()` on a client it builds itself — a liveness probe, deliberately
+independent of the data layer).
+
+The 20 `getClient()` left are all class (b), services that take a client by design:
+
+| hand-off | where |
+| --- | --- |
+| `withIdempotency` | `gamification`, `marketplace/{cart,offers,listings,orders×2}` |
+| `logAIInference` | `notes` ×2, `aiCompanion` ×2, `ai` |
+| companion conversation helpers (`getOwnedConversation`, `resolveConversationForSend`, `findLatestConversationForNoteScope`, `touchConversation`, `listCompanionConversations`, `createCompanionConversation`) | `aiCompanion` ×6 |
+| `hasGroupCommunitySurface` | `groups` |
+| `computeShopSummary` | `marketplace/seller` |
+
+The frozen table inventory is at **67** and there are no route-only tables left,
+so the scan finally sees the whole inventory.
