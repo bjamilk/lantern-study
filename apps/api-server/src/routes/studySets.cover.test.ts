@@ -30,7 +30,7 @@ import {
   CoverColumnMissingError,
   CoverStorageUnavailableError,
   COVER_IMAGE_MIGRATION,
-} from '../services/supabase';
+} from '../services/data/coverImages';
 import { PublicError } from '../utils/safeError';
 import router, { initializeStudySetRoutes, MAX_STUDY_SET_COVER_BYTES } from './studySets';
 import { stubDataLayer } from '../services/data/testStub';

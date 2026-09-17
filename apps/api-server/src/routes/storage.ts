@@ -32,7 +32,7 @@
  *
  * Ownership predicate
  * - Delegated, one object at a time, to `dataLayer.storageAcl.canAccessStorageObject`
- *   in `services/supabase.ts`. That function is the bucket ACL: it denies by
+ *   in `services/data/storageAcl.ts`. That function is the bucket ACL: it denies by
  *   default for any bucket not on the private allowlist, rejects traversal in
  *   the path, treats the first path segment as the owner id, and then applies
  *   per-bucket rules (marketplace listing status, flashcard and question image

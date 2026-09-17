@@ -8,7 +8,7 @@
  * `t.questions` / `t.end_time`. These pin both halves of the contract so
  * neither client can lose a test to the other's shape again.
  */
-import { mapTestListRow } from "./supabase";
+import { mapTestListRow } from "./data/testMappers";
 
 const personalTest = {
   id: "test-1",

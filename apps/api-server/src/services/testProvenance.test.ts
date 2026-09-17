@@ -6,7 +6,7 @@
  * `config` — which every client did differently, and mobile did not do at all.
  * `buildTestProvenance` is the single answer, and these pin its precedence.
  */
-import { buildAttemptTally, buildTestProvenance, mapTestListRow } from "./supabase";
+import { buildAttemptTally, buildTestProvenance, mapTestListRow } from "./data/testMappers";
 import * as testsData from "./data/tests";
 
 describe("buildTestProvenance", () => {

@@ -38,7 +38,7 @@ jest.mock('../utils/platformAdminAuth', () => ({ isLivePlatformAdmin: jest.fn(as
 jest.mock('../utils/authCookies', () => ({ readAccessCookie: () => null }));
 
 import { initializeAuthMiddleware, optionalAuthMiddleware } from './auth';
-import { isTransientAuthError } from '../services/supabase';
+import { isTransientAuthError } from '../services/data/client';
 
 const verifySupabaseTokenDetailed = jest.fn();
 
