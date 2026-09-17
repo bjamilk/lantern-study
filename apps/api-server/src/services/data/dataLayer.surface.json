@@ -130,6 +130,43 @@
       ]
     },
     {
+      "namespace": "budget",
+      "functions": [
+        {
+          "name": "deleteBudgetTransaction",
+          "arity": 0
+        },
+        {
+          "name": "findBudgetTransactionOwner",
+          "arity": 0
+        },
+        {
+          "name": "getMonthlyBudget",
+          "arity": 0
+        },
+        {
+          "name": "insertBudgetTransaction",
+          "arity": 0
+        },
+        {
+          "name": "listBudgetTransactions",
+          "arity": 0
+        },
+        {
+          "name": "listBudgetTransactionsInRange",
+          "arity": 0
+        },
+        {
+          "name": "listCategoryExpensesForMonth",
+          "arity": 0
+        },
+        {
+          "name": "upsertBudgetTransaction",
+          "arity": 0
+        }
+      ]
+    },
+    {
       "namespace": "categories",
       "functions": [
         {
