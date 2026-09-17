@@ -10,6 +10,10 @@
  * - payout: `createPaystackTransferRecipient`, `initiatePaystackTransfer`,
  *   `resolvePaystackAccount`, `listPaystackBanks`
  * - refund: `refundPaystackTransaction`
+ * - reconciliation READS (#113, they move nothing):
+ *   `fetchPaystackTransferByReference`, `listPaystackRefundsForTransaction`,
+ *   plus `PaystackApiError` / `isPaystackNotFound` so a caller can tell "no
+ *   such transfer" from "Paystack is unreachable"
  * - webhook: `verifyPaystackSignature`
  * - config: `isPaystackConfigured`, `getPaystackPublicKey`, `paystackMode`,
  *   `assertPaystackLiveKeyInProduction`, `createPaystackReference`
@@ -160,9 +164,94 @@ async function paystackFetch<T>(
   if (!res.ok || payload.status === false) {
     const msg = payload.message || `Paystack request failed (${res.status})`;
     logger.warn('Paystack API error', { path, status: res.status, message: msg });
-    throw new Error(msg);
+    throw new PaystackApiError(msg, res.status);
   }
   return payload.data as T;
+}
+
+/**
+ * What `paystackFetch` throws. It is still an `Error` carrying exactly the
+ * message it always did — every existing caller is unchanged — plus the HTTP
+ * status, which the read-only reconciliation reads (#113): a 404 on a transfer
+ * lookup is the FACT "Paystack has no such transfer", while a 500 or a network
+ * failure is "we do not know", and the two must never be confused.
+ */
+export class PaystackApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'PaystackApiError';
+    this.status = status;
+  }
+}
+
+/** Was this failure Paystack saying "no such object", rather than a blip? */
+export function isPaystackNotFound(err: unknown): boolean {
+  return err instanceof PaystackApiError && err.status === 404;
+}
+
+export type PaystackTransferResult = {
+  status: string;
+  reference: string;
+  transferCode: string | null;
+  amountKobo: number | null;
+};
+
+/**
+ * READ-ONLY (#113). Ask Paystack what became of one transfer, by the
+ * deterministic reference the payout path wrote BEFORE it moved any money.
+ *
+ * This is the reconciliation job's source of truth for "did the seller's money
+ * actually leave?" — never our own row. It moves nothing: there is no transfer
+ * initiation here and there must never be one.
+ *
+ * A reference Paystack has never seen answers 404, which `paystackFetch` raises
+ * as a `PaystackApiError` the caller tells apart with `isPaystackNotFound`.
+ */
+export async function fetchPaystackTransferByReference(
+  reference: string
+): Promise<PaystackTransferResult> {
+  const data = await paystackFetch<{
+    status: string;
+    reference: string;
+    transfer_code?: string | null;
+    amount?: number | null;
+  }>(`/transfer/verify/${encodeURIComponent(reference)}`, { method: 'GET' });
+  return {
+    status: data.status,
+    reference: data.reference,
+    transferCode: data.transfer_code ?? null,
+    amountKobo: typeof data.amount === 'number' ? data.amount : null,
+  };
+}
+
+export type PaystackRefundRecord = {
+  id: string;
+  status: string;
+  amountKobo: number | null;
+};
+
+/**
+ * READ-ONLY (#113). Every refund Paystack holds against one transaction,
+ * newest first as Paystack returns them.
+ *
+ * An empty array is a real answer — "no refund was ever accepted for this
+ * charge" — and is what lets the job release a refund claim that is backing
+ * nothing. It initiates no refund.
+ */
+export async function listPaystackRefundsForTransaction(
+  transactionIdOrReference: string | number
+): Promise<PaystackRefundRecord[]> {
+  const qs = new URLSearchParams({ transaction: String(transactionIdOrReference) });
+  const data = await paystackFetch<
+    Array<{ id: number | string; status: string; amount?: number | null }>
+  >(`/refund?${qs.toString()}`, { method: 'GET' });
+  return (data || []).map((row) => ({
+    id: String(row.id),
+    status: String(row.status),
+    amountKobo: typeof row.amount === 'number' ? row.amount : null,
+  }));
 }
 
 export async function initializePaystackTransaction(input: {
