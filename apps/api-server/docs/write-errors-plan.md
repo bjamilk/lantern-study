@@ -148,7 +148,9 @@ Founder decisions on the questions Phase A raised. The classification above stan
 
 ## Order of work
 
-A (this PR): helpers + ratchet + the buy-now pilot. B: the rest of `marketplacePayments.ts`
-(PR 1), then `marketplaceOrders.ts` (PR 2), one PR per file, every write test-first. Then
-the rest by domain, best-effort sites batched. Each later PR re-freezes the ratchet baseline
+A (#112, merged): helpers + ratchet + the buy-now pilot — 3 sites. B PR 1 (this one): the
+rest of `services/marketplacePayments.ts` — 24 sites, so that file is now at ZERO and the
+baseline is 87 → 63. B PR 2: `marketplaceOrders.ts` (9), including deleting the dead
+`voidOrphanPendingTransaction` and fixing the never-firing `.then(undefined, handler)`.
+Then the rest by domain, best-effort sites batched. Each PR re-freezes the ratchet baseline
 downward in its own commit, with the before and after counts in the PR body.
