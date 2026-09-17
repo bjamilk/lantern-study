@@ -1386,3 +1386,70 @@ export async function updateMessageFlagged(
     text: data.text,
   };
 }
+
+
+// ============================================================================
+// THE UNPAGED WHOLE-GROUP MESSAGE READ
+// ----------------------------------------------------------------------------
+// Moved verbatim out of `services/supabase.ts` (monolith lane M1h) — the last
+// group-message read left in that file. It sat under the BOARD ACTIONS banner
+// only by where it was pasted.
+//
+// Gotcha: like `getGroupMessages` above, the viewer-state pass
+// (`attachPeerUpvotes`) runs INSIDE `cacheService.cached(...)`, and the cache
+// key is per-GROUP, not per-viewer. That is pre-existing behaviour and moves
+// unchanged; see gotcha 4 in this module's banner.
+// ============================================================================
+
+export async function fetchMessages(
+  db: DataClient,
+  deps: Pick<GroupMessageDeps, "attachPeerUpvotes" | "normalizeMessageRecord">,
+  groupId: string,
+): Promise<Message[]> {
+  const cacheKey = `group:${groupId}:messages`;
+
+  return cacheService.cached(
+    cacheKey,
+    async () => {
+      const { data, error } = await db
+        .from("messages")
+        .select(
+          `
+          id,
+          group_id,
+          sender_id,
+          type,
+          text,
+          question_data,
+          flagged_as_similar_user_ids,
+          timestamp,
+          edited_at,
+          removed_at,
+          upvotes,
+          downvotes,
+          is_archived,
+          image_url,
+          profiles!sender_id (
+            id,
+            name,
+            username,
+            avatar_url
+          )
+        `,
+        )
+        .eq("group_id", groupId)
+        .order("timestamp", { ascending: true });
+
+      if (error) throw error;
+
+      // The question pool is read from here, so it needs the same
+      // verification progress the chat card shows.
+      const withPeerUpvotes = await deps.attachPeerUpvotes(data as any[]);
+
+      return withPeerUpvotes.map((msg: any) =>
+        mapChatMessageRow(msg, deps.normalizeMessageRecord(msg)),
+      );
+    },
+    { ttl: 30 },
+  ); // Cache for 30 seconds
+}

@@ -114,6 +114,7 @@ import {
 import {
   MARKETPLACE_DEFAULT_COUNTRY,
   MARKETPLACE_DEFAULT_CURRENCY,
+  MARKETPLACE_MODERATED_LISTING_STATUSES,
   isMarketplaceListingEditable,
   isMarketplaceListingStatus,
   sellerListingTransitionError,
@@ -125,6 +126,9 @@ import {
   parseStoredStorageRef,
 } from "@lantern/shared/utils/storageUrl";
 import { PublicError } from "../../utils/safeError";
+// Owner/admin-only moderation columns never ride along on embedded listings.
+// `moderation.ts` only TYPE-imports supabase, so this introduces no cycle.
+import { stripListingModerationFields } from "../moderation";
 // Value import (const array) — marketplaceOrders only type-imports supabase, so
 // this introduces no runtime import cycle.
 import { OPEN_ORDER_STATUSES } from "../marketplaceOrders";
@@ -284,6 +288,10 @@ export type MarketplaceDeps = {
   fetchSellerTrust: (
     sellerIds: string[],
   ) => Promise<Map<string, { trust_level: string; verification_level: number }>>;
+  getInquiryByListingAndBuyer: (
+    listingId: string,
+    buyerId: string,
+  ) => Promise<any>;
   getMarketplaceListingById: (
     listingId: string,
     options?: { requireActive?: boolean },
@@ -313,7 +321,12 @@ export type MarketplaceDeps = {
     listingId: string,
     sellerId: string,
   ) => Promise<boolean>;
+  normalizeFavoriteRecord: (favorite: any) => any;
+  normalizeInquiryRecord: (inquiry: any) => any;
   pickCompactListingFields: (listing: any) => any;
+  stripInquiryListingModeration: <T extends { listing?: unknown } | null>(
+    inquiry: T,
+  ) => T;
   toListingCardRecords: (listings: any[]) => Promise<any[]>;
 
   /**
@@ -357,6 +370,10 @@ export type MarketplaceDeps = {
     offerId: string,
     actorId?: string,
   ) => Promise<Record<string, any>>;
+  notifyListingBackAvailable: (
+    listing: { id: string; user_id: string; title: string },
+    previousStatus: string,
+  ) => Promise<void>;
   recordLearningConnection: (input: {
     actorId: string;
     beneficiaryId: string;
@@ -2234,4 +2251,610 @@ export async function finalizeOfferAcceptSale(
   return { orderId: order.id, budgetLogged: false };
 }
 
+// ============================================================================
+// MARKETPLACE SELLER DASHBOARD / FAVOURITES / INQUIRIES
+// ----------------------------------------------------------------------------
+// Moved verbatim out of `services/supabase.ts` (monolith lane M1h) — the last
+// query-bearing marketplace methods in that file. They sat physically inside
+// the UNREAD / READ STATE banner rather than the MARKETPLACE one, which is the
+// only reason lane M1g's sweep of the MARKETPLACE section left them behind;
+// they are marketplace code and they belong here. Kept FLAT with the rest of
+// the module because the whole file is later folded into the marketplace
+// services (`TEAM-S1-api-structure.md` §3, P0).
+//
+// These are also why `services/supabase.ts` had to import `listingStateError`
+// BACK from this module, and why `normalizeInquiryRecord` /
+// `normalizeFavoriteRecord` / `stripInquiryListingModeration` were still class
+// methods. All three bodies move here with their only callers; the facade keeps
+// one-line delegations so the frozen prototype surface is unchanged.
+//
+// Gotchas that travel with this code:
+//
+// a. `updateListingStatus` keeps the shared lifecycle table as its authority,
+//    exactly like `assertSellerListingUpdateAllowed` above: a seller can never
+//    reverse a moderation takedown or flip a listing an open order is holding.
+//    `supabase.listingModerationLock.test.ts` drives the PROTOTYPE against a
+//    bare `{ supabase, getMarketplaceListingById, maybeLogManualSoldBudget,
+//    toListingCardRecords }` stand-in, so every sibling here goes through
+//    `deps` and the `await import("./marketplaceFavoriteAlerts")` stays in the
+//    facade — that test `jest.mock`s exactly that specifier.
+//
+// b. `updateInquiryStatus` is a security guard, not bookkeeping: only the
+//    SELLER may attest `purchased`, because `canUserReviewListing` treats a
+//    `purchased` inquiry as verified-purchase evidence. A buyer flipping their
+//    own inquiry would self-mint a fake "verified purchase" review.
+//    `supabase.inquiryStatus.test.ts` pins all four outcomes.
+//
+// c. The inquiry selects embed the WHOLE listing row (`marketplace_listings(*)`),
+//    which would carry owner/admin-only rights, takedown and appeal columns to
+//    the buyer — hence `stripInquiryListingModeration` on both paths that use
+//    the `(*)` shape.
+//
+// d. `createInquiry` upserts `dm_threads` FIRST. `marketplace_inquiries
+//    .dm_thread_id` is an FK to `dm_threads(id)`, and contact-seller used to
+//    insert the inquiry before `sendDirectMessage` created the thread → 500.
+//
+// e. The `marketplace_favorites(count)` / `marketplace_inquiries(count)`
+//    aggregate embeds and the six `marketplace_listings` embeds below are the
+//    rows that moved with this code in
+//    `services/postgrestEmbedDisambiguation.test.ts`; no count changed.
+// ============================================================================
 
+export async function normalizeInquiryRecord(
+  deps: Pick<MarketplaceDeps, "normalizeListingRecord">,
+  inquiry: any,
+): Promise<any> {
+  if (!inquiry) return inquiry;
+  return {
+    ...inquiry,
+    listing: inquiry.listing
+      ? deps.normalizeListingRecord(inquiry.listing)
+      : inquiry.listing,
+  };
+}
+
+export function normalizeFavoriteRecord(
+  deps: Pick<MarketplaceDeps, "normalizeListingRecord">,
+  favorite: any,
+): any {
+  if (!favorite) return favorite;
+  return {
+    ...favorite,
+    listing: favorite.listing
+      ? deps.normalizeListingRecord(favorite.listing)
+      : favorite.listing,
+  };
+}
+
+// Get listings by seller (for seller dashboard)
+export async function getListingsBySeller(
+  db: DataClient,
+  deps: Pick<MarketplaceDeps, "toListingCardRecords">,
+  userId: string,
+  status?: string,
+): Promise<any[]> {
+  // No course/topic filter here: the seller dashboard (/marketplace/my-listings)
+  // only ever narrows by status. No client sends courseId/topicId, so the
+  // archive-filter plumbing that once lived here was unreachable and removed.
+  let query = db
+    .from("marketplace_listings")
+    .select(
+      `
+        *,
+        favorites_count:marketplace_favorites(count),
+        inquiries_count:marketplace_inquiries(count)
+      `,
+    )
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (status === "active") {
+    // Active shelf includes reserved (sale in progress) for seller inventory.
+    query = query.in("status", ["active", "reserved"]);
+  } else if (status === "inactive") {
+    // The Inactive shelf also holds listings moderation took down, so a
+    // takedown is visible (read-only) to the seller instead of vanishing.
+    query = query.in("status", [
+      "inactive",
+      ...MARKETPLACE_MODERATED_LISTING_STATUSES,
+    ]);
+  } else if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    logger.error("Error fetching seller listings:", error);
+    throw error;
+  }
+
+  const mapped = (data || []).map((listing) => ({
+    ...listing,
+    favorites_count: listing.favorites_count?.[0]?.count || 0,
+    inquiries_count: listing.inquiries_count?.[0]?.count || 0,
+  }));
+  // Grid cards only need the first image; prefer upload-time thumbs.
+  return deps.toListingCardRecords(mapped);
+}
+
+
+// Update listing status (active, inactive, sold)
+export async function updateListingStatus(
+  db: DataClient,
+  deps: Pick<
+    MarketplaceDeps,
+    "maybeLogManualSoldBudget" | "notifyListingBackAvailable"
+  >,
+  listingId: string,
+  status: string,
+  userId: string,
+): Promise<any> {
+  // Verify ownership
+  const { data: listing } = await db
+    .from("marketplace_listings")
+    .select("user_id, status, title")
+    .eq("id", listingId)
+    .single();
+
+  if (!listing || listing.user_id !== userId) {
+    throw new Error("Unauthorized: You do not own this listing");
+  }
+
+  const previousStatus = listing.status;
+
+  // Seller-side transitions are limited to the shared lifecycle table: a
+  // listing moderation removed/suspended, one held by an open order, or an
+  // archived one cannot be flipped back to active (or anywhere) from here.
+  if (!isMarketplaceListingStatus(status)) {
+    throw listingStateError("Unknown listing status", 400);
+  }
+  if (isMarketplaceListingStatus(previousStatus)) {
+    const refusal = sellerListingTransitionError(previousStatus, status);
+    if (refusal) throw listingStateError(refusal, 403);
+  }
+
+  const { data, error } = await db
+    .from("marketplace_listings")
+    .update({ status })
+    .eq("id", listingId)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  if (status === "sold") {
+    await deps.maybeLogManualSoldBudget(listingId, userId);
+  }
+
+  if (status === "active" && previousStatus !== "active") {
+    await deps.notifyListingBackAvailable(
+      { id: listingId, user_id: userId, title: data.title || listing.title },
+      previousStatus,
+    );
+  }
+
+  return data;
+}
+
+
+/**
+ * Count at most one view per registered viewer (never anonymous / owner /
+ * repeat opens). Returns true only when views_count was actually bumped.
+ */
+export async function incrementListingViews(
+  db: DataClient,
+  listingId: string,
+  viewerId?: string | null,
+): Promise<boolean> {
+  if (!viewerId) return false;
+  try {
+    const { data, error } = await db.rpc("increment_listing_views", {
+      listing_id: listingId,
+      viewer_id: viewerId,
+    });
+    if (error) {
+      logger.warn("Unique listing view RPC failed", {
+        listingId,
+        viewerId,
+        error: error.message,
+      });
+      return false;
+    }
+    return data === true;
+  } catch (err) {
+    logger.error("Failed to increment listing views", {
+      listingId,
+      viewerId,
+      error: err,
+    });
+    return false;
+  }
+}
+
+
+// Get seller stats
+export async function getSellerStats(
+  db: DataClient,
+  userId: string,
+): Promise<{
+  totalListings: number;
+  activeListings: number;
+  soldListings: number;
+  completedOrders: number;
+  totalViews: number;
+  totalInquiries: number;
+  totalFavorites: number;
+}> {
+  const [listingsRes, ordersRes] = await Promise.all([
+    db
+      .from("marketplace_listings")
+      .select(
+        `
+          id,
+          status,
+          views_count,
+          favorites:marketplace_favorites(count),
+          inquiries:marketplace_inquiries(count)
+        `,
+      )
+      .eq("user_id", userId),
+    db
+      .from("marketplace_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("seller_id", userId)
+      .eq("status", "completed"),
+  ]);
+
+  const { data: listings, error } = listingsRes;
+  if (error) throw error;
+  if (ordersRes.error) throw ordersRes.error;
+
+  return {
+    totalListings: listings?.length || 0,
+    activeListings:
+      listings?.filter((l) => l.status === "active" || l.status === "reserved")
+        .length || 0,
+    soldListings: listings?.filter((l) => l.status === "sold").length || 0,
+    completedOrders: ordersRes.count || 0,
+    totalViews:
+      listings?.reduce((sum, l) => sum + (l.views_count || 0), 0) || 0,
+    totalInquiries:
+      listings?.reduce((sum, l) => sum + (l.inquiries?.[0]?.count || 0), 0) ||
+      0,
+    totalFavorites:
+      listings?.reduce((sum, l) => sum + (l.favorites?.[0]?.count || 0), 0) ||
+      0,
+  };
+}
+
+
+// ============ MARKETPLACE FAVORITES METHODS ============
+
+// Add listing to favorites
+export async function addFavorite(
+  db: DataClient,
+  userId: string,
+  listingId: string,
+): Promise<any> {
+  const { data, error } = await db
+    .from("marketplace_favorites")
+    .insert({ user_id: userId, listing_id: listingId })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      // Already favorited
+      return { alreadyExists: true };
+    }
+    throw error;
+  }
+  return data;
+}
+
+
+// Remove listing from favorites
+export async function removeFavorite(
+  db: DataClient,
+  userId: string,
+  listingId: string,
+): Promise<boolean> {
+  const { error } = await db
+    .from("marketplace_favorites")
+    .delete()
+    .eq("user_id", userId)
+    .eq("listing_id", listingId);
+
+  if (error) throw error;
+  return true;
+}
+
+
+// Get user's favorites
+export async function getUserFavorites(
+  db: DataClient,
+  deps: Pick<MarketplaceDeps, "normalizeFavoriteRecord">,
+  userId: string,
+): Promise<any[]> {
+  const { data, error } = await db
+    .from("marketplace_favorites")
+    .select(
+      `
+        id,
+        created_at,
+        listing:marketplace_listings(
+          *,
+          profiles!user_id(id, name, avatar_url)
+        )
+      `,
+    )
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map((favorite: any) =>
+    deps.normalizeFavoriteRecord(favorite),
+  );
+}
+
+
+// Check if listing is favorited by user
+export async function isListingFavorited(
+  db: DataClient,
+  userId: string,
+  listingId: string,
+): Promise<boolean> {
+  const { data, error } = await db
+    .from("marketplace_favorites")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("listing_id", listingId)
+    .single();
+
+  if (error && error.code !== "PGRST116") throw error;
+  return !!data;
+}
+
+
+// ============ MARKETPLACE INQUIRIES METHODS ============
+
+// Create an inquiry (when buyer contacts seller about a listing)
+export async function createInquiry(
+  db: DataClient,
+  deps: Pick<
+    MarketplaceDeps,
+    "getInquiryByListingAndBuyer" | "stripInquiryListingModeration"
+  >,
+  listingId: string,
+  buyerId: string,
+  sellerId: string,
+  dmThreadId: string,
+  initialMessage: string,
+): Promise<any> {
+  // marketplace_inquiries.dm_thread_id FK requires dm_threads(id) first.
+  // Contact-seller used to insert the inquiry before sendDirectMessage upserted the thread → 500.
+  const sortedIds = [buyerId, sellerId].sort();
+  const { error: threadError } = await db
+    .from("dm_threads")
+    .upsert(
+      {
+        id: dmThreadId,
+        participant_ids: sortedIds,
+        participants: {},
+        last_message: initialMessage,
+        last_message_time: new Date().toISOString(),
+        status: "open",
+        requested_by: null,
+      },
+      { onConflict: "id" },
+    );
+  if (threadError) {
+    logger.error("Error ensuring DM thread for marketplace inquiry", {
+      error: threadError,
+      dmThreadId,
+    });
+    throw new Error(`Failed to create DM thread: ${threadError.message}`);
+  }
+
+  const { data, error } = await db
+    .from("marketplace_inquiries")
+    .insert({
+      listing_id: listingId,
+      buyer_id: buyerId,
+      seller_id: sellerId,
+      dm_thread_id: dmThreadId,
+      initial_message: initialMessage,
+      status: "open",
+    })
+    .select(
+      `
+        *,
+        listing:marketplace_listings(*),
+        buyer:profiles!buyer_id(id, name, avatar_url),
+        seller:profiles!seller_id(id, name, avatar_url)
+      `,
+    )
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      // Inquiry already exists, return it
+      return deps.getInquiryByListingAndBuyer(listingId, buyerId);
+    }
+    throw error;
+  }
+  return deps.stripInquiryListingModeration(data);
+}
+
+
+// Get inquiry by listing and buyer
+export async function getInquiryByListingAndBuyer(
+  db: DataClient,
+  deps: Pick<MarketplaceDeps, "stripInquiryListingModeration">,
+  listingId: string,
+  buyerId: string,
+): Promise<any> {
+  const { data, error } = await db
+    .from("marketplace_inquiries")
+    .select(
+      `
+        *,
+        listing:marketplace_listings(*),
+        buyer:profiles!buyer_id(id, name, avatar_url),
+        seller:profiles!seller_id(id, name, avatar_url)
+      `,
+    )
+    .eq("listing_id", listingId)
+    .eq("buyer_id", buyerId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return deps.stripInquiryListingModeration(data);
+}
+
+
+/**
+ * The inquiry embeds the whole listing row (`marketplace_listings(*)`), which
+ * would carry the owner/admin-only rights/takedown/appeal columns to the
+ * buyer. Strip them from the embed; the inquiry itself is untouched.
+ */
+export function stripInquiryListingModeration<
+  T extends { listing?: unknown } | null,
+>(inquiry: T): T {
+  if (!inquiry || typeof inquiry !== "object") return inquiry;
+  const listing = (inquiry as { listing?: unknown }).listing;
+  if (!listing || typeof listing !== "object") return inquiry;
+  return {
+    ...(inquiry as Record<string, unknown>),
+    listing: Array.isArray(listing)
+      ? listing.map((row) => stripListingModerationFields(row as Record<string, unknown>))
+      : stripListingModerationFields(listing as Record<string, unknown>),
+  } as T;
+}
+
+
+// Get seller's inquiries
+export async function getSellerInquiries(
+  db: DataClient,
+  deps: Pick<MarketplaceDeps, "normalizeInquiryRecord">,
+  sellerId: string,
+  status?: string,
+): Promise<any[]> {
+  let query = db
+    .from("marketplace_inquiries")
+    .select(
+      `
+        *,
+        listing:marketplace_listings(id, title, price, images, status),
+        buyer:profiles!buyer_id(id, name, avatar_url)
+      `,
+    )
+    .eq("seller_id", sellerId)
+    .order("created_at", { ascending: false });
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).map((inquiry: any) =>
+    deps.normalizeInquiryRecord(inquiry),
+  );
+}
+
+
+// Get buyer's inquiries
+export async function getBuyerInquiries(
+  db: DataClient,
+  deps: Pick<MarketplaceDeps, "normalizeInquiryRecord">,
+  buyerId: string,
+): Promise<any[]> {
+  const { data, error } = await db
+    .from("marketplace_inquiries")
+    .select(
+      `
+        *,
+        listing:marketplace_listings(id, title, price, images, status),
+        seller:profiles!seller_id(id, name, avatar_url)
+      `,
+    )
+    .eq("buyer_id", buyerId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map((inquiry: any) =>
+    deps.normalizeInquiryRecord(inquiry),
+  );
+}
+
+
+// Update inquiry status
+export async function updateInquiryStatus(
+  db: DataClient,
+  inquiryId: string,
+  status: string,
+  userId: string,
+): Promise<any> {
+  // Verify user is participant
+  const { data: inquiry } = await db
+    .from("marketplace_inquiries")
+    .select("buyer_id, seller_id")
+    .eq("id", inquiryId)
+    .single();
+
+  if (
+    !inquiry ||
+    (inquiry.buyer_id !== userId && inquiry.seller_id !== userId)
+  ) {
+    const err = new Error("Inquiry not found");
+    (err as Error & { statusCode?: number }).statusCode = 404;
+    throw err;
+  }
+
+  // Only the seller may attest a purchase. canUserReviewListing treats an
+  // inquiry the seller marked 'purchased' as verified-purchase evidence, so a
+  // buyer flipping their own inquiry to 'purchased' could self-mint a fake
+  // "verified purchase" review without ever buying. Buyers may still move an
+  // inquiry through open/negotiating/closed.
+  if (status === "purchased" && inquiry.seller_id !== userId) {
+    const err = new Error(
+      "Only the seller can mark an inquiry as purchased",
+    );
+    (err as Error & { statusCode?: number }).statusCode = 403;
+    throw err;
+  }
+
+  const { data, error } = await db
+    .from("marketplace_inquiries")
+    .update({ status })
+    .eq("id", inquiryId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+
+// Get inquiry by DM thread
+export async function getInquiryByThread(
+  db: DataClient,
+  deps: Pick<MarketplaceDeps, "normalizeInquiryRecord">,
+  threadId: string,
+): Promise<any> {
+  const { data, error } = await db
+    .from("marketplace_inquiries")
+    .select(
+      `
+        *,
+        listing:marketplace_listings(id, title, price, images, status, user_id)
+      `,
+    )
+    .eq("dm_thread_id", threadId)
+    .single();
+
+  if (error && error.code !== "PGRST116") throw error;
+  return data ? deps.normalizeInquiryRecord(data) : data;
+}

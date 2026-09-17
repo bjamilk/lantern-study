@@ -58,7 +58,7 @@
  */
 import { logger } from "../../utils/logger";
 import type { LearningSurface } from "@lantern/shared/learning";
-import type { User } from "../../types";
+import type { TestResult, User } from "../../types";
 import { initialUserStats } from "@lantern/shared/utils/testHelpers";
 import {
   coerceRawUserAnswers,
@@ -156,6 +156,10 @@ export type TestDeps = {
   /** Still in the monolith: chat-internals helpers. */
   generateTestQuestions: (config: any) => any[];
   calculateTestScore: (questions: any[], answers: any[]) => number;
+  /**
+   * In THIS module since monolith lane M1h, but still reached through `deps`:
+   * `supabase.submitTest*` harnesses stub it by name on a bare stand-in.
+   */
   updateUserStats: (userId: string, score: number) => Promise<void>;
   /** Still in the monolith: gamification (lane M1c step 12 moves it). */
   applyTestCompletionGamification: (
@@ -1661,4 +1665,100 @@ export async function getTestTemplates(
     },
     { ttl: 1800 },
   ); // Cache for 30 minutes
+}
+
+
+// ============================================================================
+// TEST-RESULT HISTORY AND THE PROFILE TEST-STATS AGGREGATE
+// ----------------------------------------------------------------------------
+// Moved verbatim out of `services/supabase.ts` (monolith lane M1h) — the last
+// two query-bearing methods of the tests domain in that file.
+//
+// `updateUserStats` writes `profiles.stats`, a table the gamification
+// repository otherwise owns, but it lives HERE because it is test bookkeeping
+// and nothing else calls it: `submitTest` above is its only caller, it already
+// declared it in `TestDeps`, and the aggregate it maintains (testsTaken /
+// totalScore / averageScore) is the test history, not points, badges, levels or
+// streaks. It keeps going through `deps` so the submit-path harnesses that stub
+// it by name still intercept.
+// ============================================================================
+
+// Test Results Functions
+export async function fetchTestResults(
+  db: DataClient,
+  userId: string,
+): Promise<TestResult[]> {
+  const cacheKey = `user:${userId}:test-results`;
+
+  return cacheService.cached(
+    cacheKey,
+    async () => {
+      const { data, error } = await db
+        .from("test_sessions")
+        .select(
+          `
+          *,
+          test_results (*)
+        `,
+        )
+        .eq("user_id", userId)
+        .order("start_time", { ascending: false });
+
+      if (error) throw error;
+
+      return data.flatMap((session: any) =>
+        session.test_results.map((result: any) => ({
+          id: result.id,
+          session: {
+            ...session,
+            startTime: session.start_time,
+            endTime: session.end_time,
+            isOffline: session.is_offline,
+            config: session.config,
+            questions: session.questions,
+            userAnswers: session.user_answers,
+          },
+          score: result.score,
+          totalQuestions: result.total_questions,
+          correctAnswersCount: result.correct_answers_count,
+        })),
+      );
+    },
+    { ttl: 300 },
+  ); // Cache for 5 minutes
+}
+
+
+export async function updateUserStats(
+  db: DataClient,
+  userId: string,
+  score: number,
+): Promise<void> {
+  // Update user stats (simplified)
+  const { data: user, error: userError } = await db
+    .from("profiles")
+    .select("stats")
+    .eq("id", userId)
+    .single();
+
+  if (userError) throw userError;
+
+  const currentStats = user?.stats || {};
+  const testsTaken = (currentStats.testsTaken || 0) + 1;
+  const totalScore = (currentStats.totalScore || 0) + score;
+  const averageScore = totalScore / testsTaken;
+
+  const { error } = await db
+    .from("profiles")
+    .update({
+      stats: {
+        ...currentStats,
+        testsTaken,
+        totalScore,
+        averageScore,
+      },
+    })
+    .eq("id", userId);
+
+  if (error) throw error;
 }

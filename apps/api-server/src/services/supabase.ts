@@ -5,6 +5,33 @@
  * (`constructor` → `data/client.ts`'s `createDataClient`) and every route
  * handler in the server reaches Postgres and Storage through it.
  *
+ * ## STATUS: this file is now a pure facade
+ *
+ * As of monolith lane M1h it issues NO queries of its own. A repo-wide grep
+ * for `.from(` / `.rpc(` / `.storage.` / `.channel(` in this file returns
+ * nothing: every body lives in `services/data/*` and every one of the 382
+ * `SupabaseService` methods is a one-line delegation. Two things stayed behind
+ * deliberately:
+ *
+ *  - `getClient()`, the escape hatch callers still use to run their own query;
+ *  - `ratingColumnsBrokenUntil` + `ratingColumnsAvailable` /
+ *    `noteRatingColumnsMissing`, the per-INSTANCE circuit breaker for the
+ *    unapplied rating-column migration, which `supabase.reviewSignals.test.ts`
+ *    asserts per instance (`expect(self.ratingColumnsAvailable()).toBe(false)`)
+ *    and which is therefore injected into `data/marketplace.ts` rather than
+ *    moved there.
+ *
+ * So do not add a query here. Add it to the `services/data/*` module that owns
+ * the table, and delegate. The `deps` literal is always built INLINE at the
+ * call site, as arrows that read `this.<method>` at CALL time: the tests drive
+ * the prototype against bare stand-in objects, where an instance field would
+ * read as `undefined` and a `jest.spyOn` on the class would be bypassed.
+ *
+ * The 18-step decomposition plan (`TEAM-S1-api-structure.md` §3, P0) has one
+ * step left: delete the class and flip the importers to the domain modules.
+ * Until then this module is also carrying ~100 now-orphaned imports, kept so
+ * the deletion lane can sweep them in one pass.
+ *
  * ## The service role bypasses RLS
  *
  * The service-role key is a superuser credential: row-level security does not
@@ -129,12 +156,11 @@ export { resolveStudySetIdFromConfigLike };
 import * as adminAnalyticsData from "./data/adminAnalytics";
 import * as boardActionsData from "./data/boardActions";
 import * as groupMessagesData from "./data/groupMessages";
-// The MARKETPLACE section (monolith lane M1g, step 18), together with the
-// listing write sanitizers that were its only callers. `listingStateError` is
-// named separately because `updateListingStatus`, in the inquiries block
-// further down, still raises it from this file.
+// The MARKETPLACE section (monolith lane M1g, step 18) and, with monolith lane
+// M1h, the seller-dashboard / favourites / inquiries block that sat under the
+// UNREAD banner. Nothing in this file raises `listingStateError` any more, so
+// the back-import lane M1g needed is gone.
 import * as marketplaceData from "./data/marketplace";
-import { listingStateError } from "./data/marketplace";
 // The NOTES section (monolith lane M1g, step 18) — the last section in this
 // file that still held bodies.
 import * as notesData from "./data/notes";
@@ -267,16 +293,9 @@ import {
   messageColumns,
   reactionColumns,
 } from "./schemaCapabilities";
-import {
-  MARKETPLACE_DEFAULT_COUNTRY,
-  MARKETPLACE_DEFAULT_CURRENCY,
-  MARKETPLACE_MODERATED_LISTING_STATUSES,
-  isMarketplaceListingEditable,
-  isMarketplaceListingStatus,
-  sellerListingTransitionError,
-  isKnownTaxonomyNodeId,
-  rankRelatedListings,
-} from "@lantern/shared/marketplace";
+// The `@lantern/shared/marketplace` helpers (lifecycle predicates, taxonomy and
+// related-listing ranking) moved with the code that used them; monolith lane
+// M1h took the last of them, so this file no longer imports the module.
 import { PublicError } from "../utils/safeError";
 import {
   cardToFlashcardRow,
@@ -300,8 +319,8 @@ import {
 // can be filed under one of its topics, validated against the course the row
 // ends up with. courseTopics only type-imports supabase, so no cycle either.
 import { getCourseTopicsService } from "./courseTopics";
-// Owner/admin-only moderation columns never ride along on embedded listings.
-import { stripListingModerationFields } from "./moderation";
+// `stripListingModerationFields` moved with the inquiry embeds that used it
+// (monolith lane M1h); it lives in `data/marketplace.ts` now.
 import {
   isPrivateStorageBucket,
   normalizeCoverRef,
@@ -423,8 +442,8 @@ function resolveTopicIdFromConfigLike(
 // strip/pick pair and `assertSellerListingUpdateAllowed`) moved to
 // `data/marketplace.ts` (monolith lane M1g, step 18) with the MARKETPLACE
 // section, their only caller. None of them was ever exported, so no importer
-// moves; `listingStateError` is imported back below because `updateListingStatus`
-// in the inquiries block further down still raises it.
+// moves. `listingStateError` was imported BACK here for `updateListingStatus`
+// until monolith lane M1h moved that method too; the back-import is gone.
 
 // `normalizeSourceNoteTitle`, `buildTestProvenance`, `buildAttemptTally` and
 // `mapTestListRow` moved to `data/testMappers.ts` (monolith lane M1c, step 11)
@@ -680,23 +699,17 @@ export class SupabaseService {
   }
 
   private normalizeInquiryRecord(inquiry: any): any {
-    if (!inquiry) return inquiry;
-    return {
-      ...inquiry,
-      listing: inquiry.listing
-        ? this.normalizeListingRecord(inquiry.listing)
-        : inquiry.listing,
-    };
+    return marketplaceData.normalizeInquiryRecord(
+      { normalizeListingRecord: (l) => this.normalizeListingRecord(l) },
+      inquiry,
+    );
   }
 
   private normalizeFavoriteRecord(favorite: any): any {
-    if (!favorite) return favorite;
-    return {
-      ...favorite,
-      listing: favorite.listing
-        ? this.normalizeListingRecord(favorite.listing)
-        : favorite.listing,
-    };
+    return marketplaceData.normalizeFavoriteRecord(
+      { normalizeListingRecord: (l) => this.normalizeListingRecord(l) },
+      favorite,
+    );
   }
 
   private normalizeOfferRecord(offer: any): any {
@@ -4455,33 +4468,7 @@ export class SupabaseService {
   }
 
   private async updateUserStats(userId: string, score: number): Promise<void> {
-    // Update user stats (simplified)
-    const { data: user, error: userError } = await this.supabase
-      .from("profiles")
-      .select("stats")
-      .eq("id", userId)
-      .single();
-
-    if (userError) throw userError;
-
-    const currentStats = user?.stats || {};
-    const testsTaken = (currentStats.testsTaken || 0) + 1;
-    const totalScore = (currentStats.totalScore || 0) + score;
-    const averageScore = totalScore / testsTaken;
-
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({
-        stats: {
-          ...currentStats,
-          testsTaken,
-          totalScore,
-          averageScore,
-        },
-      })
-      .eq("id", userId);
-
-    if (error) throw error;
+    return testsData.updateUserStats(this.supabase, userId, score);
   }
 
   // Group Functions
@@ -5173,98 +5160,27 @@ export class SupabaseService {
     messageId: string;
     excludeUserIds?: string[];
   }): Promise<void> {
-    const { groupId, senderId, content, messageId, excludeUserIds } = params;
-    const [{ data: members, error: membersError }, groupMeta, sender] =
-      await Promise.all([
-        this.supabase
-          .from("group_members")
-          .select("user_id")
-          .eq("group_id", groupId)
-          .eq("pending", false),
-        this.getGroupById(groupId),
-        this.getUserById(senderId),
-      ]);
-
-    if (membersError) throw membersError;
-
-    const excluded = new Set(excludeUserIds || []);
-    const recipientIds = (members || [])
-      .map((m) => m.user_id)
-      .filter((id) => id && id !== senderId && !excluded.has(id));
-    if (!recipientIds.length) return;
-
-    const groupName = groupMeta?.name || "a group";
-    const actorLabel =
-      sender?.name || (sender?.username ? `@${sender.username}` : "Someone");
-    const preview =
-      content.length > 50 ? `${content.substring(0, 50)}…` : content;
-
-    await Promise.all(
-      recipientIds.map((recipientId) =>
-        this.createNotification(recipientId, {
-          message: `New message in ${groupName} from ${actorLabel}: "${preview}"`,
-          link: `/chat/${groupId}`,
-          type: "group_message",
-          data: { groupId, messageId, senderId, preview },
-        }).catch((err) => {
-          logger.error("Failed to create group message notification", {
-            err,
-            groupId,
-            recipientId,
-            messageId,
-          });
-        }),
-      ),
+    return chatSendData.notifyGroupMessageRecipients(
+      this.supabase,
+      {
+        createNotification: (uid, notification) =>
+          this.createNotification(uid, notification as any),
+        getGroupById: (gid, uid) => this.getGroupById(gid, uid),
+        getUserById: (uid) => this.getUserById(uid),
+      },
+      params,
     );
   }
 
   async fetchMessages(groupId: string): Promise<Message[]> {
-    const cacheKey = `group:${groupId}:messages`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("messages")
-          .select(
-            `
-          id,
-          group_id,
-          sender_id,
-          type,
-          text,
-          question_data,
-          flagged_as_similar_user_ids,
-          timestamp,
-          edited_at,
-          removed_at,
-          upvotes,
-          downvotes,
-          is_archived,
-          image_url,
-          profiles!sender_id (
-            id,
-            name,
-            username,
-            avatar_url
-          )
-        `,
-          )
-          .eq("group_id", groupId)
-          .order("timestamp", { ascending: true });
-
-        if (error) throw error;
-
-        // The question pool is read from here, so it needs the same
-        // verification progress the chat card shows.
-        const withPeerUpvotes = await this.attachPeerUpvotes(data as any[]);
-
-        return withPeerUpvotes.map((msg: any) =>
-          mapChatMessageRow(msg, this.normalizeMessageRecord(msg)),
-        );
+    return groupMessagesData.fetchMessages(
+      this.supabase,
+      {
+        attachPeerUpvotes: (messages) => this.attachPeerUpvotes(messages),
+        normalizeMessageRecord: (row) => this.normalizeMessageRecord(row),
       },
-      { ttl: 30 },
-    ); // Cache for 30 seconds
+      groupId,
+    );
   }
 
   private parseMessageContent(msg: any): Partial<Message> {
@@ -5284,44 +5200,7 @@ export class SupabaseService {
 
   // Test Results Functions
   async fetchTestResults(userId: string): Promise<TestResult[]> {
-    const cacheKey = `user:${userId}:test-results`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("test_sessions")
-          .select(
-            `
-          *,
-          test_results (*)
-        `,
-          )
-          .eq("user_id", userId)
-          .order("start_time", { ascending: false });
-
-        if (error) throw error;
-
-        return data.flatMap((session: any) =>
-          session.test_results.map((result: any) => ({
-            id: result.id,
-            session: {
-              ...session,
-              startTime: session.start_time,
-              endTime: session.end_time,
-              isOffline: session.is_offline,
-              config: session.config,
-              questions: session.questions,
-              userAnswers: session.user_answers,
-            },
-            score: result.score,
-            totalQuestions: result.total_questions,
-            correctAnswersCount: result.correct_answers_count,
-          })),
-        );
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return testsData.fetchTestResults(this.supabase, userId);
   }
 
   // ===========================================================================
@@ -6130,55 +6009,29 @@ export class SupabaseService {
   }
 
   // ============ MARKETPLACE SELLER DASHBOARD METHODS ============
+  //
+  // The seller dashboard, favourites and inquiries methods below sat under the
+  // UNREAD / READ STATE banner but are marketplace code; their bodies moved
+  // verbatim to `data/marketplace.ts` (monolith lane M1h) with the rest of the
+  // section. `deps` is built INLINE at each call site, as arrows that read
+  // `this.<method>` at CALL time — `supabase.listingModerationLock.test.ts` and
+  // `supabase.inquiryStatus.test.ts` drive the prototype against a bare
+  // stand-in object, so an instance field would read as `undefined` there and
+  // any `jest.spyOn` on the class would be bypassed. The
+  // `await import("./marketplaceFavoriteAlerts")` stays HERE, because that is
+  // the specifier the moderation-lock test `jest.mock`s.
 
   // Get listings by seller (for seller dashboard)
   async getListingsBySeller(
     userId: string,
     status?: string,
   ): Promise<any[]> {
-    // No course/topic filter here: the seller dashboard (/marketplace/my-listings)
-    // only ever narrows by status. No client sends courseId/topicId, so the
-    // archive-filter plumbing that once lived here was unreachable and removed.
-    let query = this.supabase
-      .from("marketplace_listings")
-      .select(
-        `
-        *,
-        favorites_count:marketplace_favorites(count),
-        inquiries_count:marketplace_inquiries(count)
-      `,
-      )
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (status === "active") {
-      // Active shelf includes reserved (sale in progress) for seller inventory.
-      query = query.in("status", ["active", "reserved"]);
-    } else if (status === "inactive") {
-      // The Inactive shelf also holds listings moderation took down, so a
-      // takedown is visible (read-only) to the seller instead of vanishing.
-      query = query.in("status", [
-        "inactive",
-        ...MARKETPLACE_MODERATED_LISTING_STATUSES,
-      ]);
-    } else if (status) {
-      query = query.eq("status", status);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      logger.error("Error fetching seller listings:", error);
-      throw error;
-    }
-
-    const mapped = (data || []).map((listing) => ({
-      ...listing,
-      favorites_count: listing.favorites_count?.[0]?.count || 0,
-      inquiries_count: listing.inquiries_count?.[0]?.count || 0,
-    }));
-    // Grid cards only need the first image; prefer upload-time thumbs.
-    return this.toListingCardRecords(mapped);
+    return marketplaceData.getListingsBySeller(
+      this.supabase,
+      { toListingCardRecords: (rows) => this.toListingCardRecords(rows) },
+      userId,
+      status,
+    );
   }
 
   /** Sign similar-listing rails with thumb-or-original for the first image. */
@@ -6192,54 +6045,21 @@ export class SupabaseService {
     status: string,
     userId: string,
   ): Promise<any> {
-    // Verify ownership
-    const { data: listing } = await this.supabase
-      .from("marketplace_listings")
-      .select("user_id, status, title")
-      .eq("id", listingId)
-      .single();
-
-    if (!listing || listing.user_id !== userId) {
-      throw new Error("Unauthorized: You do not own this listing");
-    }
-
-    const previousStatus = listing.status;
-
-    // Seller-side transitions are limited to the shared lifecycle table: a
-    // listing moderation removed/suspended, one held by an open order, or an
-    // archived one cannot be flipped back to active (or anywhere) from here.
-    if (!isMarketplaceListingStatus(status)) {
-      throw listingStateError("Unknown listing status", 400);
-    }
-    if (isMarketplaceListingStatus(previousStatus)) {
-      const refusal = sellerListingTransitionError(previousStatus, status);
-      if (refusal) throw listingStateError(refusal, 403);
-    }
-
-    const { data, error } = await this.supabase
-      .from("marketplace_listings")
-      .update({ status })
-      .eq("id", listingId)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    if (status === "sold") {
-      await this.maybeLogManualSoldBudget(listingId, userId);
-    }
-
-    if (status === "active" && previousStatus !== "active") {
-      const { notifyListingBackAvailable } =
-        await import("./marketplaceFavoriteAlerts");
-      await notifyListingBackAvailable(
-        this,
-        { id: listingId, user_id: userId, title: data.title || listing.title },
-        previousStatus,
-      );
-    }
-
-    return data;
+    return marketplaceData.updateListingStatus(
+      this.supabase,
+      {
+        maybeLogManualSoldBudget: (id, sellerId) =>
+          this.maybeLogManualSoldBudget(id, sellerId),
+        notifyListingBackAvailable: async (listing, previousStatus) => {
+          const { notifyListingBackAvailable } =
+            await import("./marketplaceFavoriteAlerts");
+          await notifyListingBackAvailable(this, listing, previousStatus);
+        },
+      },
+      listingId,
+      status,
+      userId,
+    );
   }
 
   /**
@@ -6250,29 +6070,11 @@ export class SupabaseService {
     listingId: string,
     viewerId?: string | null,
   ): Promise<boolean> {
-    if (!viewerId) return false;
-    try {
-      const { data, error } = await this.supabase.rpc("increment_listing_views", {
-        listing_id: listingId,
-        viewer_id: viewerId,
-      });
-      if (error) {
-        logger.warn("Unique listing view RPC failed", {
-          listingId,
-          viewerId,
-          error: error.message,
-        });
-        return false;
-      }
-      return data === true;
-    } catch (err) {
-      logger.error("Failed to increment listing views", {
-        listingId,
-        viewerId,
-        error: err,
-      });
-      return false;
-    }
+    return marketplaceData.incrementListingViews(
+      this.supabase,
+      listingId,
+      viewerId,
+    );
   }
 
   // Get seller stats
@@ -6285,100 +6087,27 @@ export class SupabaseService {
     totalInquiries: number;
     totalFavorites: number;
   }> {
-    const [listingsRes, ordersRes] = await Promise.all([
-      this.supabase
-        .from("marketplace_listings")
-        .select(
-          `
-          id,
-          status,
-          views_count,
-          favorites:marketplace_favorites(count),
-          inquiries:marketplace_inquiries(count)
-        `,
-        )
-        .eq("user_id", userId),
-      this.supabase
-        .from("marketplace_orders")
-        .select("id", { count: "exact", head: true })
-        .eq("seller_id", userId)
-        .eq("status", "completed"),
-    ]);
-
-    const { data: listings, error } = listingsRes;
-    if (error) throw error;
-    if (ordersRes.error) throw ordersRes.error;
-
-    return {
-      totalListings: listings?.length || 0,
-      activeListings:
-        listings?.filter((l) => l.status === "active" || l.status === "reserved")
-          .length || 0,
-      soldListings: listings?.filter((l) => l.status === "sold").length || 0,
-      completedOrders: ordersRes.count || 0,
-      totalViews:
-        listings?.reduce((sum, l) => sum + (l.views_count || 0), 0) || 0,
-      totalInquiries:
-        listings?.reduce((sum, l) => sum + (l.inquiries?.[0]?.count || 0), 0) ||
-        0,
-      totalFavorites:
-        listings?.reduce((sum, l) => sum + (l.favorites?.[0]?.count || 0), 0) ||
-        0,
-    };
+    return marketplaceData.getSellerStats(this.supabase, userId);
   }
 
   // ============ MARKETPLACE FAVORITES METHODS ============
 
   // Add listing to favorites
   async addFavorite(userId: string, listingId: string): Promise<any> {
-    const { data, error } = await this.supabase
-      .from("marketplace_favorites")
-      .insert({ user_id: userId, listing_id: listingId })
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        // Already favorited
-        return { alreadyExists: true };
-      }
-      throw error;
-    }
-    return data;
+    return marketplaceData.addFavorite(this.supabase, userId, listingId);
   }
 
   // Remove listing from favorites
   async removeFavorite(userId: string, listingId: string): Promise<boolean> {
-    const { error } = await this.supabase
-      .from("marketplace_favorites")
-      .delete()
-      .eq("user_id", userId)
-      .eq("listing_id", listingId);
-
-    if (error) throw error;
-    return true;
+    return marketplaceData.removeFavorite(this.supabase, userId, listingId);
   }
 
   // Get user's favorites
   async getUserFavorites(userId: string): Promise<any[]> {
-    const { data, error } = await this.supabase
-      .from("marketplace_favorites")
-      .select(
-        `
-        id,
-        created_at,
-        listing:marketplace_listings(
-          *,
-          profiles!user_id(id, name, avatar_url)
-        )
-      `,
-      )
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-    return (data || []).map((favorite: any) =>
-      this.normalizeFavoriteRecord(favorite),
+    return marketplaceData.getUserFavorites(
+      this.supabase,
+      { normalizeFavoriteRecord: (f) => this.normalizeFavoriteRecord(f) },
+      userId,
     );
   }
 
@@ -6387,15 +6116,11 @@ export class SupabaseService {
     userId: string,
     listingId: string,
   ): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from("marketplace_favorites")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("listing_id", listingId)
-      .single();
-
-    if (error && error.code !== "PGRST116") throw error;
-    return !!data;
+    return marketplaceData.isListingFavorited(
+      this.supabase,
+      userId,
+      listingId,
+    );
   }
 
   // ============ MARKETPLACE INQUIRIES METHODS ============
@@ -6408,59 +6133,20 @@ export class SupabaseService {
     dmThreadId: string,
     initialMessage: string,
   ): Promise<any> {
-    // marketplace_inquiries.dm_thread_id FK requires dm_threads(id) first.
-    // Contact-seller used to insert the inquiry before sendDirectMessage upserted the thread → 500.
-    const sortedIds = [buyerId, sellerId].sort();
-    const { error: threadError } = await this.supabase
-      .from("dm_threads")
-      .upsert(
-        {
-          id: dmThreadId,
-          participant_ids: sortedIds,
-          participants: {},
-          last_message: initialMessage,
-          last_message_time: new Date().toISOString(),
-          status: "open",
-          requested_by: null,
-        },
-        { onConflict: "id" },
-      );
-    if (threadError) {
-      logger.error("Error ensuring DM thread for marketplace inquiry", {
-        error: threadError,
-        dmThreadId,
-      });
-      throw new Error(`Failed to create DM thread: ${threadError.message}`);
-    }
-
-    const { data, error } = await this.supabase
-      .from("marketplace_inquiries")
-      .insert({
-        listing_id: listingId,
-        buyer_id: buyerId,
-        seller_id: sellerId,
-        dm_thread_id: dmThreadId,
-        initial_message: initialMessage,
-        status: "open",
-      })
-      .select(
-        `
-        *,
-        listing:marketplace_listings(*),
-        buyer:profiles!buyer_id(id, name, avatar_url),
-        seller:profiles!seller_id(id, name, avatar_url)
-      `,
-      )
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        // Inquiry already exists, return it
-        return this.getInquiryByListingAndBuyer(listingId, buyerId);
-      }
-      throw error;
-    }
-    return this.stripInquiryListingModeration(data);
+    return marketplaceData.createInquiry(
+      this.supabase,
+      {
+        getInquiryByListingAndBuyer: (id, buyer) =>
+          this.getInquiryByListingAndBuyer(id, buyer),
+        stripInquiryListingModeration: (inquiry) =>
+          this.stripInquiryListingModeration(inquiry),
+      },
+      listingId,
+      buyerId,
+      sellerId,
+      dmThreadId,
+      initialMessage,
+    );
   }
 
   // Get inquiry by listing and buyer
@@ -6468,22 +6154,15 @@ export class SupabaseService {
     listingId: string,
     buyerId: string,
   ): Promise<any> {
-    const { data, error } = await this.supabase
-      .from("marketplace_inquiries")
-      .select(
-        `
-        *,
-        listing:marketplace_listings(*),
-        buyer:profiles!buyer_id(id, name, avatar_url),
-        seller:profiles!seller_id(id, name, avatar_url)
-      `,
-      )
-      .eq("listing_id", listingId)
-      .eq("buyer_id", buyerId)
-      .maybeSingle();
-
-    if (error) throw error;
-    return this.stripInquiryListingModeration(data);
+    return marketplaceData.getInquiryByListingAndBuyer(
+      this.supabase,
+      {
+        stripInquiryListingModeration: (inquiry) =>
+          this.stripInquiryListingModeration(inquiry),
+      },
+      listingId,
+      buyerId,
+    );
   }
 
   /**
@@ -6492,59 +6171,25 @@ export class SupabaseService {
    * buyer. Strip them from the embed; the inquiry itself is untouched.
    */
   private stripInquiryListingModeration<T extends { listing?: unknown } | null>(inquiry: T): T {
-    if (!inquiry || typeof inquiry !== "object") return inquiry;
-    const listing = (inquiry as { listing?: unknown }).listing;
-    if (!listing || typeof listing !== "object") return inquiry;
-    return {
-      ...(inquiry as Record<string, unknown>),
-      listing: Array.isArray(listing)
-        ? listing.map((row) => stripListingModerationFields(row as Record<string, unknown>))
-        : stripListingModerationFields(listing as Record<string, unknown>),
-    } as T;
+    return marketplaceData.stripInquiryListingModeration(inquiry);
   }
 
   // Get seller's inquiries
   async getSellerInquiries(sellerId: string, status?: string): Promise<any[]> {
-    let query = this.supabase
-      .from("marketplace_inquiries")
-      .select(
-        `
-        *,
-        listing:marketplace_listings(id, title, price, images, status),
-        buyer:profiles!buyer_id(id, name, avatar_url)
-      `,
-      )
-      .eq("seller_id", sellerId)
-      .order("created_at", { ascending: false });
-
-    if (status) {
-      query = query.eq("status", status);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data || []).map((inquiry: any) =>
-      this.normalizeInquiryRecord(inquiry),
+    return marketplaceData.getSellerInquiries(
+      this.supabase,
+      { normalizeInquiryRecord: (i) => this.normalizeInquiryRecord(i) },
+      sellerId,
+      status,
     );
   }
 
   // Get buyer's inquiries
   async getBuyerInquiries(buyerId: string): Promise<any[]> {
-    const { data, error } = await this.supabase
-      .from("marketplace_inquiries")
-      .select(
-        `
-        *,
-        listing:marketplace_listings(id, title, price, images, status),
-        seller:profiles!seller_id(id, name, avatar_url)
-      `,
-      )
-      .eq("buyer_id", buyerId)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-    return (data || []).map((inquiry: any) =>
-      this.normalizeInquiryRecord(inquiry),
+    return marketplaceData.getBuyerInquiries(
+      this.supabase,
+      { normalizeInquiryRecord: (i) => this.normalizeInquiryRecord(i) },
+      buyerId,
     );
   }
 
@@ -6554,61 +6199,21 @@ export class SupabaseService {
     status: string,
     userId: string,
   ): Promise<any> {
-    // Verify user is participant
-    const { data: inquiry } = await this.supabase
-      .from("marketplace_inquiries")
-      .select("buyer_id, seller_id")
-      .eq("id", inquiryId)
-      .single();
-
-    if (
-      !inquiry ||
-      (inquiry.buyer_id !== userId && inquiry.seller_id !== userId)
-    ) {
-      const err = new Error("Inquiry not found");
-      (err as Error & { statusCode?: number }).statusCode = 404;
-      throw err;
-    }
-
-    // Only the seller may attest a purchase. canUserReviewListing treats an
-    // inquiry the seller marked 'purchased' as verified-purchase evidence, so a
-    // buyer flipping their own inquiry to 'purchased' could self-mint a fake
-    // "verified purchase" review without ever buying. Buyers may still move an
-    // inquiry through open/negotiating/closed.
-    if (status === "purchased" && inquiry.seller_id !== userId) {
-      const err = new Error(
-        "Only the seller can mark an inquiry as purchased",
-      );
-      (err as Error & { statusCode?: number }).statusCode = 403;
-      throw err;
-    }
-
-    const { data, error } = await this.supabase
-      .from("marketplace_inquiries")
-      .update({ status })
-      .eq("id", inquiryId)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    return marketplaceData.updateInquiryStatus(
+      this.supabase,
+      inquiryId,
+      status,
+      userId,
+    );
   }
 
   // Get inquiry by DM thread
   async getInquiryByThread(threadId: string): Promise<any> {
-    const { data, error } = await this.supabase
-      .from("marketplace_inquiries")
-      .select(
-        `
-        *,
-        listing:marketplace_listings(id, title, price, images, status, user_id)
-      `,
-      )
-      .eq("dm_thread_id", threadId)
-      .single();
-
-    if (error && error.code !== "PGRST116") throw error;
-    return data ? this.normalizeInquiryRecord(data) : data;
+    return marketplaceData.getInquiryByThread(
+      this.supabase,
+      { normalizeInquiryRecord: (i) => this.normalizeInquiryRecord(i) },
+      threadId,
+    );
   }
 
   // ============ MARKETPLACE NOTIFICATIONS ============
