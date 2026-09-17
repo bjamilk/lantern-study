@@ -165,38 +165,10 @@ describe('marketplacePayments security', () => {
  * paid order, or refunded money that had already left the account.
  */
 
-type Op = { fn: string; args: unknown[] };
-type Call = { table: string; ops: Op[]; terminal: string };
-
-/**
- * Chain stub that records the whole filter chain, so a test can assert on a
- * compare-and-set (which filters it used) and not merely on the payload.
- */
-function scriptedDb(resolve: (call: Call) => { data: unknown; error?: unknown } | undefined) {
-  const calls: Call[] = [];
-  const client = {
-    from(table: string) {
-      const ops: Op[] = [];
-      const chain: any = {};
-      for (const fn of ['select', 'eq', 'neq', 'in', 'or', 'is', 'not', 'update', 'insert', 'delete', 'order', 'limit']) {
-        chain[fn] = (...args: unknown[]) => {
-          ops.push({ fn, args });
-          return chain;
-        };
-      }
-      const settle = (terminal: string) => {
-        const call: Call = { table, ops, terminal };
-        calls.push(call);
-        return Promise.resolve(resolve(call) ?? { data: null, error: null });
-      };
-      chain.single = () => settle('single');
-      chain.maybeSingle = () => settle('maybeSingle');
-      chain.then = (ok: any, err: any) => settle('then').then(ok, err);
-      return chain;
-    },
-  };
-  return { client, calls };
-}
+// The recording chain stub lives in `testSupport/scriptedDb` now, so the
+// write-error suite (#108) can drive the same flows and make one call in them
+// resolve with `{ error }`.
+import { scriptedDb, type Call } from '../testSupport/scriptedDb';
 
 const has = (call: Call, fn: string, ...args: unknown[]) =>
   call.ops.some((op) => op.fn === fn && args.every((a, i) => op.args[i] === a));

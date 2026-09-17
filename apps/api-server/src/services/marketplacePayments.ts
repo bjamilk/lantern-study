@@ -143,6 +143,7 @@ import {
   invalidateSellerAnalyticsCache,
   resolveEffectivePrice,
 } from './marketplaceOrders';
+import { bestEffortWrite, mustWrite } from './data/writeResult';
 import { createHash } from 'crypto';
 
 export function marketplacePaystackEnabled(): boolean {
@@ -343,10 +344,19 @@ export class MarketplacePaymentsService {
       .single();
     if (payErr || !payment) throw payErr || new Error('Failed to create payment');
 
-    await this.db
-      .from('marketplace_orders')
-      .update({ payment_id: payment.id, status: 'awaiting_payment' })
-      .eq('id', order.id);
+    // MUST SUCCEED (#108): this is the link the whole settlement path walks. A
+    // buyer sent to Paystack for an order that does not carry `payment_id` and
+    // is not `awaiting_payment` produces a charge whose webhook settles a
+    // payment nobody's order points at. Nothing external has happened yet, so
+    // stopping here costs only the request. The payment row already inserted is
+    // deliberately left at `initialized` — see docs/write-errors-plan.md.
+    mustWrite(
+      await this.db
+        .from('marketplace_orders')
+        .update({ payment_id: payment.id, status: 'awaiting_payment' })
+        .eq('id', order.id),
+      { table: 'marketplace_orders', op: 'update', orderId: order.id, paymentId: payment.id },
+    );
 
     const init = await initializePaystackTransaction({
       email: input.buyerEmail,
@@ -361,19 +371,27 @@ export class MarketplacePaymentsService {
       },
     });
 
-    await this.db
-      .from('marketplace_payments')
-      .update({
-        paystack_access_code: init.accessCode,
-        updated_at: new Date().toISOString(),
-        metadata: {
-          listingId: input.listingId,
-          quantity: order.quantity || 1,
-          source: 'buy_now',
-          authorizationUrl: init.authorizationUrl,
-        },
-      })
-      .eq('id', payment.id);
+    // BEST EFFORT (#108): the Paystack session is already live and the response
+    // below carries its URL, so throwing here would strand a real charge the
+    // buyer never sees. Only RESUME degrades without the stored access code —
+    // createCheckoutForExistingOrder mints a fresh session instead of reusing
+    // this one — so the failure is reported and the checkout goes ahead.
+    bestEffortWrite(
+      await this.db
+        .from('marketplace_payments')
+        .update({
+          paystack_access_code: init.accessCode,
+          updated_at: new Date().toISOString(),
+          metadata: {
+            listingId: input.listingId,
+            quantity: order.quantity || 1,
+            source: 'buy_now',
+            authorizationUrl: init.authorizationUrl,
+          },
+        })
+        .eq('id', payment.id),
+      { table: 'marketplace_payments', op: 'update', paymentId: payment.id, orderId: order.id },
+    );
 
     const refreshed = await this.orders.getOrderById(order.id, input.buyerId);
 
@@ -547,10 +565,16 @@ export class MarketplacePaymentsService {
     // alerting, instead of being reported to the buyer as their fault.
     if (!orderId) throw new Error('Failed to create marketplace order');
 
-    await this.db
-      .from('marketplace_orders')
-      .update({ status: 'awaiting_payment' })
-      .eq('id', orderId);
+    // BEST EFFORT (#108): the RPC creates the order as `pending_payment`, and
+    // every reader on the payment path accepts both spellings — the resume
+    // guard, `fulfillOrdersForPayment`, the cart link. Throwing here would
+    // strand the stock the RPC has already held under SELECT ... FOR UPDATE, so
+    // the charge goes ahead on the status the RPC gave it and the miss is
+    // reported.
+    bestEffortWrite(
+      await this.db.from('marketplace_orders').update({ status: 'awaiting_payment' }).eq('id', orderId),
+      { table: 'marketplace_orders', op: 'update', orderId, from: 'pending_payment' },
+    );
 
     const order = await this.orders.getOrderById(orderId, input.buyerId);
     // Same: the row was just created by the RPC above, so its absence is a
