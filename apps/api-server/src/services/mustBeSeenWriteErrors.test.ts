@@ -74,11 +74,32 @@ describe('an admin audit row that could not be written', () => {
     expect(captureScopedException).not.toHaveBeenCalled();
   });
 
-  it('TODAY: says nothing at all when the row is lost', async () => {
+  it('does not block the admin mutation — it still returns', async () => {
+    // The swallowing is deliberate and stays: an audit write is not a reason to
+    // refuse a ban.
     await expect(logWith(true)).resolves.toBeDefined();
-    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('reports the lost row at ERROR level, as the compliance event it is', async () => {
+    await logWith(true);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({
+        table: 'admin_audit_log',
+        actorId: 'admin_1',
+        action: 'user_ban',
+        targetId: 'user_9',
+      }),
+    );
     expect(logger.warn).not.toHaveBeenCalled();
-    expect(captureScopedException).not.toHaveBeenCalled();
+  });
+
+  it('reports it to Sentry under a stable fingerprint', async () => {
+    await logWith(true);
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ fingerprint: ['audit-log-write-failed'] }),
+    );
   });
 });
 
@@ -113,35 +134,65 @@ describe('an idempotency failure marker that could not be written', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: says nothing when the marker is lost, leaving the key at __processing__', async () => {
+  it('still rethrows the HANDLER’s error, not this one', async () => {
+    // The whole reason this cannot throw: the caller needs the error that
+    // actually failed their request.
     const { promise, handlerError } = await runWith(true);
     await expect(promise).rejects.toBe(handlerError);
-    expect(logger.error).not.toHaveBeenCalled();
-    expect(captureScopedException).not.toHaveBeenCalled();
+  });
+
+  it('reports the wedged key at ERROR level, under a stable fingerprint', async () => {
+    const { promise } = await runWith(true);
+    await promise.catch(() => undefined);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'api_idempotency_keys', userId: 'user_1', operation: 'op' }),
+    );
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ fingerprint: ['idempotency-failure-marker-write-failed'] }),
+    );
   });
 });
 
 describe('the api-key last-used stamp', () => {
   const touchWith = async (fails: boolean) => {
+    // `apiKey` keeps a module-level debounce map, so each case needs a fresh
+    // registry — which also means a fresh copy of the mocked logger. Reading it
+    // back out here is what keeps the assertions pointed at the instance the
+    // service actually used.
     jest.resetModules();
     const apiKeyModule = await import('./apiKey');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const freshLogger = (require('../utils/logger') as { logger: { warn: jest.Mock; error: jest.Mock } })
+      .logger;
     const { client } = scriptedDb((call) =>
       fails && call.table === 'user_api_keys' ? { data: null, error: WRITE_ERROR } : undefined,
     );
     apiKeyModule.initializeApiKeyService({ getClient: () => client } as never);
     const service: any = new (apiKeyModule as any).ApiKeyService();
-    // The debounce key is per (key, caller); a fresh one each time keeps the
-    // module-level 60-second debounce from swallowing the second call.
     await service.touchLastUsed('key_1', `debounce_${fails}_${Math.random()}`);
+    return freshLogger;
   };
 
   it('does not throw when the stamp fails, and this is cosmetic, not revocation', async () => {
-    await expect(touchWith(true)).resolves.toBeUndefined();
+    await expect(touchWith(true)).resolves.toBeDefined();
   });
 
-  it('TODAY: says nothing when the stamp is lost', async () => {
-    await touchWith(true);
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+  it('warns, and only warns, when the stamp is lost', async () => {
+    // Warn and not error: a lost timestamp on a debounced stamp is not
+    // something anybody should be woken for.
+    const freshLogger = await touchWith(true);
+    expect(freshLogger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'user_api_keys', apiKeyId: 'key_1' }),
+    );
+    expect(freshLogger.error).not.toHaveBeenCalled();
+  });
+
+  it('says nothing at all when the stamp succeeds', async () => {
+    const freshLogger = await touchWith(false);
+    expect(freshLogger.warn).not.toHaveBeenCalled();
+    expect(freshLogger.error).not.toHaveBeenCalled();
   });
 });

@@ -61,6 +61,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PublicError } from '../utils/safeError';
+import { bestEffortWrite } from './data/writeResult';
 
 const MAX_KEY_LENGTH = 128;
 const PROCESSING_STATUS = '__processing__';
@@ -286,7 +287,17 @@ async function markIdempotencyFailure(
   idempotencyKey: string,
   error: unknown
 ): Promise<void> {
-  await client
+  // MUST BE SEEN, not must block (#108). This runs in the `catch` of
+  // `withIdempotency`, one line before the handler's own error is rethrown, so
+  // throwing here would REPLACE the error the caller needs with this one.
+  //
+  // It is reported at error level under a fingerprint because the stuck state
+  // is permanent: only a FAILED marker ages out (FAILURE_TTL_MS), and there is
+  // no staleness handling for `__processing__`, so a claim left in that state
+  // makes every retry on THAT key wait and then answer 409 forever. A new key
+  // still works, so the user is not stuck — but the key is dead.
+  bestEffortWrite(
+    await client
     .from('api_idempotency_keys')
     .update({
       response: {
@@ -301,7 +312,11 @@ async function markIdempotencyFailure(
     // Same reasoning as storeIdempotentResponse: only this attempt's marker may
     // be turned into a failure. A late throw must not bury a reclaimer's
     // successful response under a failure marker.
-    .eq('response->>_status', PROCESSING_STATUS);
+    .eq('response->>_status', PROCESSING_STATUS),
+    { table: 'api_idempotency_keys', op: 'update', userId, operation },
+    'error',
+    'idempotency-failure-marker-write-failed',
+  );
 }
 
 export async function withIdempotency<T extends Record<string, unknown>>(

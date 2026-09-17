@@ -1,4 +1,5 @@
 import { randomBytes, createHash } from 'crypto';
+import { bestEffortWrite } from './data/writeResult';
 import bcrypt from 'bcryptjs';
 import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
@@ -234,12 +235,20 @@ export class ApiKeyService {
     if (now - last < 60_000) return;
     lastUsedDebounce.set(debounceKey, now);
 
+    // BEST EFFORT (#108). Cosmetic: this is the `last_used_at` stamp on a key
+    // listing, not revocation, and it is debounced to once a minute — so a
+    // failure costs a timestamp and nothing else. The `try/catch` stays for a
+    // genuinely thrown client error; the resolved `{ error }` is what was being
+    // dropped.
     try {
       const client = requireSupabase().getClient();
-      await client
-        .from('user_api_keys')
-        .update({ last_used_at: new Date().toISOString() })
-        .eq('id', keyId);
+      bestEffortWrite(
+        await client
+          .from('user_api_keys')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', keyId),
+        { table: 'user_api_keys', op: 'update', apiKeyId: keyId },
+      );
     } catch {
       // non-fatal
     }

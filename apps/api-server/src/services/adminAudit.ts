@@ -7,6 +7,7 @@
  */
 import type { DataClientHost } from './data';
 import { getRedisClient, redisKey } from './redisStore';
+import { bestEffortWrite } from './data/writeResult';
 
 const BAN_CACHE_TTL_SEC = 60;
 
@@ -76,7 +77,13 @@ export async function logAdminAction(
     reason?: string;
   }
 ): Promise<void> {
-  try {
+  // MUST BE SEEN, not must block (#108). Swallowing the error so an admin
+  // mutation is never blocked by its own logging is deliberate and stays —
+  // an audit write is not a reason to refuse a ban. What was missing is the
+  // other half: a lost audit row is a compliance event, and the `try/catch`
+  // could never report one anyway, because a failed supabase-js write resolves
+  // rather than rejecting.
+  bestEffortWrite(
     await host.getClient().from('admin_audit_log').insert({
       actor_id: params.actorId,
       action: params.action,
@@ -84,10 +91,18 @@ export async function logAdminAction(
       target_id: params.targetId ?? null,
       metadata: params.metadata ?? {},
       reason: params.reason ?? null,
-    });
-  } catch (err) {
-    console.warn('Failed to write admin audit log:', err);
-  }
+    }),
+    {
+      table: 'admin_audit_log',
+      op: 'insert',
+      actorId: params.actorId,
+      action: params.action,
+      targetType: params.targetType,
+      targetId: params.targetId ?? null,
+    },
+    'error',
+    'audit-log-write-failed',
+  );
 }
 
 export async function invalidateBanCache(userId: string): Promise<void> {
