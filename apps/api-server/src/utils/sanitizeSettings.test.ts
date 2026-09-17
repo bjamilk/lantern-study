@@ -73,6 +73,97 @@ describe('sanitizeSettings', () => {
     );
   });
 
+  // #68: the Home checklist's "has ever opened" flags travel through the
+  // ordinary settings PUT, so the sanitizer is what decides whether this key
+  // is safe to let a client write.
+  describe('onboardingVisited', () => {
+    it('accepts the three booleans and stores them', () => {
+      const merged = mergeUserSettings(
+        {},
+        { onboardingVisited: { library: true, marketplace: true, offline: true } }
+      );
+      expect(merged.onboardingVisited).toEqual({
+        library: true,
+        marketplace: true,
+        offline: true,
+      });
+    });
+
+    it('strips junk sub-keys and coerces non-booleans to false', () => {
+      const merged = mergeUserSettings(
+        {},
+        {
+          onboardingVisited: {
+            library: 'yes',
+            marketplace: 1,
+            offline: true,
+            somethingElse: true,
+            nested: { deep: true },
+          },
+        }
+      );
+      expect(merged.onboardingVisited).toEqual({
+        library: false,
+        marketplace: false,
+        offline: true,
+      });
+    });
+
+    it('is MONOTONIC: a stale client cannot un-tick a stored flag', () => {
+      const merged = mergeUserSettings(
+        { onboardingVisited: { library: true, marketplace: false, offline: false } },
+        { onboardingVisited: { library: false, marketplace: true } }
+      );
+      expect(merged.onboardingVisited).toEqual({
+        library: true,
+        marketplace: true,
+        offline: false,
+      });
+    });
+
+    it('cannot be used to smuggle a privileged key in', () => {
+      const merged = mergeUserSettings(
+        { is_platform_admin: false },
+        {
+          onboardingVisited: {
+            library: true,
+            is_platform_admin: true,
+            account_status: 'active',
+          },
+        }
+      );
+      expect(merged.onboardingVisited).toEqual({
+        library: true,
+        marketplace: false,
+        offline: false,
+      });
+      expect(merged.is_platform_admin).toBe(false);
+      expect((merged.onboardingVisited as Record<string, unknown>).is_platform_admin).toBeUndefined();
+    });
+
+    it('is not privileged: it is absent until a client writes it, then kept', () => {
+      const first = mergeUserSettings({}, { onboardingVisited: { offline: true } });
+      const second = mergeUserSettings(first, { appearance: { theme: 'dark' } });
+      expect(second.onboardingVisited).toEqual({
+        library: false,
+        marketplace: false,
+        offline: true,
+      });
+    });
+
+    it('ignores a non-object value entirely', () => {
+      const merged = mergeUserSettings(
+        { onboardingVisited: { library: true, marketplace: false, offline: false } },
+        { onboardingVisited: 'all-of-them' }
+      );
+      expect(merged.onboardingVisited).toEqual({
+        library: true,
+        marketplace: false,
+        offline: false,
+      });
+    });
+  });
+
   it('deep-merges featureTips.checklist keys across devices', () => {
     const merged = mergeUserSettings(
       {

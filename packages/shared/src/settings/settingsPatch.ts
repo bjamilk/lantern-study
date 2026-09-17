@@ -11,10 +11,12 @@ import {
   type FlashcardGenerationSettings,
   type MarketplaceSettings,
   type NotificationSettings,
+  type OnboardingVisitedSettings,
   type PrivacySettings,
   type StudySettings,
   type SyncSettings,
   type UserSettings,
+  mergeOnboardingVisited,
   normalizeUserSettings,
 } from './userSettings';
 
@@ -27,6 +29,7 @@ export type SettingsCategoryKey =
   | 'sync'
   | 'marketplace'
   | 'featureTips'
+  | 'onboardingVisited'
   | 'flashcardGeneration';
 
 /** Partial nested settings blob (one or more categories). */
@@ -39,6 +42,7 @@ export type UserSettingsPatch = {
   sync?: Partial<SyncSettings>;
   marketplace?: Partial<MarketplaceSettings>;
   featureTips?: Partial<FeatureTipsSettings>;
+  onboardingVisited?: Partial<OnboardingVisitedSettings>;
   flashcardGeneration?: Partial<FlashcardGenerationSettings>;
   version?: number;
   updatedAt?: string;
@@ -305,6 +309,16 @@ export function applySettingsPatch(
     featureTips: p.featureTips
       ? sanitizeFeatureTips(p.featureTips, base.featureTips ?? DEFAULT_USER_SETTINGS.featureTips!)
       : base.featureTips,
+    // MONOTONIC: the visited flags are ORed with what is already stored, never
+    // replaced. A client that is behind — an offline tab, an older build —
+    // cannot send `{ library: false }` and un-tick a surface the student has
+    // already opened on another device.
+    onboardingVisited: p.onboardingVisited
+      ? mergeOnboardingVisited(
+          base.onboardingVisited ?? DEFAULT_USER_SETTINGS.onboardingVisited!,
+          p.onboardingVisited
+        )
+      : base.onboardingVisited,
     flashcardGeneration: p.flashcardGeneration
       ? sanitizeFlashcardGeneration(
           p.flashcardGeneration,
@@ -332,6 +346,7 @@ export function diffSettingsPatch(
     'sync',
     'marketplace',
     'featureTips',
+    'onboardingVisited',
     'flashcardGeneration',
   ];
   for (const key of categories) {

@@ -13,6 +13,10 @@ import {
   storePostLoginRedirect,
   unregisterAppNavigator,
 } from '../utils/appNavigation';
+import {
+  recordSurfaceVisit,
+  syncOnboardingVisitedFromSettings,
+} from '../utils/onboardingVisited';
 import { hydrateAppRoute } from './useRouteHydration';
 
 export function useRouteSync() {
@@ -48,6 +52,22 @@ export function useRouteSync() {
       navigate(redirect, { replace: true });
     }
   }, [currentUserId, location.pathname, navigate]);
+
+  /**
+   * Pull the account's checklist flags down when the student changes.
+   *
+   * The profile arrives with `currentUser`, so reading it once here is enough,
+   * and the merge is an OR — a flag ticked on another device appears, and
+   * nothing this device already knows is lost. Keyed on the id alone, for the
+   * same reason the hydration effect below is: `currentUser` is replaced by
+   * every settings write, and this must not re-run on each one.
+   */
+  useEffect(() => {
+    if (!currentUserId) return;
+    const user = useAuthStore.getState().currentUser;
+    if (user?.id !== currentUserId) return;
+    syncOnboardingVisitedFromSettings(currentUserId, user.settings);
+  }, [currentUserId]);
 
   useEffect(() => {
     const parsed = parseAppRoute(location.pathname);
@@ -122,7 +142,10 @@ export function useRouteSync() {
         // "Has ever opened" for the Home onboarding checklist (issue #68).
         // This is the one place every routed landing passes through, and the
         // checklist only renders on Home, so it could never see these itself.
-        useUIStore.getState().markSurfaceVisited(currentUserId, result.mode);
+        // The local cache is written synchronously and the account copy is
+        // sent afterwards, on the first visit only — navigation never waits
+        // for that write and never fails because of it.
+        recordSurfaceVisit(currentUserId, result.mode);
       }
     });
 
