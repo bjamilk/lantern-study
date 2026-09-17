@@ -95,7 +95,7 @@ import { allowDevAuthBypass, requireGroupMember } from '../middleware/authorizeR
 import { handleValidationErrors, validateGroupId, validateBatchMemberIds, validateCreateGroup, validateUpdateGroup, validatePagination, validateSearch } from '../middleware/validation';
 import type { DataLayer } from '../services/data';
 // Type only (erased at compile time): the two services below still take the
-// `SupabaseService` facade, so a flipped route hands them `data.legacyService`
+// `SupabaseService` facade, so a flipped route hands them `dataLayer.legacyService`
 // until the `services/` importers are flipped too.
 import type { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -195,15 +195,15 @@ const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
 // `data` is the composition root's `DataLayer` (`services/data/index.ts`), not
 // the `SupabaseService` facade: the domain functions arrive already bound to
 // the client and to their `deps`. See `docs/data-layer-wiring.md`.
-let data: DataLayer;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
 /** The facade handle the not-yet-flipped services below still require. */
-const legacyService = () => data.legacyService as SupabaseService;
+const legacyService = () => dataLayer.legacyService as SupabaseService;
 
 // Initialize function to be called from main server
-export const initializeGroupRoutes = (dataLayer: DataLayer, cache: CacheService) => {
-  data = dataLayer;
+export const initializeGroupRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -250,7 +250,7 @@ router.get(
         }
       }
 
-      const groups = await data.groups.getGroups({
+      const groups = await dataLayer.groups.getGroups({
         page: pageNum,
         limit: limitNum,
         search: search as string,
@@ -293,7 +293,7 @@ router.get(
         return res.json({ success: true, data: cached });
       }
 
-      const unreadCounts = await data.readState.getAllGroupUnreadCounts(userId);
+      const unreadCounts = await dataLayer.readState.getAllGroupUnreadCounts(userId);
       await cacheService.set(cacheKey, unreadCounts, CacheTTL.unreadCounts);
 
       res.json({
@@ -319,7 +319,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const invites = await data.groups.getPendingGroupInvitesForUser(userId);
+    const invites = await dataLayer.groups.getPendingGroupInvitesForUser(userId);
     res.json({ success: true, data: invites });
   })
 );
@@ -335,7 +335,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const accepted = await data.groups.acceptGroupInvite(groupId, userId);
+    const accepted = await dataLayer.groups.acceptGroupInvite(groupId, userId);
     if (!accepted) {
       return res.status(404).json({
         success: false,
@@ -349,7 +349,7 @@ router.post(
     await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${userId}:*`);
 
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     res.json({
       success: true,
       data: group,
@@ -369,7 +369,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const declined = await data.groups.declineGroupInvite(groupId, userId);
+    const declined = await dataLayer.groups.declineGroupInvite(groupId, userId);
     if (!declined) {
       return res.status(404).json({
         success: false,
@@ -404,7 +404,7 @@ router.get(
 
     logger.debug('Fetching group', { groupId, userId });
 
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
 
     if (!group) {
       return res.status(404).json({
@@ -460,7 +460,7 @@ router.post(
     // Pre-migration there is nowhere to record 'study_group', and silently
     // creating a board instead would drop the user into the wrong surface —
     // the one thing the no-silent-disappearance rule forbids (spec §1.1/§3.1).
-    if (surface === 'study_group' && !(await hasGroupCommunitySurface(data.getClient()))) {
+    if (surface === 'study_group' && !(await hasGroupCommunitySurface(dataLayer.getClient()))) {
       return res.status(503).json({
         success: false,
         error: COMMUNITY_BOARD_COPY.studyGroupsUnavailable,
@@ -482,14 +482,14 @@ router.post(
 
     logger.debug('Creating group', { groupData, userId, memberIds });
 
-    const newGroup = await data.groups.createGroup(groupData, userId, memberIds);
+    const newGroup = await dataLayer.groups.createGroup(groupData, userId, memberIds);
 
     const pendingInviteUserIds = (newGroup as { pendingInviteUserIds?: string[] }).pendingInviteUserIds || [];
     if (pendingInviteUserIds.length > 0) {
-      const actor = await data.users.getUserById(userId);
+      const actor = await dataLayer.users.getUserById(userId);
       const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'Someone';
       for (const inviteeId of pendingInviteUserIds) {
-        void data.notifications.createNotification(inviteeId, {
+        void dataLayer.notifications.createNotification(inviteeId, {
           message: `${actorLabel} invited you to join "${newGroup.name}". Open the invite to accept or decline.`,
           link: `/invites/groups/${newGroup.id}`,
           type: 'group_invite',
@@ -528,7 +528,7 @@ router.put(
     logger.debug('Updating group', { groupId, updateData, userId });
 
     // Check if user has permission to update this group
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -572,7 +572,7 @@ router.put(
       return res.status(403).json({ success: false, error: 'Join this community first' });
     }
 
-    const updatedGroup = await data.groups.updateGroup(
+    const updatedGroup = await dataLayer.groups.updateGroup(
       groupId,
       isArchiveOnly ? { isArchived: updateData.isArchived } : updateData,
     );
@@ -602,7 +602,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({ success: false, error: 'Group not found or access denied' });
     }
@@ -626,14 +626,14 @@ router.post(
       return res.status(400).json({ success: false, error: 'Avatar exceeds 2 MB limit' });
     }
 
-    const uploaded = await data.uploads.uploadGroupAvatar({
+    const uploaded = await dataLayer.uploads.uploadGroupAvatar({
       groupId,
       fileName,
       base64Data,
       contentType: contentType || 'image/jpeg',
     });
 
-    const updatedGroup = await data.groups.updateGroup(groupId, { avatarUrl: uploaded.avatarUrl });
+    const updatedGroup = await dataLayer.groups.updateGroup(groupId, { avatarUrl: uploaded.avatarUrl });
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern('groups:list:*');
     await cacheService.deletePattern('groups:user:*');
@@ -663,7 +663,7 @@ router.delete(
     logger.debug('Deleting group', { groupId, userId });
 
     // Check if user has permission to delete this group
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -691,7 +691,7 @@ router.delete(
       });
     }
 
-    await data.groups.deleteGroup(groupId);
+    await dataLayer.groups.deleteGroup(groupId);
 
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
@@ -739,7 +739,7 @@ router.post(
     }
 
     // Check if user has permission to add members
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -760,13 +760,13 @@ router.post(
     }
 
     // Admin invites create a pending membership — invitee must accept.
-    await data.groups.addGroupMember(groupId, memberId, { pending: true });
+    await dataLayer.groups.addGroupMember(groupId, memberId, { pending: true });
 
-    const groupMeta = await data.groups.getGroupById(groupId);
-    const actor = await data.users.getUserById(userId);
+    const groupMeta = await dataLayer.groups.getGroupById(groupId);
+    const actor = await dataLayer.users.getUserById(userId);
     const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'An admin';
     if (groupMeta) {
-      void data.notifications.createNotification(memberId, {
+      void dataLayer.notifications.createNotification(memberId, {
         message: `${actorLabel} invited you to join "${groupMeta.name}". Open the invite to accept or decline.`,
         link: `/invites/groups/${groupId}`,
         type: 'group_invite',
@@ -834,7 +834,7 @@ router.post(
     }
 
     // Check if user has permission to add members
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -864,19 +864,19 @@ router.post(
     };
 
     try {
-      const batchResult = await data.groups.addGroupMembersBatch(groupId, userIds);
+      const batchResult = await dataLayer.groups.addGroupMembersBatch(groupId, userIds);
       results.invited = batchResult.invited;
       results.added = batchResult.invited;
       results.alreadyMembers = batchResult.alreadyMembers;
       results.alreadyPending = batchResult.alreadyPending;
 
       if (results.invited.length > 0) {
-        const groupMeta = await data.groups.getGroupById(groupId);
-        const actor = await data.users.getUserById(userId);
+        const groupMeta = await dataLayer.groups.getGroupById(groupId);
+        const actor = await dataLayer.users.getUserById(userId);
         const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'An admin';
         if (groupMeta) {
           for (const memberId of results.invited) {
-            void data.notifications.createNotification(memberId, {
+            void dataLayer.notifications.createNotification(memberId, {
               message: `${actorLabel} invited you to join "${groupMeta.name}". Open the invite to accept or decline.`,
               link: `/invites/groups/${groupId}`,
               type: 'group_invite',
@@ -927,12 +927,12 @@ router.get(
       return res.status(400).json({ success: false, error: 'inviteId is required' });
     }
 
-    const group = await data.groups.getGroupByInviteId(inviteId);
+    const group = await dataLayer.groups.getGroupByInviteId(inviteId);
     if (!group || group.isArchived) {
       return res.status(404).json({ success: false, error: 'Invalid or expired invite link' });
     }
 
-    const { count } = await data.getClient()
+    const { count } = await dataLayer.getClient()
       .from('group_members')
       .select('user_id', { count: 'exact', head: true })
       .eq('group_id', group.id)
@@ -961,7 +961,7 @@ router.get(
       return res.status(400).json({ success: false, error: 'inviteId is required' });
     }
 
-    const group = await data.groups.getGroupByInviteId(inviteId);
+    const group = await dataLayer.groups.getGroupByInviteId(inviteId);
     if (!group) {
       return res.status(404).json({ success: false, error: 'Invalid or expired invite link' });
     }
@@ -969,13 +969,13 @@ router.get(
       return res.status(400).json({ success: false, error: 'This group has been archived' });
     }
 
-    const { count } = await data.getClient()
+    const { count } = await dataLayer.getClient()
       .from('group_members')
       .select('user_id', { count: 'exact', head: true })
       .eq('group_id', group.id)
       .eq('pending', false);
 
-    const { data: membership } = await data.getClient()
+    const { data: membership } = await dataLayer.getClient()
       .from('group_members')
       .select('user_id, pending')
       .eq('group_id', group.id)
@@ -1019,7 +1019,7 @@ router.post(
     }
 
     // Look up group by invite_id
-    const group = await data.groups.getGroupByInviteId(inviteId);
+    const group = await dataLayer.groups.getGroupByInviteId(inviteId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1035,7 +1035,7 @@ router.post(
     }
 
     // Invite-link join is user-initiated consent — join as active member immediately.
-    const updatedGroup = await data.groups.addGroupMember(group.id, userId, { pending: false });
+    const updatedGroup = await dataLayer.groups.addGroupMember(group.id, userId, { pending: false });
 
     // Invalidate caches
     await cacheService.delete(`group:${group.id}`);
@@ -1080,7 +1080,7 @@ router.post(
     const { groupId } = req.params;
     logger.debug('Leaving group', { groupId, userId });
 
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1088,7 +1088,7 @@ router.post(
       });
     }
 
-    const isMember = await data.groups.isGroupMember(groupId, userId);
+    const isMember = await dataLayer.groups.isGroupMember(groupId, userId);
     if (!isMember) {
       return res.status(400).json({
         success: false,
@@ -1106,7 +1106,7 @@ router.post(
       });
     }
 
-    await data.groups.removeGroupMember(groupId, userId);
+    await dataLayer.groups.removeGroupMember(groupId, userId);
 
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern(`group:members:${groupId}:*`);
@@ -1136,7 +1136,7 @@ router.delete(
     logger.debug('Removing member from group', { groupId, memberId, userId });
 
     // Check if user has permission to remove members
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1165,7 +1165,7 @@ router.delete(
       });
     }
 
-    const updatedGroup = await data.groups.removeGroupMember(groupId, memberId);
+    const updatedGroup = await dataLayer.groups.removeGroupMember(groupId, memberId);
 
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
@@ -1205,7 +1205,7 @@ router.get(
     logger.debug('Fetching group members', { groupId, page, limit, userId });
 
     // Check if group exists (without strict access check for dev)
-    const group = await data.groups.getGroupById(groupId);
+    const group = await dataLayer.groups.getGroupById(groupId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1214,7 +1214,7 @@ router.get(
     }
 
     // Service caches public member rows only and attaches self PII after the cache hit (SEC-04).
-    const members = await data.groups.getGroupMembers(groupId, {
+    const members = await dataLayer.groups.getGroupMembers(groupId, {
       page: parseInt(page as string),
       limit: parseInt(limit as string),
       requestingUserId: userId,
@@ -1247,7 +1247,7 @@ router.get(
     logger.debug('Fetching group stats', { groupId, userId });
 
     // Check if user has access to this group
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1259,7 +1259,7 @@ router.get(
     let stats = await cacheService.get(cacheKey);
 
     if (!stats) {
-      stats = await data.groups.getGroupStats(groupId);
+      stats = await dataLayer.groups.getGroupStats(groupId);
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, stats, 300);
@@ -1283,7 +1283,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { groupId } = req.params;
-    const status = await data.readState.getChatMute(userId, 'group', groupId);
+    const status = await dataLayer.readState.getChatMute(userId, 'group', groupId);
     res.json({ success: true, data: status });
   })
 );
@@ -1306,7 +1306,7 @@ router.put(
         error: 'Provide duration (1h|8h|24h|7d) or durationMinutes (1-43200)',
       });
     }
-    const result = await data.readState.setChatMute(
+    const result = await dataLayer.readState.setChatMute(
       userId,
       'group',
       groupId,
@@ -1333,7 +1333,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { groupId } = req.params;
-    const success = await data.readState.clearChatMute(userId, 'group', groupId);
+    const success = await dataLayer.readState.clearChatMute(userId, 'group', groupId);
     if (!success) {
       return res.status(404).json({
         success: false,
@@ -1362,7 +1362,7 @@ router.post(
 
       const { groupId } = req.params;
 
-      const result = await data.readState.markGroupAsRead(groupId, userId);
+      const result = await dataLayer.readState.markGroupAsRead(groupId, userId);
 
       res.json({
         success: result.success,
@@ -1401,7 +1401,7 @@ router.post(
     if (!userId) return;
 
     const { groupId, memberId } = req.params;
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({ success: false, error: 'Group not found or access denied' });
     }
@@ -1415,7 +1415,7 @@ router.post(
       return res.json({ success: true, data: group });
     }
 
-    const updatedGroup = await data.groups.updateGroup(groupId, {
+    const updatedGroup = await dataLayer.groups.updateGroup(groupId, {
       adminIds: [...(group.adminIds || []), memberId],
     });
 
@@ -1438,7 +1438,7 @@ router.delete(
     if (!userId) return;
 
     const { groupId, memberId } = req.params;
-    const group = await data.groups.getGroupById(groupId, userId);
+    const group = await dataLayer.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({ success: false, error: 'Group not found or access denied' });
     }
@@ -1452,7 +1452,7 @@ router.delete(
       return res.status(400).json({ success: false, error: 'Cannot demote the only admin' });
     }
 
-    const updatedGroup = await data.groups.updateGroup(groupId, {
+    const updatedGroup = await dataLayer.groups.updateGroup(groupId, {
       adminIds: (group.adminIds || []).filter((id: string) => id !== memberId),
     });
 

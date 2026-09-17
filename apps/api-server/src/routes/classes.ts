@@ -8,14 +8,19 @@ import { authMiddleware } from '../middleware/auth';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
 import { requireAuthUserId } from '../utils/requestAuth';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { getClassSectionsService } from '../services/classSections';
 
 const router = Router();
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export const initializeClassRoutes = (supabase: SupabaseService): void => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+const legacyService = () => dataLayer.legacyService;
+
+export const initializeClassRoutes = (layer: DataLayer): void => {
+  dataLayer = layer;
 };
 
 function handle(err: unknown, res: Response): void {
@@ -28,7 +33,7 @@ function handle(err: unknown, res: Response): void {
 }
 
 function classes() {
-  return getClassSectionsService(supabaseService);
+  return getClassSectionsService(legacyService());
 }
 
 router.get(

@@ -16,7 +16,7 @@ import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { isUuid } from '../services/academicCourses';
 import {
@@ -32,11 +32,16 @@ import {
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+const legacyService = () => dataLayer.legacyService;
 
 // Signature mirrors the other routers; library routes are uncached by design.
-export const initializeLibraryRoutes = (supabase: SupabaseService, _cache?: CacheService) => {
-  supabaseService = supabase;
+export const initializeLibraryRoutes = (layer: DataLayer, _cache?: CacheService) => {
+  dataLayer = layer;
 };
 
 export const validateLibrarySearch = [
@@ -81,7 +86,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const overview = await getLibrarySearchService(supabaseService).getOverview(userId);
+    const overview = await getLibrarySearchService(legacyService()).getOverview(userId);
     res.json({ success: true, data: overview });
   })
 );
@@ -106,7 +111,7 @@ router.get(
     );
 
     try {
-      const results = await getLibrarySearchService(supabaseService).search(userId, {
+      const results = await getLibrarySearchService(legacyService()).search(userId, {
         q,
         courseId,
         topicId,

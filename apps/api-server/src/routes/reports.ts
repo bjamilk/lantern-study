@@ -19,7 +19,7 @@ import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage, PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { getModerationService } from '../services/moderation';
 import {
@@ -32,11 +32,16 @@ import {
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+const legacyService = () => dataLayer.legacyService;
 
 // Signature mirrors the other routers; reports are uncached.
-export const initializeReportRoutes = (supabase: SupabaseService, _cache?: CacheService) => {
-  supabaseService = supabase;
+export const initializeReportRoutes = (layer: DataLayer, _cache?: CacheService) => {
+  dataLayer = layer;
 };
 
 export const validateCreateReport = [
@@ -86,7 +91,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const result = await getModerationService(supabaseService).createReport({
+      const result = await getModerationService(legacyService()).createReport({
         reporterId: userId,
         targetType: req.body.targetType,
         targetId: req.body.targetId,

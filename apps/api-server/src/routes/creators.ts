@@ -7,16 +7,21 @@ import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { validateUserId, handleValidationErrors } from '../middleware/validation';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { getCreatorsService } from '../services/creators';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
 
 const router = Router();
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export const initializeCreatorRoutes = (supabase: SupabaseService): void => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+const legacyService = () => dataLayer.legacyService;
+
+export const initializeCreatorRoutes = (layer: DataLayer): void => {
+  dataLayer = layer;
 };
 
 // GET /api/v1/creators/discover?institutionId&courseId&limit
@@ -24,7 +29,7 @@ router.get(
   '/discover',
   optionalAuthMiddleware,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const data = await getCreatorsService(supabaseService).discoverCreators({
+    const data = await getCreatorsService(legacyService()).discoverCreators({
       institutionId: typeof req.query.institutionId === 'string' ? req.query.institutionId : undefined,
       courseId: typeof req.query.courseId === 'string' ? req.query.courseId : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
@@ -41,7 +46,7 @@ router.get(
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const data = await getCreatorsService(supabaseService).getCreatorProfile(
+      const data = await getCreatorsService(legacyService()).getCreatorProfile(
         req.params.userId,
         req.user?.id
       );

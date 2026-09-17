@@ -8,17 +8,22 @@
 import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { getReferralsService } from '../services/referrals';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
 import { requireAuthUserId } from '../utils/requestAuth';
 
 const router = Router();
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export const initializeReferralRoutes = (supabase: SupabaseService): void => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+const legacyService = () => dataLayer.legacyService;
+
+export const initializeReferralRoutes = (layer: DataLayer): void => {
+  dataLayer = layer;
 };
 
 // GET /api/v1/referrals — the caller's code, stats and referred users
@@ -28,7 +33,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getReferralsService(supabaseService).summary(userId);
+    const data = await getReferralsService(legacyService()).summary(userId);
     res.json({ success: true, data });
   })
 );
@@ -43,7 +48,7 @@ router.get(
     try {
       const institutionId =
         typeof req.query.institutionId === 'string' ? req.query.institutionId : '';
-      const data = await getReferralsService(supabaseService).listAmbassadors(
+      const data = await getReferralsService(legacyService()).listAmbassadors(
         institutionId,
         req.query.limit ? Number(req.query.limit) : undefined
       );

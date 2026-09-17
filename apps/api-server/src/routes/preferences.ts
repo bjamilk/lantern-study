@@ -3,7 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { allowDevAuthBypass } from '../middleware/authorizeResource';
 import { handleValidationErrors, validateUserId } from '../middleware/validation';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { rejectMismatchedUserId } from '../utils/requestAuth';
@@ -12,11 +12,11 @@ import type { AuthenticatedRequest } from '../types';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-export const initializePreferencesRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializePreferencesRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -39,7 +39,7 @@ router.get(
     let preferences = await cacheService.get(cacheKey);
 
     if (!preferences) {
-      preferences = await supabaseService.getUserPreferences(userId);
+      preferences = await dataLayer.categories.getUserPreferences(userId);
 
       if (preferences) {
         await cacheService.set(cacheKey, preferences, 1800);
@@ -74,7 +74,7 @@ router.post(
     try {
       // Merge with existing prefs. Wallet balance/awards are server-authoritative —
       // clients must not overwrite them via preferences POST (race with awards).
-      const existing = await supabaseService.getUserPreferences(userId);
+      const existing = await dataLayer.categories.getUserPreferences(userId);
       const existingPrefs =
         existing?.preferences && typeof existing.preferences === 'object'
           ? existing.preferences
@@ -110,7 +110,7 @@ router.post(
         },
       };
 
-      const result = await supabaseService.upsertUserPreferences(userId, {
+      const result = await dataLayer.categories.upsertUserPreferences(userId, {
         theme: theme || existing?.theme || 'light',
         preferences: mergedPreferences,
       });

@@ -7,17 +7,17 @@ import {
   validateUserStatsUpsert,
 } from '../middleware/validation';
 import { rejectMismatchedUserId } from '../utils/requestAuth';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-export const initializeUserStatsRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeUserStatsRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -36,7 +36,7 @@ router.get(
     let stats = await cacheService.get(cacheKey);
 
     if (!stats) {
-      stats = await supabaseService.getUserQuestionStats(userId);
+      stats = await dataLayer.offlineBundles.getUserQuestionStats(userId);
       await cacheService.set(cacheKey, stats, 600);
     }
 
@@ -58,7 +58,7 @@ router.post(
 
     logger.debug('Upserting user question stat', { userId, questionId });
 
-    const result = await supabaseService.upsertUserQuestionStat(userId, questionId, {
+    const result = await dataLayer.offlineBundles.upsertUserQuestionStat(userId, questionId, {
       correctAttempts,
       incorrectAttempts,
       lastAttempted,

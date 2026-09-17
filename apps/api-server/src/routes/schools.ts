@@ -8,15 +8,20 @@ import { authMiddleware } from '../middleware/auth';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
 import { requireAuthUserId } from '../utils/requestAuth';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { getAcademicCoursesService } from '../services/academicCourses';
 import { isSchoolKind } from '@lantern/shared/academic';
 
 const router = Router();
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export const initializeSchoolRoutes = (supabase: SupabaseService): void => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+const legacyService = () => dataLayer.legacyService;
+
+export const initializeSchoolRoutes = (layer: DataLayer): void => {
+  dataLayer = layer;
 };
 
 function handle(err: unknown, res: Response): void {
@@ -29,7 +34,7 @@ function handle(err: unknown, res: Response): void {
 }
 
 function schools() {
-  return getAcademicCoursesService(supabaseService);
+  return getAcademicCoursesService(legacyService());
 }
 
 router.get(

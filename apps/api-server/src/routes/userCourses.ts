@@ -13,17 +13,22 @@ import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { MAX_USER_COURSES_PER_YEAR, getAcademicCoursesService } from '../services/academicCourses';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+const legacyService = () => dataLayer.legacyService;
 
 // Signature mirrors the other routers; user-course routes are uncached by design.
-export const initializeUserCourseRoutes = (supabase: SupabaseService, _cache?: CacheService) => {
-  supabaseService = supabase;
+export const initializeUserCourseRoutes = (layer: DataLayer, _cache?: CacheService) => {
+  dataLayer = layer;
 };
 
 const ACADEMIC_YEAR_MESSAGE = 'academicYear must look like 2026/2027';
@@ -80,7 +85,7 @@ router.get(
     if (!userId) return;
     const status = (req.query.status as 'active' | 'archived' | 'all' | undefined) ?? 'active';
     const academicYear = typeof req.query.academicYear === 'string' && req.query.academicYear ? req.query.academicYear : undefined;
-    const data = await getAcademicCoursesService(supabaseService).listUserCourses(userId, { status, academicYear });
+    const data = await getAcademicCoursesService(legacyService()).listUserCourses(userId, { status, academicYear });
     res.json({ success: true, data });
   })
 );
@@ -95,7 +100,7 @@ router.put(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getAcademicCoursesService(supabaseService).setUserCourses(userId, {
+      const data = await getAcademicCoursesService(legacyService()).setUserCourses(userId, {
         courseIds: req.body?.courseIds,
         academicYear: req.body?.academicYear,
       });
@@ -117,7 +122,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getAcademicCoursesService(supabaseService).archiveSemester(userId, req.body?.academicYear);
+      const data = await getAcademicCoursesService(legacyService()).archiveSemester(userId, req.body?.academicYear);
       res.json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -136,7 +141,7 @@ router.patch(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getAcademicCoursesService(supabaseService).updateUserCourse(userId, req.params.courseId, {
+      const data = await getAcademicCoursesService(legacyService()).updateUserCourse(userId, req.params.courseId, {
         examDate: req.body?.examDate,
         semester: req.body?.semester,
         status: req.body?.status,
@@ -163,7 +168,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const removed = await getAcademicCoursesService(supabaseService).removeUserCourse(
+      const removed = await getAcademicCoursesService(legacyService()).removeUserCourse(
         userId,
         req.params.courseId,
         typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined
