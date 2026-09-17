@@ -111,6 +111,53 @@ describe('SetRoomFocusBar', () => {
     expect(html).not.toMatch(/>\s*Share\s*</);
   });
 
+  /**
+   * The narrow-column contract.
+   *
+   * FIXED: with the chats flyout open (320px beside a 224px sidebar) the studio
+   * column was ~480px, and the bar broke rather than degrading — the set name
+   * truncated to a single letter, the tool LABEL disappeared entirely so only a
+   * "?" icon and a caret were left, and the timer chip overlapped the caret.
+   * `renderToStaticMarkup` has no layout, so this is asserted as the class
+   * contract that produces the behaviour: the degradation order is a property
+   * of these classes, and it is the classes that regressed.
+   */
+  describe('degrades in one fixed order and never overlaps', () => {
+    const html = render({ onOpenChat: noop, timer: <span>25m</span> });
+
+    it('clips rather than overlapping, as a last resort', () => {
+      expect(html.slice(0, html.indexOf('>'))).toContain('overflow-hidden');
+    });
+
+    it('lets the left cluster give way, and only the left cluster', () => {
+      // `min-w-0 flex-1` is what makes truncation possible at all: without it
+      // the cluster's automatic minimum size is its content and the bar
+      // overflows instead of shrinking.
+      expect(html).toContain('class="flex min-w-0 flex-1 items-center gap-1"');
+      expect(html).toContain('class="flex shrink-0 items-center gap-1"');
+    });
+
+    it('truncates the set name first, and nothing else', () => {
+      expect(html).toContain('class="min-w-0 truncate text-caption text-lantern-text-secondary"');
+      // The trail is the shrinkable child; the tile inside it is not.
+      expect(html).toContain('hidden min-w-0 shrink items-center gap-2 sm:flex');
+    });
+
+    it('never gives way on Back or on the tool', () => {
+      const back = /<button[^>]*aria-label="Back to Cell Biology"[^>]*>/.exec(html)?.[0] ?? '';
+      expect(back).toContain('shrink-0');
+      const tool = /<button[^>]*aria-label="Quiz — switch tool"[^>]*>/.exec(html)?.[0] ?? '';
+      expect(tool).toContain('shrink-0');
+    });
+
+    it('keeps the tool LABEL readable at every width', () => {
+      // The label's own span carries no truncate, no hidden, no sr-only and no
+      // breakpoint: "which tool am I in" is the question this bar answers, and
+      // an icon alone does not answer it.
+      expect(html).toContain('<span>Quiz</span>');
+    });
+  });
+
   it('keeps every control at the 44px touch minimum', () => {
     const html = render({ onOpenChat: noop, timer: <span>25m</span> });
     // The bar's own controls. Menu rows are the primitive's business (and are

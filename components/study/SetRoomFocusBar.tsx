@@ -106,57 +106,73 @@ export const SetRoomFocusBar: React.FC<SetRoomFocusBarProps> = ({
   ];
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-lantern-border">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label={`Back to ${setName}`}
-        className={ICON_BUTTON}
-      >
-        <AppIcon name="chevron-back" size={20} />
-      </button>
-
-      {/* The trail. Hidden below `sm`, where the phone-width bar needs its
-          width for the tool name and the controls, and where Back already
-          says where the student came from. */}
-      <span className="hidden min-w-0 items-center gap-2 sm:flex">
-        <SetTile
-          setId={setId}
-          title={setName}
-          coverPath={coverPath}
-          tileHue={tileHue}
-          tileGlyph={tileGlyph}
-          size={24}
-        />
-        <span className="min-w-0 truncate text-caption text-lantern-text-secondary">{setName}</span>
-        <AppIcon
-          name="chevron-forward"
-          size={14}
-          className="shrink-0 text-lantern-text-tertiary"
-          aria-hidden
-        />
-      </span>
-
-      <Menu>
-        <MenuTrigger
-          aria-label={`${current?.label ?? 'Tool'} — switch tool`}
-          className="inline-flex min-h-[44px] min-w-0 items-center gap-1.5 rounded-full px-2.5 text-body font-medium text-lantern-text hover:bg-lantern-background-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
+    // `overflow-hidden` is the no-overlap guarantee of last resort: the bar is
+    // laid out so nothing needs to overlap, and if a future control breaks that
+    // it clips rather than sitting on top of the tool name.
+    <div className="flex h-12 shrink-0 items-center gap-1 overflow-hidden border-b border-lantern-border">
+      {/* LEFT CLUSTER — the one that gives way. `min-w-0 flex-1` is what makes
+          the truncation below possible at all: without it the cluster's
+          automatic minimum size is its content, so a narrow bar overflows
+          instead of shrinking. */}
+      <span className="flex min-w-0 flex-1 items-center gap-1">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label={`Back to ${setName}`}
+          className={ICON_BUTTON}
         >
-          {current ? (
-            <AppIcon
-              name={current.icon}
-              size={18}
-              className={`shrink-0 ${FEATURE_INK_TEXT[current.feature]}`}
-            />
-          ) : null}
-          <span className="min-w-0 truncate">{current?.label ?? 'Tool'}</span>
+          <AppIcon name="chevron-back" size={20} />
+        </button>
+
+        {/* The trail — the FIRST thing to give way, and the only thing that
+            does. The set name truncates as the column narrows (the chats
+            flyout, at 320px, is what makes that a real width and not a
+            hypothetical one) and Back still says where it leads, by name, in
+            its own label. Hidden outright below `sm`, where a phone-width bar
+            needs every pixel for the tool name. */}
+        <span className="hidden min-w-0 shrink items-center gap-2 sm:flex">
+          <SetTile
+            setId={setId}
+            title={setName}
+            coverPath={coverPath}
+            tileHue={tileHue}
+            tileGlyph={tileGlyph}
+            size={24}
+          />
+          <span className="min-w-0 truncate text-caption text-lantern-text-secondary">{setName}</span>
           <AppIcon
-            name="chevron-down"
+            name="chevron-forward"
             size={14}
-            className="shrink-0 text-lantern-text-secondary"
+            className="shrink-0 text-lantern-text-tertiary"
             aria-hidden
           />
-        </MenuTrigger>
+        </span>
+
+        {/* THE TOOL NEVER GIVES WAY. `shrink-0`, and the label carries no
+            `truncate`, no `hidden` and no breakpoint: "which tool am I in" is
+            the one question this bar exists to answer, and an icon alone does
+            not answer it. `Menu` renders no DOM node of its own, so the trigger
+            is a direct flex child and this class is the whole contract. */}
+        <Menu>
+          <MenuTrigger
+            aria-label={`${current?.label ?? 'Tool'} — switch tool`}
+            className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-2.5 text-body font-medium text-lantern-text hover:bg-lantern-background-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
+          >
+            {current ? (
+              <AppIcon
+                name={current.icon}
+                size={18}
+                className={`shrink-0 ${FEATURE_INK_TEXT[current.feature]}`}
+              />
+            ) : null}
+            <span>{current?.label ?? 'Tool'}</span>
+            <AppIcon
+              name="chevron-down"
+              size={14}
+              className="shrink-0 text-lantern-text-secondary"
+              aria-hidden
+            />
+          </MenuTrigger>
         <MenuContent align="start" placement="bottom">
           {FOCUS_TOOL_GROUPS.map((group) => {
             const rows = group.ids.flatMap((id) => {
@@ -189,10 +205,13 @@ export const SetRoomFocusBar: React.FC<SetRoomFocusBarProps> = ({
               </div>
             );
           })}
-        </MenuContent>
-      </Menu>
+          </MenuContent>
+        </Menu>
+      </span>
 
-      <span className="ml-auto flex shrink-0 items-center gap-1">
+      {/* RIGHT CLUSTER — `shrink-0`, so the timer keeps its size and the kebab
+          stays reachable however narrow the column gets. */}
+      <span className="flex shrink-0 items-center gap-1">
         {timer}
         {onOpenChat ? (
           <button type="button" onClick={onOpenChat} aria-label="Chat" className={ICON_BUTTON}>
