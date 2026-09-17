@@ -45,8 +45,31 @@ for those the query-shape test, written against the untouched route, IS the net.
 3. **PR 2b** — `users`, `tests`, `analytics`, `sitemap`, `groups`, `messages` search
    (+ `data/sitemap.ts`, `data/productEvents.ts`, `data/messageSearch.ts`) and all 7
    auth-admin sites. SHIPPED.
-4. **PR 3** — the marketplace family (offers, seller, listings, orders, discovery): one
-   existing module, and the only two route suites that already exist.
+4. **PR 3** — the marketplace family (offers, seller, listings, orders, discovery).
+
+## PR 3 re-measured BY CHAIN
+
+The earlier numbers counted `getClient()` sites; PRs 2a/2b showed that undercounts,
+because one `const client` can hold several chains. Measured at `920b5461`:
+
+| file | getClient sites | CHAINS | of which |
+| --- | ---: | ---: | --- |
+| `marketplace/offers.ts` | 14 | **13** | 12 `.from()` + 1 RPC; 1 `withIdempotency` hand-off stays |
+| `marketplace/seller.ts` | 6 | **5** | 1 hand-off stays |
+| `marketplace/listings.ts` | 5 | **4** | 1 `withIdempotency` hand-off stays |
+| `marketplace/discovery.ts` | 4 | **4** | — |
+| `marketplace/orders.ts` | 3 | **1** | 2 `withIdempotency` hand-offs stay |
+| `marketplace/cart.ts` | 1 | **0** | the `withIdempotency` hand-off stays |
+| **total** | 33 | **27** | + 5 hand-offs |
+
+`routes/paystackWebhook.ts` holds no inline query. `routes/health.ts` has a `.from()`, but
+on a client it builds ITSELF with `createClient` — a liveness probe deliberately
+independent of the data layer, so it is not a `getClient()` escape and is out of scope.
+
+27 queries is the same order as PR 2b's 25, so this stays ONE pull request; no 3a/3b split.
+
+Queries inside a `withIdempotency` callback move as functions CALLED FROM INSIDE that same
+callback. Nothing crosses the idempotency boundary in either direction.
 
 ## The rules these pull requests follow
 
