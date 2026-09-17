@@ -73,3 +73,16 @@ describe('the app shell hides its breadcrumb strip in focus', () => {
     expect(flat(APP)).toContain('|| isSetRoomFocusPath(studySetPath)');
   });
 });
+
+describe('the app shell owns the restore the room cannot do', () => {
+  const SHELL = fs.readFileSync(path.join(REPO_ROOT, 'components/layout/AppShell.tsx'), 'utf8');
+
+  it('asks the same question off the URL and calls the restore hook', () => {
+    // A reload inside a studio never runs the room's cleanup, and on the next
+    // visit the student may land where the room never mounts — so the shell,
+    // which mounts on every route, is the only thing that can notice.
+    expect(flat(SHELL)).toContain(
+      'useFocusStandDownRestore(isSetRoomFocusPath(parseStudySetPath(location.pathname)));'
+    );
+  });
+});

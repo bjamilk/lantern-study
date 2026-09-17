@@ -1,6 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useUIStore } from '../stores/uiStore';
-import { shellSidebarIsAColumn } from '../components/layout/shellSideColumn';
+import {
+  SHELL_SIDEBAR_COLUMN_QUERY,
+  shellSidebarIsAColumn,
+} from '../components/layout/shellSideColumn';
+
+/** The two nav panels focus mode stands down. Order is not significant. */
+const PANELS = ['sidebar', 'chats'] as const;
 
 /**
  * Stand the left-hand nav chrome down while the student is inside a studio,
@@ -53,11 +59,14 @@ import { shellSidebarIsAColumn } from '../components/layout/shellSideColumn';
  * the hook does nothing — closing something that is not on screen would make
  * the change appear on the next resize for no reason a student could explain.
  *
- * TRADE-OFF, KNOWN. Both flags are persisted (`ui-storage`). Closing the tab
- * mid-studio skips React's unmount, so the nav is still stood down on the next
- * visit. One click each restores it, and the alternative — a second,
- * non-persisted copy of both flags for the Sidebar to read — is a larger change
- * than the papercut is worth.
+ * SURVIVING A RELOAD. The memory is not a ref in this hook; it is
+ * `focusStoodDown` in the ui store, persisted in the same `ui-storage` blob as
+ * the two panel flags and written in the SAME `set` as the collapse, so the two
+ * can never disagree. A reload inside a studio skips React's unmount, so a ref
+ * died there while `isSidebarExpanded: false` survived — the student came back
+ * to a collapsed sidebar with nothing that knew to restore it. That is the
+ * common path, not an edge. `useFocusStandDownRestore` below puts the panel
+ * back on the first non-studio route of the next visit.
  *
  * Deliberately NOT animated: nothing here respects `prefers-reduced-motion`
  * because there is no motion to reduce. The panels' own transitions are the
@@ -69,41 +78,69 @@ export function useFocusSidebarCollapse(focus: boolean): void {
   // `getState()` instead — see the StrictMode note above.
   const sidebarExpanded = useUIStore((s) => s.isSidebarExpanded);
   const chatsOpen = useUIStore((s) => s.isChatsSectionExpanded);
-  const ours = useRef({ sidebar: false, chats: false });
 
-  // The student's own toggle wins. Declared BEFORE the enter/leave effect so
-  // that on the render where focus turns on it runs first and sees the memory
-  // still unset, rather than clearing the bit the next effect is about to set.
+  // The student's own toggle wins: a panel they have opened stops being ours to
+  // close again or to restore. Declared BEFORE the enter/leave effect so that
+  // on the render where focus turns on it runs first and sees the state the
+  // next effect is about to change, rather than clearing the flag it just set.
   useEffect(() => {
-    if (!focus) return;
-    if (sidebarExpanded) ours.current.sidebar = false;
-    if (chatsOpen) ours.current.chats = false;
+    if (!focus || !shellSidebarIsAColumn()) return;
+    if (sidebarExpanded) useUIStore.getState().clearFocusStandDown('sidebar');
+    if (chatsOpen) useUIStore.getState().clearFocusStandDown('chats');
   }, [focus, sidebarExpanded, chatsOpen]);
 
   useEffect(() => {
     if (!focus || !shellSidebarIsAColumn()) return;
-    const memory = ours.current;
-    if (useUIStore.getState().isSidebarExpanded) {
-      memory.sidebar = true;
-      useUIStore.getState().toggleSidebar();
-    }
-    if (useUIStore.getState().isChatsSectionExpanded) {
-      memory.chats = true;
-      useUIStore.getState().setChatsSectionExpanded(false);
-    }
+    // Each action is a no-op on a panel that is already closed, so arriving in
+    // FOCUS after a reload neither toggles anything nor disturbs the flag.
+    for (const panel of PANELS) useUIStore.getState().standDownForFocus(panel);
     return () => {
-      if (memory.sidebar) {
-        memory.sidebar = false;
-        if (!useUIStore.getState().isSidebarExpanded) useUIStore.getState().toggleSidebar();
-      }
-      if (memory.chats) {
-        memory.chats = false;
-        if (!useUIStore.getState().isChatsSectionExpanded) {
-          useUIStore.getState().setChatsSectionExpanded(true);
+      for (const panel of PANELS) useUIStore.getState().restoreFromFocus(panel);
+    };
+  }, [focus]);
+}
+
+/**
+ * The other half of the restore, and the reason the flags are persisted.
+ *
+ * FIXED: a reload inside a studio (or closing the tab, or a hard navigation)
+ * skips React's unmount, so nothing runs the room hook's cleanup. Before the
+ * flags moved into the store that lost the memory entirely; now the memory
+ * survives, but something still has to act on it, and it cannot be the room —
+ * the student may land on Home, or on Chat, or anywhere the room never mounts.
+ *
+ * So this lives at the SHELL, which mounts on every route: any time the app is
+ * not in a set-room studio and a flag is still set, put that panel back and
+ * clear it. Idempotent, and it shares `restoreFromFocus` with the room hook, so
+ * there is one restore rule rather than two that can disagree — whichever runs
+ * first does the work and the other sees a cleared flag.
+ *
+ * Below the sidebar's breakpoint it does NOTHING, including no clearing: a
+ * phone-width reload must not spend the memory of a desktop-width collapse the
+ * student has not seen undone yet. That is why it also LISTENS to the
+ * breakpoint rather than only sampling it — a student who reloaded a studio on
+ * a narrow window and then widened it would otherwise keep a collapsed sidebar
+ * and an unspent flag until something unrelated re-rendered the shell.
+ */
+export function useFocusStandDownRestore(focus: boolean): void {
+  const stoodDown = useUIStore((s) => s.focusStoodDown);
+
+  useEffect(() => {
+    if (focus) return;
+    const restore = () => {
+      if (!shellSidebarIsAColumn()) return;
+      for (const panel of PANELS) {
+        if (useUIStore.getState().focusStoodDown[panel]) {
+          useUIStore.getState().restoreFromFocus(panel);
         }
       }
     };
-  }, [focus]);
+    restore();
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia(SHELL_SIDEBAR_COLUMN_QUERY);
+    mq.addEventListener('change', restore);
+    return () => mq.removeEventListener('change', restore);
+  }, [focus, stoodDown]);
 }
 
 export default useFocusSidebarCollapse;

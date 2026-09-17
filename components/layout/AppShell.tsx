@@ -19,6 +19,8 @@ import {
   MIN_LECTURE_RECORD_MS,
 } from '../../services/lectureRecording';
 import { fetchAIUsage } from '../../services/ai';
+import { isSetRoomFocusPath, parseStudySetPath } from '@lantern/shared';
+import { useFocusStandDownRestore } from '../../hooks/useFocusSidebarCollapse';
 import { resolveShellSideColumn, SHELL_SIDEBAR_COLUMN_CLASS } from './shellSideColumn';
 import { useAiCredits } from './useAiCredits';
 
@@ -71,6 +73,12 @@ const AppShell: React.FC<AppShellProps> = ({
     const lectureStartedAt = useLectureRecordingStore((s) => s.startedAt);
     const lecturePausedAt = useLectureRecordingStore((s) => s.pausedAt);
     const lecturePausedTotalMs = useLectureRecordingStore((s) => s.pausedTotalMs);
+    // Focus mode's other half. The room stands the nav down and puts it back on
+    // its way out, but a reload inside a studio never runs that cleanup — and on
+    // the next visit the student may land anywhere, so the room cannot be what
+    // notices. The shell mounts on every route, so it asks the same question off
+    // the URL and restores anything focus mode still owns.
+    useFocusStandDownRestore(isSetRoomFocusPath(parseStudySetPath(location.pathname)));
     const lectureTick = useLectureRecordingStore((s) => s.tick);
     const stopLecture = useLectureRecordingStore((s) => s.stopAndTranscribe);
     const pauseLecture = useLectureRecordingStore((s) => s.pauseRecording);
