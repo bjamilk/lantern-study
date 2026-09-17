@@ -5,7 +5,7 @@
  * has to read either, or a session is filed differently depending on which
  * door it came through.
  */
-import { resolveStudySetIdFromConfigLike } from './supabase';
+import { resolveStudySetIdFromConfigLike } from './data/academic';
 
 const SET = 'fdbfd2b9-1111-4222-8333-444444444444';
 

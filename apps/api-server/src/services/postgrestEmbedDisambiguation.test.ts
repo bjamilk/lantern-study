@@ -738,7 +738,6 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
   });
 
   it('keeps the two embeds that were fixed alongside the outage named', () => {
-    const supabase = readFileSync(join(API_SRC, 'services/supabase.ts'), 'utf8');
     // The message_bookmarks -> messages embed moved verbatim into the board
     // repository with `getBookmarkedMessageIdsForGroup` (monolith lane M1d,
     // step 15), so it is pinned where the query now lives. The pin moved with
