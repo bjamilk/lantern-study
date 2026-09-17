@@ -24,7 +24,7 @@ import { AppIcon } from '../ui/AppIcon';
 import { Button, Card } from '../ui';
 import { Headline } from '../ui/Headline';
 import { ChipRowScroller } from './ChipRowScroller';
-import { OwnWayGrid, OwnWayShowAll } from './OwnWayGrid';
+import { OwnWayGrid } from './OwnWayGrid';
 import { RecentMaterials } from './RecentMaterials';
 import { RoomRecommendationCard } from './RoomRecommendationCard';
 import { RoomTopicRing } from './RoomTopicRing';
@@ -70,6 +70,11 @@ interface StudySetHomeProps {
   renderNoteMenu?: (note: StudyNote) => React.ReactNode;
   /** Empty-set starter notes from a topic, subject and skill level. */
   onGenerateFromTopic?: (brief: TopicBrief) => void;
+  /**
+   * Exam / syllabus, scrolled with the home rather than pinned under it.
+   * Pinning a second card row was what ate the materials grid.
+   */
+  footer?: React.ReactNode;
 }
 
 export const StudySetHome: React.FC<StudySetHomeProps> = ({
@@ -91,6 +96,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   onOpenLibrary,
   renderNoteMenu,
   onGenerateFromTopic,
+  footer,
 }) => {
   const hasMaterials = notes.length > 0 || deckCount > 0 || testCount > 0;
   const derived = studySet ? topicsFromReadingNotes(studySet.id, notes) : null;
@@ -111,7 +117,6 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
 
   const nextTopic = pickRecommendedTopic(topics, studySet?.mode || 'standard');
   const [unitId, setUnitId] = useState<string | null>(null);
-  const [showMore, setShowMore] = useState(false);
   const [topicTitle, setTopicTitle] = useState('');
   const [topicSubject, setTopicSubject] = useState('');
   const [topicLevel, setTopicLevel] = useState<TopicSkillLevel>('intermediate');
@@ -124,11 +129,11 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
     pickRecommendedTopic(unitTopics, studySet?.mode || 'standard') ||
     unitTopics[0] ||
     nextTopic;
-  const recommendedCards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => showMore || card.primary);
+  const recommendedCards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => card.primary);
   const homeScrollRef = useAutohideScrollbar<HTMLDivElement>();
 
   return (
-    <div ref={homeScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scrollbar-autohide space-y-6 pr-1 pb-2">
+    <div ref={homeScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scrollbar-autohide space-y-4 pr-1 pb-2">
       {planGenerating ? (
         <Card padding="lg">
           <p className="text-heading">Generating your study plan…</p>
@@ -140,7 +145,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
 
       {currentTopic ? (
         <section>
-          <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+          <div className="flex flex-wrap items-end justify-between gap-2 mb-2">
             <Headline accent="study plan" feature="ai">
               Recommended from your study plan
             </Headline>
@@ -160,7 +165,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
               a student which stretch of the course they are standing in, which
               is the whole thing the flattened band was missing. */}
           {units.length > 0 ? (
-            <ChipRowScroller aria-label="Study plan units" className="mb-3">
+            <ChipRowScroller aria-label="Study plan units" className="mb-2">
               {units.map((unit, index) => {
                 const active = unit.id === activeUnitId;
                 return (
@@ -183,8 +188,8 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
             </ChipRowScroller>
           ) : null}
 
-          <div className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+          <div className="rounded-2xl bg-lantern-background-secondary/60 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
               <div className="flex min-w-0 items-center gap-3">
                 <RoomTopicRing status={currentTopic.status} />
                 <div className="min-w-0">
@@ -201,7 +206,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
                 </Button>
               ) : null}
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {recommendedCards.map((card) =>
                 // The flashcards card keeps the SPOT illustration it was
                 // authored for. Every other card takes the landscape SCENE the
@@ -233,13 +238,6 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
                 )
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setShowMore((value) => !value)}
-              className="mt-3 min-h-[44px] text-caption font-medium text-lantern-primary-text hover:underline"
-            >
-              {showMore ? 'Show less' : 'Show more'}
-            </button>
           </div>
         </section>
       ) : recommended ? (
@@ -263,11 +261,10 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
       ) : null}
 
       <section>
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="mb-2">
           <Headline accent="your own way" feature="sets">
-            Start learning your own way
+            Or start learning your own way
           </Headline>
-          <OwnWayShowAll onTool={onTool} />
         </div>
         <OwnWayGrid onTool={onTool} />
       </section>
@@ -340,6 +337,8 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
           renderNoteMenu={renderNoteMenu}
         />
       ) : null}
+
+      {footer ? <div className="pt-1">{footer}</div> : null}
     </div>
   );
 };

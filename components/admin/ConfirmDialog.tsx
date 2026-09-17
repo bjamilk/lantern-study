@@ -3,6 +3,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Textarea } from '../ui/Textarea';
+import { Caption, Heading } from '../ui/Text';
 import Modal from '../ui/Modal';
 import { ConfirmState } from './types';
 
@@ -38,8 +39,8 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       panelClassName="!p-0 bg-transparent shadow-none dark:bg-transparent"
     >
       <Card className="w-full space-y-4">
-        <h3 id="admin-confirm-dialog-title" className="text-lg font-semibold text-lantern-text">{state.title}</h3>
-        <p className="text-sm text-lantern-text-muted">{state.message}</p>
+        <Heading id="admin-confirm-dialog-title" className="text-lantern-text">{state.title}</Heading>
+        <Caption className="text-lantern-text-muted">{state.message}</Caption>
         {state.reasonField ? (
           <Textarea
             value={reasonInput}

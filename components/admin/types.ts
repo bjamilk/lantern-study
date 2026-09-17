@@ -1,4 +1,5 @@
 import { AdminPagination, AdminStats, AdminUser } from '../services/admin';
+import type { AppIconName } from '../ui/appIconMap';
 
 export type AdminTab =
   | 'overview'
@@ -12,6 +13,51 @@ export type AdminTab =
   | 'communications'
   | 'moderation'
   | 'audit';
+
+export interface AdminTabDef {
+  id: AdminTab;
+  label: string;
+  icon: AppIconName;
+}
+
+export interface AdminTabGroup {
+  id: string;
+  label: string;
+  tabs: AdminTabDef[];
+}
+
+/** Grouped so the rail reads as an ops console, not a flat strip of 11 pills. */
+export const ADMIN_TAB_GROUPS: AdminTabGroup[] = [
+  {
+    id: 'ops',
+    label: 'Operations',
+    tabs: [
+      { id: 'overview', label: 'Overview', icon: 'grid' },
+      { id: 'reports', label: 'Reports', icon: 'flag' },
+      { id: 'marketplace', label: 'Marketplace', icon: 'storefront' },
+      { id: 'jobs', label: 'Jobs', icon: 'briefcase' },
+      { id: 'moderation', label: 'Content', icon: 'shield-warning' },
+      { id: 'communications', label: 'Communications', icon: 'megaphone' },
+    ],
+  },
+  {
+    id: 'insight',
+    label: 'Insight',
+    tabs: [
+      { id: 'users', label: 'Users', icon: 'people' },
+      { id: 'analytics', label: 'Analytics', icon: 'analytics' },
+      { id: 'ai', label: 'AI Ops', icon: 'sparkle' },
+    ],
+  },
+  {
+    id: 'product',
+    label: 'Product',
+    tabs: [
+      { id: 'features', label: 'Features', icon: 'layers' },
+      { id: 'audit', label: 'Audit', icon: 'clipboard' },
+    ],
+  },
+];
 
 export interface ConfirmState {
   open: boolean;
@@ -30,19 +76,9 @@ export interface AdminShellProps {
 
 export type TabLoadingState = Record<AdminTab, boolean>;
 
-export const ADMIN_TABS: { id: AdminTab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'features', label: 'Features' },
-  { id: 'analytics', label: 'Analytics' },
-  { id: 'users', label: 'Users' },
-  { id: 'marketplace', label: 'Marketplace' },
-  { id: 'jobs', label: 'Jobs' },
-  { id: 'reports', label: 'Reports' },
-  { id: 'ai', label: 'AI Ops' },
-  { id: 'communications', label: 'Communications' },
-  { id: 'moderation', label: 'Content' },
-  { id: 'audit', label: 'Audit' },
-];
+export const ADMIN_TABS: { id: AdminTab; label: string }[] = ADMIN_TAB_GROUPS.flatMap((group) =>
+  group.tabs.map(({ id, label }) => ({ id, label })),
+);
 
 export const emptyTabLoading = (): TabLoadingState => ({
   overview: false,
@@ -95,6 +131,21 @@ export const formatDate = (iso?: string) => {
 export const formatDateTime = (iso?: string) => {
   if (!iso) return '-';
   return new Date(iso).toLocaleString();
+};
+
+export const formatRelativeTime = (iso?: string) => {
+  if (!iso) return '—';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '—';
+  const deltaMs = Date.now() - then;
+  const mins = Math.floor(deltaMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return formatDate(iso);
 };
 
 export const reportAgeInfo = (createdAt: string) => {

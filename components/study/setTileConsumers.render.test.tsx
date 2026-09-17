@@ -116,7 +116,7 @@ describe('the set room header', () => {
         menu={[]}
       />
     );
-    expectPickWins(html, 44);
+    expectPickWins(html, 40);
   });
 });
 

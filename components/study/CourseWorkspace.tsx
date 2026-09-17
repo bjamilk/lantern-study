@@ -120,8 +120,8 @@ import { StudySetUpload } from './StudySetUpload';
 import { CreateFromSource } from './CreateFromSource';
 import { NoteRoomRow } from './NoteRoomRow';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
-import { StudySetSwitcher } from './StudySetSwitcher';
 import { SetRoomHeader, type SetRoomHeaderMenuItem } from './SetRoomHeader';
+import { shareStudySet } from './shareStudySet';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
 import { StudyWorkspaceBar } from './StudyWorkspaceBar';
 import { MaterialSortMenu, ViewModeToggle, useMaterialSort, useViewMode } from './ViewModeToggle';
@@ -205,7 +205,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const openPicker = useStudySetStore((s) => s.openPicker);
   const folders = useStudySetStore((s) => s.folders);
   const loadFolders = useStudySetStore((s) => s.loadFolders);
-  const sets = useStudySetStore((s) => s.sets);
   const setsLoaded = useStudySetStore((s) => s.loaded);
   const setsLoadError = useStudySetStore((s) => s.loadError);
   const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
@@ -1399,6 +1398,16 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         ...(activity !== 'home'
           ? [{ id: 'home', label: 'Set home', onSelect: () => go('home') }]
           : []),
+        {
+          id: 'share',
+          label: 'Share set',
+          onSelect: () =>
+            void shareStudySet({
+              setId: studySetId,
+              title: label,
+              visibility: studySet?.visibility,
+            }),
+        },
         { id: 'plan', label: 'Full study plan', onSelect: () => go('plan') },
         { id: 'materials', label: 'All materials', onSelect: () => onOpenLibrary() },
         {
@@ -1541,28 +1550,14 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             coverPath={studySet?.coverPath}
             tileHue={studySet?.tileHue}
             tileGlyph={studySet?.tileGlyph}
-            progress={roomProgress}
-            counts={roomCounts}
+            progress={activity === 'home' ? roomProgress : null}
+            counts={activity === 'home' ? roomCounts : undefined}
             visibility={studySet?.visibility}
             onOpenSettings={() => setSettingsOpen(true)}
             menu={roomMenu}
             controls={
               <>
                 <StudySetTimer setId={studySetId} />
-                {sets.length > 0 ? (
-                  <StudySetSwitcher
-                    sets={sets}
-                    currentId={studySetId}
-                    onSelect={(nextId) =>
-                      navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId: nextId })
-                    }
-                    onViewAll={() => {
-                      openPicker();
-                      navigateTo(AppMode.STUDY_HUB);
-                    }}
-                    onCreate={() => setCreateOpen(true)}
-                  />
-                ) : null}
                 {!companionRail ? (
                   <Button variant="secondary" onClick={() => openSetChat()} aria-label="Chat">
                     <AppIcon name="chatbubbles" size={16} />
@@ -1591,11 +1586,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             }
           />
         )}
-        {/* Activity chips. Hidden on set home, which has its own tool tiles.
-            `flex-wrap` with intrinsically sized chips is deliberate: the chips
-            must wrap on the CONTENT column's width (sidebar + companion rail
-            leave it narrow), which viewport breakpoints cannot see. */}
-        {!(studySetId && activity === 'home') ? (
+        {/* Activity chips. Hidden on a study set: the set rail already
+            names every door, and repeating them here is what crushed the
+            quiz / cards / notes pane. Course rooms still need the strip. */}
+        {!studySetId ? (
         <div className="flex flex-wrap gap-1.5 pb-4">
           {WORKSPACE_ACTIVITIES.map((item) => {
             const active = activity === item.id && item.status === 'ready';
@@ -1623,12 +1617,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row">
-        {/* Materials column. Hidden on set home and while a note is open in the
-            Notes studio, so the reading pane gets the full width. `shrink-0`
-            protects its width beside the studio; the `max-h-[min(62vh,36rem)]`
-            cap applies only while stacked — at lg+ it is released so the column
-            can fill the row. */}
-        {!(studySetId && activity === 'home') && !notesRoomOpen ? (
+        {/* Materials column. Hidden on a study set — the set rail already
+            holds Upload and the materials tree — and while a note is open
+            in the Notes studio. Course rooms still need this column.
+            `shrink-0` protects its width beside the studio; the
+            `max-h-[min(62vh,36rem)]` cap applies only while stacked. */}
+        {!studySetId && !notesRoomOpen ? (
         <aside className="w-full lg:w-72 shrink-0 flex flex-col min-h-0 lg:max-w-xs max-h-[min(62vh,36rem)] lg:max-h-none">
           <Card padding="md" className="flex-1 min-h-0 overflow-y-auto">
             <div className="flex items-center justify-between mb-1">
@@ -1893,6 +1887,19 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               onOpenPlan={() => go('plan')}
               onOpenLibrary={onOpenLibrary}
               onGenerateFromTopic={(brief) => void handleCreateFromTopic(brief, 'materials')}
+              footer={
+                <SetRoomFooter
+                  studySetId={studySetId}
+                  examDate={studySet?.examDate ?? null}
+                  exams={exams}
+                  onViewSchedule={() => go('calendar')}
+                  onAddSyllabus={() => {
+                    go('add');
+                    setImportSource(null);
+                    setImportOpen(true);
+                  }}
+                />
+              }
             />
           ) : activity === 'notes' && routePath?.createNew && studySetId ? (
             renderWizard('notes')
@@ -2318,21 +2325,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           )}
         </section>
         </div>
-        {studySetId && activity === 'home' && studySet ? (
-          <div className="shrink-0 pb-4 pt-3">
-            <SetRoomFooter
-              studySetId={studySet.id}
-              examDate={studySet.examDate ?? null}
-              exams={exams}
-              onViewSchedule={() => go('calendar')}
-              onAddSyllabus={() => {
-                go('add');
-                setImportSource(null);
-                setImportOpen(true);
-              }}
-            />
-          </div>
-        ) : null}
         </div>
         </div>
 

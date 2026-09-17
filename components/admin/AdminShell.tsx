@@ -33,11 +33,11 @@ import {
   updateAdminUserRole,
   updateAdminUserStatus,
 } from '../../services/admin';
+import { useAuthStore } from '../../stores/authStore';
 import { Button } from '../ui/Button';
-import { FeatureHero } from '../ui/FeatureHero';
-import { Tabs, TabList, Tab, TabPanel } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
-import { featureAccents } from '@lantern/shared/design';
+import { Body, Caption, Title } from '../ui/Text';
+import { AdminPageHeader } from './AdminChrome';
 import { AdminAI } from './AdminAI';
 import { AdminAnalyticsPanel } from './AdminAnalytics';
 import { AdminAudit } from './AdminAudit';
@@ -45,6 +45,7 @@ import { AdminCommunications } from './AdminCommunications';
 import { AdminContentModeration } from './AdminContentModeration';
 import { AdminMarketplace, AdminMarketplaceView } from './AdminMarketplace';
 import { AdminJobs } from './AdminJobs';
+import { AdminNav } from './AdminNav';
 import { AdminOverview } from './AdminOverview';
 import { AdminProductFeatures } from './AdminProductFeatures';
 import { AdminReports, type AdminReportStatusFilter, type AdminReportTargetFilter } from './AdminReports';
@@ -52,7 +53,6 @@ import { AdminUsers } from './AdminUsers';
 import { ConfirmDialog } from './ConfirmDialog';
 import { UserDetailDrawer } from './UserDetailDrawer';
 import {
-  ADMIN_TABS,
   AdminShellProps,
   AdminTab,
   ConfirmState,
@@ -62,6 +62,7 @@ import {
 } from './types';
 
 export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => {
+  const operatorEmail = useAuthStore((s) => s.currentUser?.email);
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [globalLoading, setGlobalLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -626,177 +627,199 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
     if (activeTab === 'audit') await loadAudit(true);
   };
 
+  const navBadges: Partial<Record<AdminTab, number>> = {
+    reports: stats?.openReports ?? 0,
+    marketplace: stats?.openDisputes ?? 0,
+  };
+
   return (
     <div className="flex flex-col flex-1 min-h-0 min-w-0 w-full max-w-full bg-lantern-background">
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as AdminTab)}
-        aria-label="Admin sections"
-        variant="pills"
-        className="flex flex-col flex-1 min-h-0 min-w-0"
-      >
-        <div className="shrink-0 px-4 md:px-6 pt-4 md:pt-6 pb-2 space-y-3 bg-lantern-background">
-          <FeatureHero
-            title="Admin Console"
-            subtitle="Platform oversight and moderation"
-            accentColor={featureAccents.admin}
-            icon={<AppIcon name="shield-checkmark" size={24} />}
-            actions={
-              <div className="flex gap-2">
-                <Button variant="secondary" size="sm" onClick={onRefreshCurrent} loading={globalLoading}>
-                  Refresh
-                </Button>
-                <Button variant="primary" size="sm" onClick={onBackToDashboard}>
-                  Back to Dashboard
-                </Button>
-              </div>
-            }
-          />
-
-          <TabList className="overflow-x-auto pb-1 scrollbar-thin shrink-0 !border-0">
-            {ADMIN_TABS.map((tab, index) => (
-              <Tab
-                key={tab.id}
-                value={tab.id}
-                index={index}
-                className="shrink-0 !rounded-full !px-4 !py-2 !min-h-[44px]"
-                style={activeTab === tab.id ? { borderBottomWidth: 2, borderBottomColor: featureAccents.admin } : undefined}
-              >
-                {tab.label}
-              </Tab>
-            ))}
-          </TabList>
-
-          {tabLoading[activeTab] && <p className="text-sm text-lantern-text-muted">Loading…</p>}
-          {error && <p className="text-sm text-lantern-error">{error}</p>}
-          {success && <p className="text-sm text-lantern-success">{success}</p>}
+      <header className="shrink-0 border-b border-lantern-border bg-lantern-surface">
+        <div className="flex flex-wrap items-start justify-between gap-3 px-4 md:px-6 py-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lantern bg-lantern-feature-campus-tint text-lantern-feature-campus-ink">
+              <AppIcon name="shield-checkmark" size={20} />
+            </div>
+            <div className="min-w-0">
+              <Title>Admin</Title>
+              <Caption className="text-lantern-text-secondary mt-0.5">
+                {operatorEmail ? `Signed in as ${operatorEmail}` : 'Platform oversight and moderation'}
+              </Caption>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={onRefreshCurrent} loading={globalLoading}>
+              Refresh
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onBackToDashboard}>
+              Back to Dashboard
+            </Button>
+          </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-4 pb-20 md:pb-6 space-y-4">
-      <TabPanel value="overview">
-        <AdminOverview
-          stats={stats}
-          activity={activity}
-          onExportStats={() => stats && exportCsv('admin-stats.csv', statsSummary(stats))}
-          onOpenFeatures={() => setActiveTab('features')}
-        />
-        {overviewAudit.length > 0 && (
-          <AdminAudit entries={overviewAudit.slice(0, 8)} />
+        {tabLoading[activeTab] ? (
+          <div className="h-0.5 overflow-hidden bg-lantern-feature-campus-tint" aria-hidden>
+            <div className="h-full w-1/3 animate-pulse bg-lantern-feature-campus-ink" />
+          </div>
+        ) : null}
+
+        {(error || success) && (
+          <div className="px-4 md:px-6 pb-3 space-y-2">
+            {error ? (
+              <div
+                role="alert"
+                className="rounded-lantern border border-lantern-error/30 bg-lantern-error/10 px-3 py-2"
+              >
+                <Body className="text-lantern-error">{error}</Body>
+              </div>
+            ) : null}
+            {success ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-lantern border border-lantern-success/30 bg-lantern-success/10 px-3 py-2"
+              >
+                <Body className="text-lantern-success">{success}</Body>
+              </div>
+            ) : null}
+          </div>
         )}
-      </TabPanel>
 
-      <TabPanel value="features">
-        <AdminProductFeatures />
-      </TabPanel>
+        <div className="md:hidden px-4 pb-3">
+          <AdminNav activeTab={activeTab} onSelect={setActiveTab} badges={navBadges} variant="strip" />
+        </div>
+      </header>
 
-      <TabPanel value="analytics">
-        <AdminAnalyticsPanel
-          analytics={analyticsData}
-          events={productEvents}
-          periodDays={analyticsPeriodDays}
-          onPeriodChange={setAnalyticsPeriodDays}
-        />
-      </TabPanel>
+      <div className="flex flex-1 min-h-0 min-w-0">
+        <aside className="hidden md:flex w-52 shrink-0 flex-col border-r border-lantern-border bg-lantern-surface overflow-y-auto px-3 py-4">
+          <AdminNav activeTab={activeTab} onSelect={setActiveTab} badges={navBadges} variant="rail" />
+        </aside>
 
-      <TabPanel value="users">
-        <AdminUsers
-          users={users}
-          pagination={usersPagination}
-          userSearch={userSearch}
-          actionLoading={actionLoading}
-          onSearchChange={setUserSearch}
-          onPrev={() => setUsersPage((p) => Math.max(1, p - 1))}
-          onNext={() => setUsersPage((p) => p + 1)}
-          onSelectUser={setSelectedUserId}
-          onToggleBan={onToggleBan}
-          onToggleAdmin={onTogglePlatformAdmin}
-          roleManagementEnabled={stats?.roleManagementEnabled}
-        />
-      </TabPanel>
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-5 pb-20 md:pb-6">
+          {activeTab === 'overview' && (
+            <AdminOverview
+              stats={stats}
+              activity={activity}
+              audit={overviewAudit}
+              loading={tabLoading.overview}
+              onExportStats={() => stats && exportCsv('admin-stats.csv', statsSummary(stats))}
+              onOpenTab={setActiveTab}
+            />
+          )}
 
-      <TabPanel value="marketplace">
-        <AdminMarketplace
-          view={marketplaceView}
-          onViewChange={setMarketplaceView}
-          listings={listings}
-          listingsPagination={listingsPagination}
-          listingStatusFilter={listingStatusFilter}
-          onListingStatusFilterChange={setListingStatusFilterAndResetPage}
-          onListingsPrev={() => setListingsPage((p) => Math.max(1, p - 1))}
-          onListingsNext={() => setListingsPage((p) => p + 1)}
-          onRemove={onRemoveListing}
-          onToggleSuspend={onToggleSuspendListing}
-          orders={orders}
-          ordersPagination={ordersPagination}
-          orderStatusFilter={orderStatusFilter}
-          orderNotes={orderNotes}
-          onOrderStatusFilterChange={setOrderStatusFilterAndResetPage}
-          onOrdersPrev={() => setOrdersPage((p) => Math.max(1, p - 1))}
-          onOrdersNext={() => setOrdersPage((p) => p + 1)}
-          onOrderNoteChange={(id, note) => setOrderNotes((prev) => ({ ...prev, [id]: note }))}
-          onResolveDispute={onResolveDispute}
-          disputedOrdersTotal={disputedOrdersTotal}
-          actionLoading={actionLoading}
-          onSuccess={setSuccess}
-          onError={setError}
-        />
-      </TabPanel>
+          {activeTab === 'features' && <AdminProductFeatures />}
 
-      <TabPanel value="jobs">
-        <AdminJobs />
-      </TabPanel>
+          {activeTab === 'analytics' && (
+            <AdminAnalyticsPanel
+              analytics={analyticsData}
+              events={productEvents}
+              periodDays={analyticsPeriodDays}
+              onPeriodChange={setAnalyticsPeriodDays}
+            />
+          )}
 
-      <TabPanel value="reports">
-        <AdminReports
-          reports={reports}
-          pagination={reportsPagination}
-          statusFilter={reportStatusFilter}
-          targetTypeFilter={reportTargetFilter}
-          reportNotes={reportNotes}
-          actionLoading={actionLoading}
-          onStatusFilterChange={(value) => {
-            setReportsPage(1);
-            setReportStatusFilter(value);
-          }}
-          onTargetTypeFilterChange={(value) => {
-            setReportsPage(1);
-            setReportTargetFilter(value);
-          }}
-          onNoteChange={(id, note) => setReportNotes((prev) => ({ ...prev, [id]: note }))}
-          onPrev={() => setReportsPage((p) => Math.max(1, p - 1))}
-          onNext={() => setReportsPage((p) => p + 1)}
-          onResolve={onResolveReport}
-          onBulkDismiss={onBulkDismissReports}
-          onSelectUser={setSelectedUserId}
-        />
-      </TabPanel>
+          {activeTab === 'users' && (
+            <AdminUsers
+              users={users}
+              pagination={usersPagination}
+              userSearch={userSearch}
+              actionLoading={actionLoading}
+              loading={tabLoading.users}
+              onSearchChange={setUserSearch}
+              onPrev={() => setUsersPage((p) => Math.max(1, p - 1))}
+              onNext={() => setUsersPage((p) => p + 1)}
+              onSelectUser={setSelectedUserId}
+              onToggleBan={onToggleBan}
+              onToggleAdmin={onTogglePlatformAdmin}
+              roleManagementEnabled={stats?.roleManagementEnabled}
+            />
+          )}
 
-      <TabPanel value="ai">
-        <AdminAI
-          analytics={aiAnalytics}
-          tokens={aiTokens}
-          usageByUser={aiUsageByUser}
-          periodDays={aiPeriodDays}
-          onPeriodChange={setAiPeriodDays}
-          onSelectUser={setSelectedUserId}
-          onResetQuota={onResetQuota}
-          actionLoading={actionLoading}
-        />
-      </TabPanel>
+          {activeTab === 'marketplace' && (
+            <AdminMarketplace
+              view={marketplaceView}
+              onViewChange={setMarketplaceView}
+              listings={listings}
+              listingsPagination={listingsPagination}
+              listingStatusFilter={listingStatusFilter}
+              onListingStatusFilterChange={setListingStatusFilterAndResetPage}
+              onListingsPrev={() => setListingsPage((p) => Math.max(1, p - 1))}
+              onListingsNext={() => setListingsPage((p) => p + 1)}
+              onRemove={onRemoveListing}
+              onToggleSuspend={onToggleSuspendListing}
+              orders={orders}
+              ordersPagination={ordersPagination}
+              orderStatusFilter={orderStatusFilter}
+              orderNotes={orderNotes}
+              onOrderStatusFilterChange={setOrderStatusFilterAndResetPage}
+              onOrdersPrev={() => setOrdersPage((p) => Math.max(1, p - 1))}
+              onOrdersNext={() => setOrdersPage((p) => p + 1)}
+              onOrderNoteChange={(id, note) => setOrderNotes((prev) => ({ ...prev, [id]: note }))}
+              onResolveDispute={onResolveDispute}
+              disputedOrdersTotal={disputedOrdersTotal}
+              actionLoading={actionLoading}
+              onSuccess={setSuccess}
+              onError={setError}
+            />
+          )}
 
-      <TabPanel value="communications">
-        <AdminCommunications onSent={setSuccess} onError={setError} />
-      </TabPanel>
+          {activeTab === 'jobs' && <AdminJobs />}
 
-      <TabPanel value="moderation">
-        <AdminContentModeration onSuccess={setSuccess} onError={setError} />
-      </TabPanel>
+          {activeTab === 'reports' && (
+            <AdminReports
+              reports={reports}
+              pagination={reportsPagination}
+              statusFilter={reportStatusFilter}
+              targetTypeFilter={reportTargetFilter}
+              reportNotes={reportNotes}
+              actionLoading={actionLoading}
+              onStatusFilterChange={(value) => {
+                setReportsPage(1);
+                setReportStatusFilter(value);
+              }}
+              onTargetTypeFilterChange={(value) => {
+                setReportsPage(1);
+                setReportTargetFilter(value);
+              }}
+              onNoteChange={(id, note) => setReportNotes((prev) => ({ ...prev, [id]: note }))}
+              onPrev={() => setReportsPage((p) => Math.max(1, p - 1))}
+              onNext={() => setReportsPage((p) => p + 1)}
+              onResolve={onResolveReport}
+              onBulkDismiss={onBulkDismissReports}
+              onSelectUser={setSelectedUserId}
+              loading={tabLoading.reports}
+            />
+          )}
 
-      <TabPanel value="audit">
-        <AdminAudit entries={auditEntries} />
-      </TabPanel>
+          {activeTab === 'ai' && (
+            <AdminAI
+              analytics={aiAnalytics}
+              tokens={aiTokens}
+              usageByUser={aiUsageByUser}
+              periodDays={aiPeriodDays}
+              onPeriodChange={setAiPeriodDays}
+              onSelectUser={setSelectedUserId}
+              onResetQuota={onResetQuota}
+              actionLoading={actionLoading}
+            />
+          )}
+
+          {activeTab === 'communications' && <AdminCommunications onSent={setSuccess} onError={setError} />}
+
+          {activeTab === 'moderation' && <AdminContentModeration onSuccess={setSuccess} onError={setError} />}
+
+          {activeTab === 'audit' && (
+            <div className="space-y-4">
+              <AdminPageHeader
+                eyebrow="Log"
+                title="Audit"
+                description="Who changed what. Overview shows a recent slice; this is the fuller trail."
+              />
+              <AdminAudit entries={auditEntries} title="Recent actions" />
+            </div>
+          )}
+        </div>
       </div>
-      </Tabs>
 
       <UserDetailDrawer userId={selectedUserId} onClose={() => setSelectedUserId(null)} onUpdated={() => loadUsers(true)} />
 

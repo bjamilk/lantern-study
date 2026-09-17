@@ -13,8 +13,9 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
-import { StatPill } from '../ui/StatPill';
+import { Body, Caption, Heading, Title } from '../ui/Text';
 import Drawer from '../ui/Drawer';
+import { AdminKpi, AdminMetricRow, AdminStatusBadge } from './AdminChrome';
 import { formatDate, formatDateTime } from './types';
 import { BADGE_DEFINITIONS } from '../../gamification';
 import type { BadgeId } from '../../types';
@@ -206,8 +207,8 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
     >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-lantern-border bg-lantern-surface p-4">
           <div>
-            <h2 id="admin-user-detail-title" className="text-lg font-semibold text-lantern-text">User detail</h2>
-            <p className="text-xs text-lantern-text-muted font-mono">{userId}</p>
+            <Heading id="admin-user-detail-title" className="text-lantern-text">User detail</Heading>
+            <Caption className="text-lantern-text-muted font-mono">{userId}</Caption>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
@@ -215,43 +216,45 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
         </div>
 
         <div className="space-y-4 p-4">
-          {loading && <p className="text-sm text-lantern-text-muted">Loading…</p>}
-          {error && <p className="text-sm text-lantern-error">{error}</p>}
+          {loading && <Caption className="text-lantern-text-muted">Loading…</Caption>}
+          {error && <Caption className="text-lantern-error">{error}</Caption>}
           {detail && (
             <>
               <div>
-                <p className="text-xl font-semibold text-lantern-text">{detail.name || detail.username || 'Unnamed'}</p>
-                <p className="text-sm text-lantern-text-muted">{detail.email || 'No email'}</p>
+                <Title as="p" className="text-lantern-text">{detail.name || detail.username || 'Unnamed'}</Title>
+                <Caption className="text-lantern-text-muted">{detail.email || 'No email'}</Caption>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <StatPill label="Points" value={String(detail.points ?? 0)} />
+                  <AdminStatusBadge tone="neutral">Points {detail.points ?? 0}</AdminStatusBadge>
                   {detail.is_banned ? (
-                    <StatPill label="Status" value="Banned" accent="warning" />
+                    <AdminStatusBadge tone="warning">Banned</AdminStatusBadge>
                   ) : detail.suspended_until ? (
-                    <StatPill label="Status" value={`Suspended until ${formatSuspensionDate(detail.suspended_until)}`} accent="warning" />
+                    <AdminStatusBadge tone="warning">
+                      Suspended until {formatSuspensionDate(detail.suspended_until)}
+                    </AdminStatusBadge>
                   ) : (
-                    <StatPill label="Status" value="Active" accent="success" />
+                    <AdminStatusBadge tone="success">Active</AdminStatusBadge>
                   )}
-                  <StatPill
-                    label="Strikes"
-                    value={String(detail.active_strikes ?? 0)}
-                    accent={(detail.active_strikes ?? 0) >= STRIKE_SUSPENSION_THRESHOLD ? 'warning' : 'primary'}
-                  />
-                  {detail.is_platform_admin ? <StatPill label="Role" value="Admin" accent="primary" /> : null}
+                  <AdminStatusBadge
+                    tone={(detail.active_strikes ?? 0) >= STRIKE_SUSPENSION_THRESHOLD ? 'warning' : 'accent'}
+                  >
+                    Strikes {detail.active_strikes ?? 0}
+                  </AdminStatusBadge>
+                  {detail.is_platform_admin ? <AdminStatusBadge tone="accent">Admin</AdminStatusBadge> : null}
                 </div>
-                <p className="mt-2 text-xs text-lantern-text-muted">Joined {formatDate(detail.created_at)}</p>
+                <Caption className="mt-2 text-lantern-text-muted">Joined {formatDate(detail.created_at)}</Caption>
               </div>
 
               {detail.counts && (
                 <div className="grid grid-cols-2 gap-2">
-                  <StatPill label="Groups" value={String(detail.counts.groups)} />
-                  <StatPill label="Listings" value={String(detail.counts.listings)} />
-                  <StatPill label="Decks" value={String(detail.counts.decks)} />
-                  <StatPill label="AI (7d)" value={String(detail.counts.aiEvents7d)} />
+                  <AdminKpi compact label="Groups" value={detail.counts.groups} />
+                  <AdminKpi compact label="Listings" value={detail.counts.listings} />
+                  <AdminKpi compact label="Decks" value={detail.counts.decks} />
+                  <AdminKpi compact label="AI (7d)" value={detail.counts.aiEvents7d} />
                 </div>
               )}
 
               <Card variant="outline" padding="sm" className="space-y-2">
-                <p className="text-sm font-medium text-lantern-text">Adjust gamification</p>
+                <Body className="font-semibold text-lantern-text">Adjust gamification</Body>
                 <div className="flex gap-2">
                   <Input
                     type="number"
@@ -307,23 +310,23 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
                   </Button>
                 </div>
                 {ownedBadgeIds.size > 0 && (
-                  <p className="text-xs text-lantern-text-muted">
+                  <Caption className="text-lantern-text-muted">
                     Holds {ownedBadgeIds.size} of {BADGE_OPTIONS.length} badges. Granted badges start at level I; higher levels are earned automatically.
-                  </p>
+                  </Caption>
                 )}
               </Card>
 
               <Card variant="outline" padding="sm" className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium text-lantern-text">Moderation</p>
-                  <p className="text-xs text-lantern-text-muted">
+                  <Body className="font-semibold text-lantern-text">Moderation</Body>
+                  <Caption className="text-lantern-text-muted">
                     {detail.active_strikes ?? 0} active strike{(detail.active_strikes ?? 0) === 1 ? '' : 's'} —{' '}
                     {STRIKE_SUSPENSION_THRESHOLD} active strikes suspend the account automatically for 14 days.
                     Strikes expire after 180 days.
-                  </p>
+                  </Caption>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-xs font-medium text-lantern-text">Add strike</p>
+                  <Caption className="font-semibold text-lantern-text">Add strike</Caption>
                   <div className="flex gap-2">
                     <Input
                       value={strikeReason}
@@ -355,11 +358,11 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <p className="text-xs font-medium text-lantern-text">
+                  <Caption className="font-semibold text-lantern-text">
                     {detail.suspended_until
                       ? `Suspended until ${formatSuspensionDate(detail.suspended_until)}`
                       : 'Suspend until'}
-                  </p>
+                  </Caption>
                   {detail.suspended_until ? (
                     <Button
                       size="sm"
@@ -398,25 +401,22 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
                       </Button>
                     </div>
                   )}
-                  <p className="text-[11px] text-lantern-text-muted">
+                  <Caption className="text-lantern-text-muted">
                     A suspended account keeps its session but every request is refused with the date until it passes.
                     Use Ban (Users tab) for permanent removal.
-                  </p>
+                  </Caption>
                 </div>
               </Card>
 
               <Card variant="outline" padding="sm" className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-lantern-text">AI quotas</p>
+                  <Body className="font-semibold text-lantern-text">AI quotas</Body>
                   <Button size="sm" variant="ghost" onClick={async () => { if (!userId) return; await resetAdminAIQuota(userId); await reload(); }}>
                     Reset all
                   </Button>
                 </div>
                 {(detail.aiQuota || []).slice(0, 6).map((q) => (
-                  <div key={q.feature} className="flex justify-between text-xs text-lantern-text-muted">
-                    <span>{q.feature}</span>
-                    <span>{q.used}/{q.limit}</span>
-                  </div>
+                  <AdminMetricRow key={q.feature} label={q.feature} value={`${q.used}/${q.limit}`} />
                 ))}
                 <Button size="sm" variant="secondary" onClick={() => void loadCompanion()}>
                   Review companion messages
@@ -425,12 +425,12 @@ export const UserDetailDrawer: React.FC<UserDetailDrawerProps> = ({ userId, onCl
 
               {showCompanion && (
                 <Card variant="outline" padding="sm" className="max-h-64 overflow-y-auto space-y-2">
-                  <p className="text-xs font-medium text-lantern-text-muted">Recent companion (read-only)</p>
+                  <Caption className="font-semibold text-lantern-text-muted">Recent companion (read-only)</Caption>
                   {companionPreview.map((m) => (
-                    <div key={m.id} className="text-xs border-b border-lantern-border pb-2">
-                      <span className="font-semibold text-lantern-text">{m.role}</span>
-                      <span className="ml-2 text-lantern-text-muted">{formatDateTime(m.created_at)}</span>
-                      <p className="mt-1 text-lantern-text-secondary line-clamp-3">{m.content}</p>
+                    <div key={m.id} className="border-b border-lantern-border pb-2">
+                      <Caption className="font-semibold text-lantern-text">{m.role}</Caption>
+                      <Caption as="span" className="ml-2 text-lantern-text-muted">{formatDateTime(m.created_at)}</Caption>
+                      <Caption className="mt-1 text-lantern-text-secondary line-clamp-3">{m.content}</Caption>
                     </div>
                   ))}
                 </Card>

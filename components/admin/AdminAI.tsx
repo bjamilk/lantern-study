@@ -4,7 +4,8 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
-import { StatPill } from '../ui/StatPill';
+import { Body, Caption, Heading } from '../ui/Text';
+import { AdminKpi, AdminPageHeader } from './AdminChrome';
 
 interface AdminAIProps {
   analytics: {
@@ -80,88 +81,93 @@ export const AdminAI: React.FC<AdminAIProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 items-center">
-        <label className="text-sm text-lantern-text-muted">Period</label>
-        <Select
-          value={periodDays}
-          onChange={(e) => onPeriodChange(Number(e.target.value))}
-        >
-          <option value={7}>7 days</option>
-          <option value={14}>14 days</option>
-          <option value={30}>30 days</option>
-        </Select>
-      </div>
+      <AdminPageHeader
+        eyebrow="Spend"
+        title="AI Ops"
+        description="Tokens, companion events, top users, and provider health."
+        actions={
+          <Select
+            value={periodDays}
+            onChange={(e) => onPeriodChange(Number(e.target.value))}
+            aria-label="Period"
+          >
+            <option value={7}>7 days</option>
+            <option value={14}>14 days</option>
+            <option value={30}>30 days</option>
+          </Select>
+        }
+      />
 
       {tokens && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatPill label={`Tokens (${tokens.periodDays}d)`} value={tokens.totalTokens.toLocaleString()} accent="primary" />
-            <StatPill label="Paid AI calls" value={tokens.paidCalls} accent="neutral" />
-            <StatPill label="Served from cache" value={`${cacheServedPct}%`} accent="neutral" />
-            <StatPill
+            <AdminKpi compact label={`Tokens (${tokens.periodDays}d)`} value={tokens.totalTokens} />
+            <AdminKpi compact label="Paid AI calls" value={tokens.paidCalls} />
+            <AdminKpi compact label="Served from cache" value={`${cacheServedPct}%`} />
+            <AdminKpi
+              compact
               label="Cached input today"
-              value={activeProviders.reduce((sum, p) => sum + p.cachedTokens, 0).toLocaleString()}
-              accent="neutral"
+              value={activeProviders.reduce((sum, p) => sum + p.cachedTokens, 0)}
             />
           </div>
 
-          <Card>
-            <h3 className="text-sm font-semibold mb-1">Tokens by feature</h3>
-            <p className="text-xs text-lantern-text-muted mb-3">
+          <Card padding="md">
+            <Heading className="text-lantern-text mb-1">Tokens by feature</Heading>
+            <Caption className="text-lantern-text-muted mb-3">
               Paid tokens per feature over the period. Cache-served calls cost nothing and are counted separately.
               {tokens.truncated ? ' Showing the most recent 10,000 calls only.' : ''}
-            </p>
+            </Caption>
             <div className="space-y-2">
               {featureTokenRows.length === 0 && (
-                <p className="text-sm text-lantern-text-muted">No AI calls recorded in this period.</p>
+                <Caption className="text-lantern-text-muted">No AI calls recorded in this period.</Caption>
               )}
               {featureTokenRows.map(([feature, row]) => (
-                <div key={feature} className="flex items-center gap-2 text-xs">
-                  <span className="w-40 truncate text-lantern-text-muted" title={feature}>{feature}</span>
+                <div key={feature} className="flex items-center gap-2">
+                  <Caption className="w-40 truncate text-lantern-text-muted" title={feature}>{feature}</Caption>
                   <div className="flex-1 h-2 bg-lantern-background-secondary rounded-full overflow-hidden">
-                    <div className="h-full bg-lantern-primary" style={{ width: `${(row.tokens / maxFeatureTokens) * 100}%` }} />
+                    <div className="h-full bg-lantern-feature-ai-ink" style={{ width: `${(row.tokens / maxFeatureTokens) * 100}%` }} />
                   </div>
-                  <span className="w-20 text-right font-medium">{row.tokens.toLocaleString()}</span>
-                  <span className="w-24 text-right text-lantern-text-muted">
+                  <Caption className="w-20 text-right font-semibold">{row.tokens.toLocaleString()}</Caption>
+                  <Caption className="w-24 text-right text-lantern-text-muted">
                     {row.calls} calls{row.cacheServed > 0 ? ` · ${row.cacheServed} cached` : ''}
-                  </span>
+                  </Caption>
                 </div>
               ))}
             </div>
           </Card>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <Card>
-              <h3 className="text-sm font-semibold mb-3">Token spend by day</h3>
+            <Card padding="md">
+              <Heading className="text-lantern-text mb-3">Token spend by day</Heading>
               <div className="space-y-2">
                 {tokenDayRows.map(([day, row]) => (
-                  <div key={day} className="flex items-center gap-2 text-xs">
-                    <span className="w-20 text-lantern-text-muted">{day}</span>
+                  <div key={day} className="flex items-center gap-2">
+                    <Caption className="w-20 text-lantern-text-muted">{day}</Caption>
                     <div className="flex-1 h-2 bg-lantern-background-secondary rounded-full overflow-hidden">
-                      <div className="h-full bg-lantern-primary" style={{ width: `${(row.tokens / maxDayTokens) * 100}%` }} />
+                      <div className="h-full bg-lantern-feature-ai-ink" style={{ width: `${(row.tokens / maxDayTokens) * 100}%` }} />
                     </div>
-                    <span className="w-20 text-right">{row.tokens.toLocaleString()}</span>
+                    <Caption className="w-20 text-right">{row.tokens.toLocaleString()}</Caption>
                   </div>
                 ))}
               </div>
             </Card>
 
-            <Card>
-              <h3 className="text-sm font-semibold mb-1">Providers today</h3>
-              <p className="text-xs text-lantern-text-muted mb-3">
+            <Card padding="md">
+              <Heading className="text-lantern-text mb-1">Providers today</Heading>
+              <Caption className="text-lantern-text-muted mb-3">
                 Live gauge from the running instance. Cached = input served from the provider&apos;s prefix cache (billed at a discount).
-              </p>
-              <div className="space-y-2 text-xs">
+              </Caption>
+              <div className="space-y-2">
                 {activeProviders.length === 0 && (
-                  <p className="text-sm text-lantern-text-muted">No paid calls yet today.</p>
+                  <Caption className="text-lantern-text-muted">No paid calls yet today.</Caption>
                 )}
                 {activeProviders.map((p) => (
                   <div key={p.name} className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{p.name}</span>
-                    <span className="text-lantern-text-muted">
+                    <Body className="font-semibold">{p.name}</Body>
+                    <Caption className="text-lantern-text-muted">
                       {p.calls} calls · in {p.promptTokens.toLocaleString()} ({p.cachedTokens.toLocaleString()} cached) · out{' '}
                       {p.completionTokens.toLocaleString()}
-                    </span>
+                    </Caption>
                   </div>
                 ))}
               </div>
@@ -173,36 +179,36 @@ export const AdminAI: React.FC<AdminAIProps> = ({
       {analytics && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatPill label="Companion events" value={analytics.totalEvents} accent="primary" />
-            <StatPill label="Messages sent" value={messagesSent} accent="neutral" />
-            <StatPill label="Voice dictations" value={voiceDictations} accent="neutral" />
-            <StatPill label="Notes attached" value={noteAttachments} accent="neutral" />
+            <AdminKpi compact label="Companion events" value={analytics.totalEvents} />
+            <AdminKpi compact label="Messages sent" value={messagesSent} />
+            <AdminKpi compact label="Voice dictations" value={voiceDictations} />
+            <AdminKpi compact label="Notes attached" value={noteAttachments} />
           </div>
 
-          <Card>
-            <h3 className="text-sm font-semibold mb-3">Companion events by type</h3>
+          <Card padding="md">
+            <Heading className="text-lantern-text mb-3">Companion events by type</Heading>
             <div className="space-y-1">
               {Object.entries(analytics.byEvent)
                 .sort(([, a], [, b]) => b - a)
                 .map(([event, count]) => (
-                  <div key={event} className="flex justify-between text-sm">
-                    <span className="text-lantern-text-muted">{event}</span>
-                    <span className="font-medium">{count}</span>
+                  <div key={event} className="flex justify-between">
+                    <Caption className="text-lantern-text-muted">{event}</Caption>
+                    <Body className="font-semibold">{count}</Body>
                   </div>
                 ))}
             </div>
           </Card>
 
-          <Card>
-            <h3 className="text-sm font-semibold mb-3">Companion events by day</h3>
+          <Card padding="md">
+            <Heading className="text-lantern-text mb-3">Companion events by day</Heading>
             <div className="space-y-2">
               {dayEntries.map(({ day, count, widthPct }) => (
-                <div key={day} className="flex items-center gap-2 text-xs">
-                  <span className="w-20 text-lantern-text-muted">{day}</span>
+                <div key={day} className="flex items-center gap-2">
+                  <Caption className="w-20 text-lantern-text-muted">{day}</Caption>
                   <div className="flex-1 h-2 bg-lantern-background-secondary rounded-full overflow-hidden">
-                    <div className="h-full bg-lantern-primary" style={{ width: `${widthPct}%` }} />
+                    <div className="h-full bg-lantern-feature-ai-ink" style={{ width: `${widthPct}%` }} />
                   </div>
-                  <span className="w-8 text-right">{count}</span>
+                  <Caption className="w-8 text-right">{count}</Caption>
                 </div>
               ))}
             </div>
@@ -210,15 +216,15 @@ export const AdminAI: React.FC<AdminAIProps> = ({
         </>
       )}
 
-      <Card>
-        <h3 className="text-sm font-semibold mb-3">Top AI users</h3>
+      <Card padding="md">
+        <Heading className="text-lantern-text mb-3">Top AI users</Heading>
         <div className="space-y-2">
           {usageByUser.map((row) => (
-            <div key={row.user_id} className="flex items-center justify-between gap-2 text-sm">
-              <button type="button" className="text-lantern-primary hover:underline text-left" onClick={() => onSelectUser(row.user_id)}>
+            <div key={row.user_id} className="flex items-center justify-between gap-2">
+              <button type="button" className="font-semibold text-lantern-text hover:underline text-left" onClick={() => onSelectUser(row.user_id)}>
                 {row.name || row.username || row.email || row.user_id.slice(0, 8)}
               </button>
-              <span className="text-lantern-text-muted">{row.events} events</span>
+              <Caption className="text-lantern-text-muted">{row.events} events</Caption>
               <Button size="sm" variant="ghost" loading={actionLoading[`quota:${row.user_id}`]} onClick={() => onResetQuota(row.user_id)}>
                 Reset quota
               </Button>
@@ -229,11 +235,11 @@ export const AdminAI: React.FC<AdminAIProps> = ({
 
       <Card variant="outline" padding="sm" className="space-y-3">
         <div>
-          <p className="text-sm font-medium">Provider health check</p>
-          <p className="text-xs text-lantern-text-muted">
+          <Body className="font-semibold">Provider health check</Body>
+          <Caption className="text-lantern-text-muted">
             Sends one real request to a single provider. Fireworks is the standby behind Groq, so it never runs in
             normal traffic — this is the only way to confirm its key works before Groq fails. Costs one tiny completion.
-          </p>
+          </Caption>
         </div>
         <div className="flex flex-wrap gap-2">
           {['groq', 'fireworks'].map((provider) => (
@@ -250,7 +256,7 @@ export const AdminAI: React.FC<AdminAIProps> = ({
         </div>
         <div className="space-y-1">
           {Object.entries(probes).map(([provider, result]) => (
-            <div key={provider} className="text-xs">
+            <Caption key={provider}>
               {'error' in result ? (
                 <span className="text-lantern-error">{provider}: {result.error}</span>
               ) : (
@@ -263,13 +269,13 @@ export const AdminAI: React.FC<AdminAIProps> = ({
                   {result.error ? ` · ${result.error}` : ''}
                 </span>
               )}
-            </div>
+            </Caption>
           ))}
         </div>
       </Card>
 
       <Card variant="outline" padding="sm" className="space-y-2">
-        <p className="text-sm font-medium">Companion abuse review</p>
+        <Body className="font-semibold">Companion abuse review</Body>
         <div className="flex gap-2">
           <Input
             value={companionUserId}

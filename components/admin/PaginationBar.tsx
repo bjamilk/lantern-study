@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button } from '../ui/Button';
+import { Caption } from '../ui/Text';
 import { AdminPagination } from '../../services/admin';
 
 interface PaginationBarProps {
@@ -15,10 +16,10 @@ export const PaginationBar: React.FC<PaginationBarProps> = ({ pagination, onPrev
   const hasNext = page < pagination.pages;
 
   return (
-    <div className="flex items-center justify-between pt-3">
-      <p className="text-xs text-lantern-text-muted">
+    <div className="flex items-center justify-between gap-3 pt-1">
+      <Caption className="text-lantern-text-muted">
         Page {page} of {pagination.pages} · {pagination.total} total
-      </p>
+      </Caption>
       <div className="flex gap-2">
         <Button variant="ghost" size="sm" disabled={!hasPrev} onClick={onPrev}>
           Previous

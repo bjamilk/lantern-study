@@ -3,7 +3,14 @@ import type { Chart as ChartType, ChartConfiguration } from 'chart.js';
 import { AdminAnalytics, AdminProductEvents } from '../../services/admin';
 import { Card } from '../ui/Card';
 import { Select } from '../ui/Select';
-import { StatPill } from '../ui/StatPill';
+import { Caption } from '../ui/Text';
+import {
+  AdminColumnLabel,
+  AdminKpi,
+  AdminMetricRow,
+  AdminPageHeader,
+  AdminSectionTitle,
+} from './AdminChrome';
 import { exportCsv } from './types';
 
 interface AdminAnalyticsPanelProps {
@@ -15,20 +22,20 @@ interface AdminAnalyticsPanelProps {
 
 const CHART_COLORS = {
   light: [
-    'rgba(79, 70, 229, 0.85)',
-    'rgba(13, 148, 136, 0.85)',
-    'rgba(225, 29, 72, 0.85)',
-    'rgba(245, 158, 11, 0.85)',
-    'rgba(14, 165, 233, 0.85)',
-    'rgba(192, 38, 211, 0.85)',
+    'rgba(109, 40, 217, 0.85)',
+    'rgba(11, 90, 97, 0.85)',
+    'rgba(4, 120, 87, 0.85)',
+    'rgba(180, 83, 9, 0.85)',
+    'rgba(123, 44, 171, 0.85)',
+    'rgba(63, 98, 18, 0.85)',
   ],
   dark: [
-    'rgba(99, 102, 241, 0.85)',
-    'rgba(45, 212, 191, 0.85)',
-    'rgba(251, 113, 133, 0.85)',
-    'rgba(252, 211, 77, 0.85)',
-    'rgba(56, 189, 248, 0.85)',
-    'rgba(232, 121, 249, 0.85)',
+    'rgba(196, 181, 253, 0.85)',
+    'rgba(138, 230, 236, 0.85)',
+    'rgba(110, 231, 183, 0.85)',
+    'rgba(251, 191, 36, 0.85)',
+    'rgba(233, 184, 255, 0.85)',
+    'rgba(184, 240, 122, 0.85)',
   ],
 };
 
@@ -124,7 +131,7 @@ const LineChart: React.FC<LineChartProps> = ({ title, labels, datasets, theme })
 
   return (
     <Card variant="elevated">
-      <h3 className="text-sm font-semibold text-lantern-text mb-3">{title}</h3>
+      <AdminSectionTitle title={title} />
       <div className="h-56">
         <canvas ref={canvasRef} />
       </div>
@@ -202,7 +209,7 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ title, type, labels, data, th
 
   return (
     <Card variant="elevated">
-      <h3 className="text-sm font-semibold text-lantern-text mb-3">{title}</h3>
+      <AdminSectionTitle title={title} />
       <div className={type === 'doughnut' ? 'h-52' : 'h-56'}>
         <canvas ref={canvasRef} />
       </div>
@@ -273,106 +280,108 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2 items-center">
-          <label className="text-sm text-lantern-text-muted">Period</label>
-          <Select
-            value={periodDays}
-            onChange={(e) => onPeriodChange(Number(e.target.value) as 7 | 30 | 90)}
-          >
-            <option value={7}>7 days</option>
-            <option value={30}>30 days</option>
-            <option value={90}>90 days</option>
-          </Select>
-        </div>
-        <button type="button" onClick={onExport} className="text-sm text-lantern-primary hover:underline">
-          Export CSV
-        </button>
-      </div>
-
-      <p className="text-xs text-lantern-text-muted">
-        Aggregated from study activity, marketplace orders, and consent-gated first-party product events.
-        Push-token platform split is approximate; event-based DAU is preferred when available.
-      </p>
+      <AdminPageHeader
+        eyebrow="Trends"
+        title="Analytics"
+        description="Study activity, marketplace, and consent-gated product events. Push-token platform split is approximate."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={periodDays}
+              onChange={(e) => onPeriodChange(Number(e.target.value) as 7 | 30 | 90)}
+              aria-label="Period"
+            >
+              <option value={7}>7 days</option>
+              <option value={30}>30 days</option>
+              <option value={90}>90 days</option>
+            </Select>
+            <button
+              type="button"
+              onClick={onExport}
+              className="text-caption font-semibold text-lantern-text-secondary hover:text-lantern-text min-h-[44px]"
+            >
+              Export CSV
+            </button>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
-        <StatPill label="DAU" value={analytics.kpis.dau} accent="primary" />
-        <StatPill label="WAU" value={analytics.kpis.wau} accent="success" />
-        <StatPill label="MAU" value={analytics.kpis.mau} accent="success" />
-        <StatPill label="Total users" value={analytics.kpis.totalUsers} accent="neutral" />
-        <StatPill label="Active groups" value={analytics.kpis.activeGroups} accent="neutral" />
-        <StatPill label="Mobile app users" value={analytics.kpis.mobileAppUsers} accent="accent" />
-        <StatPill label="Messages (period)" value={messagesTotal} accent="neutral" />
+        <AdminKpi compact label="DAU" value={analytics.kpis.dau} />
+        <AdminKpi compact label="WAU" value={analytics.kpis.wau} />
+        <AdminKpi compact label="MAU" value={analytics.kpis.mau} />
+        <AdminKpi compact label="Total users" value={analytics.kpis.totalUsers} />
+        <AdminKpi compact label="Active groups" value={analytics.kpis.activeGroups} />
+        <AdminKpi compact label="Mobile app users" value={analytics.kpis.mobileAppUsers} />
+        <AdminKpi compact label="Messages (period)" value={messagesTotal} />
       </div>
 
       {mk && (
         <Card variant="elevated">
-          <h3 className="text-sm font-semibold text-lantern-text mb-3">Marketplace (period)</h3>
+          <AdminSectionTitle title="Marketplace (period)" />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <StatPill label="GMV" value={`₦${Number(mk.gmv).toLocaleString()}`} accent="primary" />
-            <StatPill label="Completed orders" value={mk.ordersCount} accent="success" />
-            <StatPill label="AOV" value={`₦${Number(mk.aov).toLocaleString()}`} accent="neutral" />
-            <StatPill label="Dispute rate" value={`${mk.disputedRate}%`} accent="accent" />
+            <AdminKpi compact label="GMV" value={`₦${Number(mk.gmv).toLocaleString()}`} />
+            <AdminKpi compact label="Completed orders" value={mk.ordersCount} />
+            <AdminKpi compact label="AOV" value={`₦${Number(mk.aov).toLocaleString()}`} />
+            <AdminKpi compact label="Dispute rate" value={`${mk.disputedRate}%`} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">GMV by category</p>
+              <AdminColumnLabel>GMV by category</AdminColumnLabel>
               {(mk.gmvByCategory?.length ?? 0) === 0 ? (
-                <p className="text-sm text-lantern-text-muted">No completed sales in period.</p>
+                <Caption className="text-lantern-text-muted">No completed sales in period.</Caption>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   {mk.gmvByCategory.map((row) => (
-                    <div key={row.category} className="flex justify-between text-sm">
-                      <span className="text-lantern-text-muted capitalize">{row.category.replace(/_/g, ' ')}</span>
-                      <span className="font-medium">₦{Number(row.gmv).toLocaleString()} · {row.orders}</span>
-                    </div>
+                    <AdminMetricRow
+                      key={row.category}
+                      label={row.category.replace(/_/g, ' ')}
+                      value={`₦${Number(row.gmv).toLocaleString()} · ${row.orders}`}
+                    />
                   ))}
                 </div>
               )}
             </div>
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">GMV by campus</p>
+              <AdminColumnLabel>GMV by campus</AdminColumnLabel>
               {(mk.gmvByCampus?.length ?? 0) === 0 ? (
-                <p className="text-sm text-lantern-text-muted">No campus-attributed sales yet.</p>
+                <Caption className="text-lantern-text-muted">No campus-attributed sales yet.</Caption>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   {mk.gmvByCampus.map((row) => (
-                    <div key={row.campus} className="flex justify-between text-sm">
-                      <span className="text-lantern-text-muted">{row.campus}</span>
-                      <span className="font-medium">₦{Number(row.gmv).toLocaleString()} · {row.orders}</span>
-                    </div>
+                    <AdminMetricRow
+                      key={row.campus}
+                      label={row.campus}
+                      value={`₦${Number(row.gmv).toLocaleString()} · ${row.orders}`}
+                    />
                   ))}
                 </div>
               )}
             </div>
             {(mk.gmvByZone?.length ?? 0) > 0 && (
               <div>
-                <p className="text-xs font-semibold text-lantern-text-muted mb-2">
-                  GMV by geopolitical zone
-                </p>
-                <div className="space-y-1">
+                <AdminColumnLabel>GMV by geopolitical zone</AdminColumnLabel>
+                <div className="space-y-1.5">
                   {mk.gmvByZone?.map((row) => (
-                    <div key={row.zone} className="flex justify-between text-sm">
-                      <span className="text-lantern-text-muted">{row.zone}</span>
-                      <span className="font-medium">₦{Number(row.gmv).toLocaleString()} · {row.orders}</span>
-                    </div>
+                    <AdminMetricRow
+                      key={row.zone}
+                      label={row.zone}
+                      value={`₦${Number(row.gmv).toLocaleString()} · ${row.orders}`}
+                    />
                   ))}
                 </div>
               </div>
             )}
             {(mk.listingsByZone?.length ?? 0) > 0 && (
               <div>
-                <p className="text-xs font-semibold text-lantern-text-muted mb-2">
-                  Listings by geopolitical zone
-                </p>
-                <div className="space-y-1">
+                <AdminColumnLabel>Listings by geopolitical zone</AdminColumnLabel>
+                <div className="space-y-1.5">
                   {mk.listingsByZone?.map((row) => (
-                    <div key={row.zone} className="flex justify-between gap-3 text-sm">
-                      <span className="text-lantern-text-muted">{row.zone}</span>
-                      <span className="font-medium text-right">
-                        {row.total} total · {row.active} active · {row.sold} sold
-                      </span>
-                    </div>
+                    <AdminMetricRow
+                      key={row.zone}
+                      label={row.zone}
+                      value={`${row.total} total · ${row.active} active · ${row.sold} sold`}
+                    />
                   ))}
                 </div>
               </div>
@@ -385,36 +394,36 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {retention && (
             <Card variant="elevated">
-              <h3 className="text-sm font-semibold text-lantern-text mb-2">Retention cohorts</h3>
-              <p className="text-xs text-lantern-text-muted mb-3">
-                Signups 30–60 days ago ({retention.signups}). % with study activity by day.
-              </p>
+              <AdminSectionTitle
+                title="Retention cohorts"
+                description={`Signups 30–60 days ago (${retention.signups}). % with study activity by day.`}
+              />
               <div className="grid grid-cols-3 gap-2">
-                <StatPill label="D1" value={`${retention.d1}%`} accent="primary" />
-                <StatPill label="D7" value={`${retention.d7}%`} accent="success" />
-                <StatPill label="D30" value={`${retention.d30}%`} accent="accent" />
+                <AdminKpi compact label="D1" value={`${retention.d1}%`} />
+                <AdminKpi compact label="D7" value={`${retention.d7}%`} />
+                <AdminKpi compact label="D30" value={`${retention.d30}%`} />
               </div>
             </Card>
           )}
           {funnel && (
             <Card variant="elevated">
-              <h3 className="text-sm font-semibold text-lantern-text mb-3">Acquisition funnel</h3>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Guest listing views</span><span className="font-medium">{funnel.guestListingViews}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Signup started</span><span className="font-medium">{funnel.signupStarted}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Signups completed</span><span className="font-medium">{funnel.signupsCompleted}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Onboarding done</span><span className="font-medium">{funnel.onboardingCompleted}</span></div>
+              <AdminSectionTitle title="Acquisition funnel" />
+              <div className="space-y-1.5">
+                <AdminMetricRow label="Guest listing views" value={funnel.guestListingViews} />
+                <AdminMetricRow label="Signup started" value={funnel.signupStarted} />
+                <AdminMetricRow label="Signups completed" value={funnel.signupsCompleted} />
+                <AdminMetricRow label="Onboarding done" value={funnel.onboardingCompleted} />
               </div>
             </Card>
           )}
           {platformEvents && (
             <Card variant="elevated">
-              <h3 className="text-sm font-semibold text-lantern-text mb-3">Platform (from events)</h3>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Web DAU</span><span className="font-medium">{platformEvents.webDau}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Mobile DAU</span><span className="font-medium">{platformEvents.mobileDau}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Web active (period)</span><span className="font-medium">{platformEvents.webActivePeriod}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Mobile active (period)</span><span className="font-medium">{platformEvents.mobileActivePeriod}</span></div>
+              <AdminSectionTitle title="Platform (from events)" />
+              <div className="space-y-1.5">
+                <AdminMetricRow label="Web DAU" value={platformEvents.webDau} />
+                <AdminMetricRow label="Mobile DAU" value={platformEvents.mobileDau} />
+                <AdminMetricRow label="Web active (period)" value={platformEvents.webActivePeriod} />
+                <AdminMetricRow label="Mobile active (period)" value={platformEvents.mobileActivePeriod} />
               </div>
             </Card>
           )}
@@ -423,59 +432,55 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
 
       {search && (
         <Card variant="elevated">
-          <h3 className="text-sm font-semibold text-lantern-text mb-1">Search analytics</h3>
-          <p className="text-xs text-lantern-text-muted mb-3">{search.totalSearches} searches in period (consent-gated events)</p>
+          <AdminSectionTitle
+            title="Search analytics"
+            description={`${search.totalSearches} searches in period (consent-gated events)`}
+          />
           <div className={`grid grid-cols-1 gap-4 ${search.searchesByZone?.length ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Top queries</p>
+              <AdminColumnLabel>Top queries</AdminColumnLabel>
               {(search.topQueries?.length ?? 0) === 0 ? (
-                <p className="text-sm text-lantern-text-muted">No search events yet.</p>
+                <Caption className="text-lantern-text-muted">No search events yet.</Caption>
               ) : (
-                search.topQueries.map((row) => (
-                  <div key={row.query} className="flex justify-between text-sm mb-1">
-                    <span className="text-lantern-text truncate mr-2">{row.query}</span>
-                    <span className="font-medium">{row.count}</span>
-                  </div>
-                ))
+                <div className="space-y-1.5">
+                  {search.topQueries.map((row) => (
+                    <AdminMetricRow key={row.query} label={row.query} value={row.count} />
+                  ))}
+                </div>
               )}
             </div>
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Zero-result queries</p>
+              <AdminColumnLabel>Zero-result queries</AdminColumnLabel>
               {(search.zeroResultQueries?.length ?? 0) === 0 ? (
-                <p className="text-sm text-lantern-text-muted">None recorded.</p>
+                <Caption className="text-lantern-text-muted">None recorded.</Caption>
               ) : (
-                search.zeroResultQueries.map((row) => (
-                  <div key={row.query} className="flex justify-between text-sm mb-1">
-                    <span className="text-lantern-text truncate mr-2">{row.query}</span>
-                    <span className="font-medium">{row.count}</span>
-                  </div>
-                ))
+                <div className="space-y-1.5">
+                  {search.zeroResultQueries.map((row) => (
+                    <AdminMetricRow key={row.query} label={row.query} value={row.count} />
+                  ))}
+                </div>
               )}
             </div>
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Searches by saved-campus context</p>
+              <AdminColumnLabel>Searches by saved-campus context</AdminColumnLabel>
               {(search.searchesByCampus?.length ?? 0) === 0 ? (
-                <p className="text-sm text-lantern-text-muted">No saved-campus context yet.</p>
+                <Caption className="text-lantern-text-muted">No saved-campus context yet.</Caption>
               ) : (
-                search.searchesByCampus.map((row) => (
-                  <div key={row.campus} className="flex justify-between text-sm mb-1">
-                    <span className="text-lantern-text-muted">{row.campus}</span>
-                    <span className="font-medium">{row.count}</span>
-                  </div>
-                ))
+                <div className="space-y-1.5">
+                  {search.searchesByCampus.map((row) => (
+                    <AdminMetricRow key={row.campus} label={row.campus} value={row.count} />
+                  ))}
+                </div>
               )}
             </div>
             {(search.searchesByZone?.length ?? 0) > 0 && (
               <div>
-                <p className="text-xs font-semibold text-lantern-text-muted mb-2">
-                  Searches by geopolitical zone
-                </p>
-                {search.searchesByZone?.map((row) => (
-                  <div key={row.zone} className="flex justify-between text-sm mb-1">
-                    <span className="text-lantern-text-muted">{row.zone}</span>
-                    <span className="font-medium">{row.count}</span>
-                  </div>
-                ))}
+                <AdminColumnLabel>Searches by geopolitical zone</AdminColumnLabel>
+                <div className="space-y-1.5">
+                  {search.searchesByZone?.map((row) => (
+                    <AdminMetricRow key={row.zone} label={row.zone} value={row.count} />
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -484,42 +489,52 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
 
       {studyFunnel && (
         <Card variant="elevated">
-          <h3 className="text-sm font-semibold text-lantern-text mb-1">Study funnel</h3>
-          <p className="text-xs text-lantern-text-muted mb-3">
-            Consent-gated study events in period. Feature totals below remain the full study_activity volume.
-          </p>
+          <AdminSectionTitle
+            title="Study funnel"
+            description="Consent-gated study events in period. Feature totals below remain the full study_activity volume."
+          />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Tests</p>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Started</span><span className="font-medium">{studyFunnel.testsStarted}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Completed</span><span className="font-medium">{studyFunnel.testsCompleted}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Completion rate</span><span className="font-medium">{studyFunnel.testsStarted > 0 ? Math.round((studyFunnel.testsCompleted / studyFunnel.testsStarted) * 100) : 0}%</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Web / Mobile</span><span className="font-medium">{studyFunnel.testsCompletedWeb} / {studyFunnel.testsCompletedMobile}</span></div>
+              <AdminColumnLabel>Tests</AdminColumnLabel>
+              <div className="space-y-1.5">
+                <AdminMetricRow label="Started" value={studyFunnel.testsStarted} />
+                <AdminMetricRow label="Completed" value={studyFunnel.testsCompleted} />
+                <AdminMetricRow
+                  label="Completion rate"
+                  value={`${studyFunnel.testsStarted > 0 ? Math.round((studyFunnel.testsCompleted / studyFunnel.testsStarted) * 100) : 0}%`}
+                />
+                <AdminMetricRow
+                  label="Web / Mobile"
+                  value={`${studyFunnel.testsCompletedWeb} / ${studyFunnel.testsCompletedMobile}`}
+                />
               </div>
             </div>
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">Flashcards &amp; notes</p>
-              <div className="space-y-1 text-sm">
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Review sessions started</span><span className="font-medium">{studyFunnel.flashcardSessionsStarted}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Review sessions finished</span><span className="font-medium">{studyFunnel.flashcardSessionsCompleted}</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Completion rate</span><span className="font-medium">{studyFunnel.flashcardSessionsStarted > 0 ? Math.round((studyFunnel.flashcardSessionsCompleted / studyFunnel.flashcardSessionsStarted) * 100) : 0}%</span></div>
-                <div className="flex justify-between"><span className="text-lantern-text-muted">Notes created</span><span className="font-medium">{studyFunnel.notesCreated}</span></div>
+              <AdminColumnLabel>Flashcards & notes</AdminColumnLabel>
+              <div className="space-y-1.5">
+                <AdminMetricRow label="Review sessions started" value={studyFunnel.flashcardSessionsStarted} />
+                <AdminMetricRow label="Review sessions finished" value={studyFunnel.flashcardSessionsCompleted} />
+                <AdminMetricRow
+                  label="Completion rate"
+                  value={`${studyFunnel.flashcardSessionsStarted > 0 ? Math.round((studyFunnel.flashcardSessionsCompleted / studyFunnel.flashcardSessionsStarted) * 100) : 0}%`}
+                />
+                <AdminMetricRow label="Notes created" value={studyFunnel.notesCreated} />
               </div>
             </div>
             <div>
-              <p className="text-xs font-semibold text-lantern-text-muted mb-2">AI tools ({studyFunnel.aiToolUses} uses)</p>
+              <AdminColumnLabel>AI tools ({studyFunnel.aiToolUses} uses)</AdminColumnLabel>
               {Object.keys(studyFunnel.aiToolsByType ?? {}).length === 0 ? (
-                <p className="text-sm text-lantern-text-muted">No AI tool events yet.</p>
+                <Caption className="text-lantern-text-muted">No AI tool events yet.</Caption>
               ) : (
-                <div className="space-y-1 text-sm">
+                <div className="space-y-1.5">
                   {Object.entries(studyFunnel.aiToolsByType)
                     .sort(([, a], [, b]) => b - a)
                     .map(([tool, count]) => (
-                      <div key={tool} className="flex justify-between">
-                        <span className="text-lantern-text-muted capitalize">{tool.replace(/_/g, ' ')}</span>
-                        <span className="font-medium">{count}</span>
-                      </div>
+                      <AdminMetricRow
+                        key={tool}
+                        label={tool.replace(/_/g, ' ')}
+                        value={count}
+                      />
                     ))}
                 </div>
               )}
@@ -594,21 +609,18 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
           />
         ) : (
           <Card variant="elevated">
-            <h3 className="text-sm font-semibold text-lantern-text mb-3">Streak distribution</h3>
-            <p className="text-sm text-lantern-text-muted">No streak data yet.</p>
+            <AdminSectionTitle title="Streak distribution" />
+            <Caption className="text-lantern-text-muted">No streak data yet.</Caption>
           </Card>
         )}
       </div>
 
       {aiEntries.length > 0 && (
         <Card variant="elevated">
-          <h3 className="text-sm font-semibold text-lantern-text mb-3">AI by feature (period)</h3>
-          <div className="space-y-1">
+          <AdminSectionTitle title="AI by feature (period)" />
+          <div className="space-y-1.5">
             {aiEntries.map(([event, count]) => (
-              <div key={event} className="flex justify-between text-sm">
-                <span className="text-lantern-text-muted">{event}</span>
-                <span className="font-medium">{count}</span>
-              </div>
+              <AdminMetricRow key={event} label={event} value={count} />
             ))}
           </div>
         </Card>
@@ -616,31 +628,29 @@ export const AdminAnalyticsPanel: React.FC<AdminAnalyticsPanelProps> = ({
 
       {events && (
         <Card variant="elevated">
-          <div className="flex items-baseline justify-between mb-1">
-            <h3 className="text-sm font-semibold text-lantern-text">Event stream</h3>
-            <span className="text-xs text-lantern-text-muted">
-              {events.totalEvents.toLocaleString()} events · {events.uniqueUsers} users
-              {events.truncated ? ' · most recent 10,000 shown' : ''}
-            </span>
-          </div>
-          <p className="text-xs text-lantern-text-muted mb-3">
-            Everything the clients report, unfiltered — what users are actually doing, before any funnel is built around it.
-          </p>
-          <div className="space-y-1">
+          <AdminSectionTitle
+            title="Event stream"
+            description="Everything the clients report, unfiltered — what users are actually doing, before any funnel is built around it."
+            meta={
+              <Caption className="text-lantern-text-muted">
+                {events.totalEvents.toLocaleString()} events · {events.uniqueUsers} users
+                {events.truncated ? ' · most recent 10,000 shown' : ''}
+              </Caption>
+            }
+          />
+          <div className="space-y-1.5">
             {Object.entries(events.byEvent)
               .sort(([, a], [, b]) => b.total - a.total)
               .slice(0, 25)
               .map(([event, row]) => (
-                <div key={event} className="flex items-center justify-between gap-2 text-sm">
-                  <span className="text-lantern-text-muted truncate" title={event}>{event}</span>
-                  <span className="shrink-0">
-                    <span className="font-medium">{row.total.toLocaleString()}</span>
-                    <span className="text-xs text-lantern-text-muted"> · web {row.web} · mobile {row.mobile}</span>
-                  </span>
-                </div>
+                <AdminMetricRow
+                  key={event}
+                  label={event}
+                  value={`${row.total.toLocaleString()} · web ${row.web} · mobile ${row.mobile}`}
+                />
               ))}
             {Object.keys(events.byEvent).length === 0 && (
-              <p className="text-sm text-lantern-text-muted">No events recorded in this period.</p>
+              <Caption className="text-lantern-text-muted">No events recorded in this period.</Caption>
             )}
           </div>
         </Card>

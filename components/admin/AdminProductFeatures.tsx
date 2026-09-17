@@ -1,6 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { Card } from '../ui/Card';
-import { StatChip } from '../ui/StatChip';
+import { Input } from '../ui/Input';
+import { Body, Caption, Heading, Label } from '../ui/Text';
+import {
+  AdminEmpty,
+  AdminKpi,
+  AdminPageHeader,
+  AdminSegmented,
+  AdminStatusBadge,
+} from './AdminChrome';
 import {
   PRODUCT_FEATURE_AREAS,
   PRODUCT_FEATURES,
@@ -16,9 +24,9 @@ const STATUS_LABEL: Record<ProductFeatureStatus, string> = {
   planned: 'Planned',
 };
 
-const STATUS_VARIANT: Record<ProductFeatureStatus, 'success' | 'accent' | 'neutral'> = {
+const STATUS_TONE: Record<ProductFeatureStatus, 'success' | 'warning' | 'neutral'> = {
   shipped: 'success',
-  partial: 'accent',
+  partial: 'warning',
   planned: 'neutral',
 };
 
@@ -30,28 +38,30 @@ function FeatureCard({ feature }: { feature: ProductFeatureEntry }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <Card variant="elevated" padding="md" className="min-w-0">
+    <Card padding="md" className="min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <h3 className="text-base font-semibold text-lantern-text">{feature.title}</h3>
-          <p className="text-xs text-lantern-text-muted mt-0.5">
+          <Heading as="p" className="text-lantern-text">{feature.title}</Heading>
+          <Caption className="text-lantern-text-muted mt-0.5">
             {AREA_LABEL[feature.area]} · shipped {feature.shippedAt}
-          </p>
+          </Caption>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <StatChip label={STATUS_LABEL[feature.status]} variant={STATUS_VARIANT[feature.status]} />
+          <AdminStatusBadge tone={STATUS_TONE[feature.status]}>{STATUS_LABEL[feature.status]}</AdminStatusBadge>
           {feature.surfaces.map((surface) => (
-            <StatChip key={surface} label={surface} variant="neutral" />
+            <AdminStatusBadge key={surface} tone="neutral">
+              {surface}
+            </AdminStatusBadge>
           ))}
         </div>
       </div>
 
-      <p className="text-sm text-lantern-text-secondary mb-3">{feature.summary}</p>
+      <Body className="text-lantern-text-secondary mb-3">{feature.summary}</Body>
 
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="text-sm font-medium text-lantern-primary hover:underline min-h-[44px]"
+        className="text-caption font-semibold text-lantern-text-secondary hover:text-lantern-text min-h-[44px]"
         aria-expanded={expanded}
       >
         {expanded ? 'Hide details' : 'Show details'}
@@ -59,52 +69,35 @@ function FeatureCard({ feature }: { feature: ProductFeatureEntry }) {
 
       {expanded ? (
         <div className="mt-3 space-y-4 border-t border-lantern-border pt-3">
-          <section>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-lantern-text-muted mb-1.5">
-              Behavior
-            </h4>
-            <ul className="list-disc pl-5 space-y-1 text-sm text-lantern-text">
-              {feature.details.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-lantern-text-muted mb-1.5">
-              How to use / verify
-            </h4>
-            <ul className="list-disc pl-5 space-y-1 text-sm text-lantern-text">
-              {feature.howToUse.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </section>
-
-          <section>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-lantern-text-muted mb-1.5">
-              Admin / support notes
-            </h4>
-            <ul className="list-disc pl-5 space-y-1 text-sm text-lantern-text">
-              {feature.adminNotes.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </section>
-
+          <FeatureSection title="Behavior" items={feature.details} />
+          <FeatureSection title="How to use / verify" items={feature.howToUse} />
+          <FeatureSection title="Admin / support notes" items={feature.adminNotes} />
           {feature.commits?.length ? (
             <section>
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-lantern-text-muted mb-1.5">
-                Related commits
-              </h4>
-              <p className="text-xs font-mono text-lantern-text-secondary break-all">
+              <Label className="uppercase text-lantern-text-muted">Related commits</Label>
+              <Caption className="font-mono text-lantern-text-secondary break-all mt-1.5">
                 {feature.commits.join(' · ')}
-              </p>
+              </Caption>
             </section>
           ) : null}
         </div>
       ) : null}
     </Card>
+  );
+}
+
+function FeatureSection({ title, items }: { title: string; items: string[] }) {
+  return (
+    <section>
+      <Label className="uppercase text-lantern-text-muted">{title}</Label>
+      <ul className="list-disc pl-5 space-y-1 mt-1.5">
+        {items.map((item) => (
+          <li key={item}>
+            <Body className="text-lantern-text">{item}</Body>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -138,55 +131,40 @@ export const AdminProductFeatures: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <Card padding="md">
-        <h2 className="text-lg font-semibold text-lantern-text">Product features</h2>
-        <p className="text-sm text-lantern-text-secondary mt-1 max-w-3xl">
-          Living registry of what recently shipped on Lantern Study. Use this as the source of truth for
-          support, QA, and release verification. Expand a card for behavior, verification steps, and
-          admin notes.
-        </p>
-        <div className="flex flex-wrap gap-2 mt-3">
-          <StatChip label={`${shippedCount} shipped entries`} variant="success" />
-          <StatChip label={`${notesCount} notes`} variant="neutral" />
-          <StatChip label={`${groupsCount} groups/chat`} variant="neutral" />
-          <StatChip label={`${jobsCount} jobs`} variant="neutral" />
-        </div>
-      </Card>
+      <AdminPageHeader
+        eyebrow="Registry"
+        title="Product features"
+        description="What recently shipped. Expand a card for behavior, verification steps, and admin notes."
+      />
 
-      <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-        <div className="inline-flex flex-wrap gap-1 rounded-lg border border-lantern-border bg-lantern-surface p-1">
-          {PRODUCT_FEATURE_AREAS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => setArea(option.id)}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium min-h-[40px] ${
-                area === option.id
-                  ? 'bg-lantern-primary text-white'
-                  : 'text-lantern-text-secondary hover:bg-lantern-background-secondary'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <input
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <AdminKpi compact label="Shipped entries" value={shippedCount} />
+        <AdminKpi compact label="Notes" value={notesCount} />
+        <AdminKpi compact label="Groups / chat" value={groupsCount} />
+        <AdminKpi compact label="Jobs" value={jobsCount} />
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <AdminSegmented
+          ariaLabel="Feature areas"
+          value={area}
+          onChange={setArea}
+          options={PRODUCT_FEATURE_AREAS.map((option) => ({ id: option.id, label: option.label }))}
+        />
+        <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search features…"
           aria-label="Search product features"
-          className="flex-1 min-w-[200px] rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2 text-sm text-lantern-text min-h-[44px]"
         />
       </div>
 
-      <p className="text-xs text-lantern-text-muted">
+      <Caption className="text-lantern-text-muted">
         Showing {features.length} of {PRODUCT_FEATURES.length} entries
-      </p>
+      </Caption>
 
       {features.length === 0 ? (
-        <Card padding="md">
-          <p className="text-sm text-lantern-text-secondary">No features match this filter.</p>
-        </Card>
+        <AdminEmpty>No features match this filter.</AdminEmpty>
       ) : (
         <div className="grid gap-3 grid-cols-1 xl:grid-cols-2">
           {features.map((feature) => (
