@@ -126,6 +126,7 @@ const FROZEN_TABLES: readonly string[] = [
   'test_templates',
   'user_achievements',
   'user_blocks',
+  // From `routes/budget.ts` (lane R2); `routes/users.ts` reaches it too.
   'user_budgets',
   'user_preferences',
   'user_question_stats',
