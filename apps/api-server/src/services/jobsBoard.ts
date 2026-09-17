@@ -3,6 +3,7 @@
  * Mutations use the service-role Supabase client.
  */
 import { randomUUID } from "crypto";
+import { bestEffortWrite } from "./data/writeResult";
 import {
   JOBS_DEFAULT_COUNTRY,
   JOBS_MAX_SCREENERS_PHASE1,
@@ -942,10 +943,15 @@ export class JobsBoardService {
     }
     const { count, error: countError } = await query;
     if (countError) throw countError;
-    await this.client()
-      .from("job_saved_searches")
-      .update({ last_checked_at: new Date().toISOString() })
-      .eq("id", searchId);
+    // BEST EFFORT (#108): the watermark only narrows the next scan, and the
+    // next run re-stamps it.
+    bestEffortWrite(
+      await this.client()
+        .from("job_saved_searches")
+        .update({ last_checked_at: new Date().toISOString() })
+        .eq("id", searchId),
+      { table: "job_saved_searches", op: "update", searchId, reason: "scan_watermark" },
+    );
     return { count: count ?? 0 };
   }
 
@@ -1762,12 +1768,16 @@ export class JobsBoardService {
       throw deadlineClosedError(posting.deadline);
     }
 
-    await this.client()
-      .from("job_external_apply_clicks")
-      .insert({
-        posting_id: postingId,
-        user_id: userId || null,
-      });
+    // BEST EFFORT (#108): click analytics.
+    bestEffortWrite(
+      await this.client()
+        .from("job_external_apply_clicks")
+        .insert({
+          posting_id: postingId,
+          user_id: userId || null,
+        }),
+      { table: "job_external_apply_clicks", op: "insert", postingId, userId: userId || null },
+    );
 
     if (userId) {
       const existing = await this.getApplicationByPostingAndApplicant(
@@ -1775,13 +1785,28 @@ export class JobsBoardService {
         userId,
       );
       if (!existing) {
-        await this.client().from("job_applications").insert({
-          posting_id: postingId,
-          applicant_id: userId,
-          answers: {},
-          status: "new",
-          source: "external_click",
-        });
+        // BEST EFFORT at ERROR level (#108): the candidate has already been
+        // sent to the employer's site, so there is nothing to fail back to —
+        // but losing this row means they applied and neither side has an
+        // application to show for it, which someone has to repair by hand.
+        bestEffortWrite(
+          await this.client().from("job_applications").insert({
+            posting_id: postingId,
+            applicant_id: userId,
+            answers: {},
+            status: "new",
+            source: "external_click",
+          }),
+          {
+            table: "job_applications",
+            op: "insert",
+            postingId,
+            userId,
+            reason: "external_apply_application",
+          },
+          "error",
+          "jobs-application-row-write-failed",
+        );
       }
     }
 
@@ -2164,10 +2189,24 @@ export class JobsBoardService {
     // rewind a candidate already at offer/hired, or resurrect a rejected or
     // withdrawn application.
     if (shouldAdvanceApplicationToInterview(app.status)) {
-      await this.client()
-        .from("job_applications")
-        .update({ status: "interview", updated_at: new Date().toISOString() })
-        .eq("id", applicationId);
+      // BEST EFFORT at ERROR level (#108): the interview row already exists, so
+      // throwing would report failure for an invitation that was sent. Losing
+      // this leaves the interview scheduled while the candidate's pipeline
+      // still reads its old stage.
+      bestEffortWrite(
+        await this.client()
+          .from("job_applications")
+          .update({ status: "interview", updated_at: new Date().toISOString() })
+          .eq("id", applicationId),
+        {
+          table: "job_applications",
+          op: "update",
+          applicationId,
+          reason: "advance_to_interview",
+        },
+        "error",
+        "jobs-pipeline-stamp-write-failed",
+      );
     }
 
     const title = posting?.title || "a job";
@@ -2511,10 +2550,19 @@ export class JobsBoardService {
       throw error;
     }
 
-    await this.client()
-      .from("job_applications")
-      .update({ status: "offer", updated_at: new Date().toISOString() })
-      .eq("id", applicationId);
+    // BEST EFFORT at ERROR level (#108): the offer row is already inserted —
+    // its unique index is what refuses a second open offer — so this cannot
+    // throw. Losing it leaves the offer sent and the candidate's pipeline
+    // showing the stage before it.
+    bestEffortWrite(
+      await this.client()
+        .from("job_applications")
+        .update({ status: "offer", updated_at: new Date().toISOString() })
+        .eq("id", applicationId),
+      { table: "job_applications", op: "update", applicationId, reason: "advance_to_offer" },
+      "error",
+      "jobs-pipeline-stamp-write-failed",
+    );
 
     const offer = mapOffer(data);
     const title = posting?.title || "a job";
@@ -2591,10 +2639,17 @@ export class JobsBoardService {
     }
     if (isJobOfferExpired(mapOffer(row))) {
       // Record the lapse so the employer sees why it went unanswered.
-      await this.client()
-        .from("job_offers")
-        .update({ status: "expired", updated_at: new Date().toISOString() })
-        .eq("id", offerId);
+      // BEST EFFORT (#108): a courtesy stamp so the employer sees why the
+      // offer went unanswered. Expiry is derived from the offer's own
+      // timestamp, so the next attempt re-detects it and re-stamps; the throw
+      // below is what the applicant actually needs.
+      bestEffortWrite(
+        await this.client()
+          .from("job_offers")
+          .update({ status: "expired", updated_at: new Date().toISOString() })
+          .eq("id", offerId),
+        { table: "job_offers", op: "update", offerId, reason: "stamp_lapsed_offer" },
+      );
       throw httpError("This offer has expired");
     }
 
@@ -2617,13 +2672,27 @@ export class JobsBoardService {
 
     // Declining an offer ends the process, which is a withdrawal in pipeline
     // terms; accepting is the hire.
-    await this.client()
-      .from("job_applications")
-      .update({
-        status: action === "accept" ? "hired" : "withdrawn",
-        updated_at: now,
-      })
-      .eq("id", row.application_id);
+    // BEST EFFORT at ERROR level (#108): the offer's own status has already
+    // been written, so this cannot throw. Losing it leaves a hire recorded on
+    // the offer and nowhere else — the pipeline still shows the candidate at
+    // `offer`, and someone has to correct it.
+    bestEffortWrite(
+      await this.client()
+        .from("job_applications")
+        .update({
+          status: action === "accept" ? "hired" : "withdrawn",
+          updated_at: now,
+        })
+        .eq("id", row.application_id),
+      {
+        table: "job_applications",
+        op: "update",
+        applicationId: row.application_id,
+        reason: action === "accept" ? "mark_hired" : "mark_withdrawn",
+      },
+      "error",
+      "jobs-pipeline-stamp-write-failed",
+    );
 
     let postingClosed = false;
     if (action === "accept" && row.close_posting_on_accept) {
@@ -3181,11 +3250,33 @@ export class JobsBoardService {
       .single();
     if (error) throw error;
 
-    await this.client().from("job_company_members").insert({
-      company_id: data.id,
-      user_id: userId,
-      role: "owner",
-    });
+    // BEST EFFORT at ERROR level (#108) — and the closest call in this batch.
+    // The company row already exists, so throwing would answer failure for a
+    // company that was created and a retry would make a second one. Not
+    // throwing leaves the creator holding a company they cannot administer,
+    // because nothing names them its owner.
+    //
+    // Neither answer is good, so this reports loudly and leaves the company:
+    // a visible company with a repairable membership beats an invisible
+    // duplicate. Whether it should instead delete the company (as the
+    // marketplace's orphaned-listing cleanup does) is a product decision, not
+    // one for a lane that is making failures observable.
+    bestEffortWrite(
+      await this.client().from("job_company_members").insert({
+        company_id: data.id,
+        user_id: userId,
+        role: "owner",
+      }),
+      {
+        table: "job_company_members",
+        op: "insert",
+        companyId: data.id,
+        userId,
+        reason: "company_owner_membership",
+      },
+      "error",
+      "jobs-company-owner-membership-write-failed",
+    );
 
     return mapCompany(data);
   }
