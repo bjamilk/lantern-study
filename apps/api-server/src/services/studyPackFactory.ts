@@ -483,8 +483,7 @@ export class StudyPackFactoryService {
       academicYearRaw && isValidAcademicYear(academicYearRaw)
         ? academicYearRaw
         : currentAcademicYear();
-    // TRANSITIONAL (M2d): `getLibrarySearchService` still takes the `SupabaseService` facade whole.
-    const overview = await getLibrarySearchService(this.data.legacyService).getOverview(userId);
+    const overview = await getLibrarySearchService(this.data).getOverview(userId);
     const year = (overview.years || []).find((y) => y.academicYear === academicYear) || overview.years?.[0];
     const resolvedYear = year?.academicYear || academicYear;
     const proposals: SemesterPackProposal[] = [];

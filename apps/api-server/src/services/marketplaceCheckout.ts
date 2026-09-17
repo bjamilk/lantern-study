@@ -49,16 +49,14 @@ export class MarketplaceCheckoutService {
       buyerEmail?: string;
     },
   ) {
-    // TRANSITIONAL (M2d): `getMarketplaceCartService` still takes the `SupabaseService` facade whole.
-    const cart = await getMarketplaceCartService(this.data.legacyService).listCart(buyerId);
+    const cart = await getMarketplaceCartService(this.data).listCart(buyerId);
     if (cart.length === 0) throw new PublicError('Cart is empty');
 
     // TRANSITIONAL (M2d): `getMarketplaceOrdersService` still takes the `SupabaseService` facade whole.
     const ordersService = getMarketplaceOrdersService(this.data.legacyService);
     // TRANSITIONAL (M2d): `getMarketplaceSellerToolsService` still takes the `SupabaseService` facade whole.
     const sellerTools = getMarketplaceSellerToolsService(this.data.legacyService);
-    // TRANSITIONAL (M2d): `getMarketplaceAddressesService` still takes the `SupabaseService` facade whole.
-    const addresses = getMarketplaceAddressesService(this.data.legacyService);
+    const addresses = getMarketplaceAddressesService(this.data);
 
     const modeBySeller = new Map(
       (input.groups || []).map((group) => [group.sellerId, group] as const),

@@ -54,7 +54,7 @@ router.get(
     if (!buyerId) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
-    const items = await getMarketplaceCartService(supabaseService).listCart(buyerId);
+    const items = await getMarketplaceCartService(dataLayer).listCart(buyerId);
     res.json({ success: true, data: items });
   })
 );
@@ -73,7 +73,7 @@ router.post(
       return res.status(400).json({ success: false, error: 'listingId is required' });
     }
     try {
-      const item = await getMarketplaceCartService(supabaseService).addToCart(
+      const item = await getMarketplaceCartService(dataLayer).addToCart(
         buyerId,
         listingId,
         req.body?.quantity
@@ -97,7 +97,7 @@ router.patch(
     }
     const listingId = req.params.listingId;
     try {
-      const item = await getMarketplaceCartService(supabaseService).updateCartItem(
+      const item = await getMarketplaceCartService(dataLayer).updateCartItem(
         buyerId,
         listingId,
         req.body?.quantity
@@ -119,7 +119,7 @@ router.delete(
     if (!buyerId) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
-    await getMarketplaceCartService(supabaseService).removeCartItem(buyerId, req.params.listingId);
+    await getMarketplaceCartService(dataLayer).removeCartItem(buyerId, req.params.listingId);
     res.json({ success: true, data: { removed: true } });
   })
 );
@@ -133,7 +133,7 @@ router.delete(
     if (!buyerId) {
       return res.status(401).json({ success: false, error: 'Authentication required' });
     }
-    await getMarketplaceCartService(supabaseService).clearCart(buyerId);
+    await getMarketplaceCartService(dataLayer).clearCart(buyerId);
     res.json({ success: true, data: { cleared: true } });
   })
 );
@@ -143,7 +143,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceAddressesService } = await import('../../services/marketplaceAddresses');
-    const rows = await getMarketplaceAddressesService(supabaseService).list(req.user.id);
+    const rows = await getMarketplaceAddressesService(dataLayer).list(req.user.id);
     res.json({ success: true, data: rows });
   })
 );
@@ -153,7 +153,7 @@ router.post(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceAddressesService } = await import('../../services/marketplaceAddresses');
-    const row = await getMarketplaceAddressesService(supabaseService).create(req.user.id, req.body || {});
+    const row = await getMarketplaceAddressesService(dataLayer).create(req.user.id, req.body || {});
     res.json({ success: true, data: row });
   })
 );
@@ -163,7 +163,7 @@ router.patch(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceAddressesService } = await import('../../services/marketplaceAddresses');
-    const row = await getMarketplaceAddressesService(supabaseService).update(
+    const row = await getMarketplaceAddressesService(dataLayer).update(
       req.user.id,
       req.params.id,
       req.body || {},
@@ -177,7 +177,7 @@ router.delete(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceAddressesService } = await import('../../services/marketplaceAddresses');
-    const row = await getMarketplaceAddressesService(supabaseService).remove(req.user.id, req.params.id);
+    const row = await getMarketplaceAddressesService(dataLayer).remove(req.user.id, req.params.id);
     res.json({ success: true, data: row });
   })
 );
@@ -210,7 +210,7 @@ router.post(
     // derived from what is actually being bought. A bare time bucket means a
     // buyer who edits their cart and checks out again inside the window is
     // served the PREVIOUS checkout's response — wrong items, wrong total.
-    const cart = await getMarketplaceCartService(supabaseService).listCart(buyerId);
+    const cart = await getMarketplaceCartService(dataLayer).listCart(buyerId);
     // FIXED (G3 · H8): the cart fingerprint is bound to the OPERATION, not only
     // to the fallback key, because the client's `Idempotency-Key` header wins
     // over the fallback and both clients scope their key as

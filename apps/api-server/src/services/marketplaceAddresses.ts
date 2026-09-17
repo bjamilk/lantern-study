@@ -4,16 +4,16 @@ import {
   type MarketplaceAddressDraft,
 } from '@lantern/shared/marketplace';
 import { PublicError } from '../utils/safeError';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 const addressSelect =
   'id, user_id, label, recipient_name, phone, campus_id, city, line1, line2, landmark, hall, is_default, created_at, updated_at';
 
 export class MarketplaceAddressesService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   async list(userId: string) {
@@ -128,8 +128,8 @@ export class MarketplaceAddressesService {
 let addressesService: MarketplaceAddressesService | null = null;
 
 export function getMarketplaceAddressesService(
-  supabaseService: SupabaseService,
+  data: DataLayer,
 ): MarketplaceAddressesService {
-  if (!addressesService) addressesService = new MarketplaceAddressesService(supabaseService);
+  if (!addressesService) addressesService = new MarketplaceAddressesService(data);
   return addressesService;
 }

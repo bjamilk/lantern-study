@@ -233,7 +233,7 @@ async function initializeServices() {
 
     // Initialize auth middleware with supabase service
     const { initializeAuthMiddleware } = await import('./middleware/auth');
-    initializeAuthMiddleware(supabaseService);
+    initializeAuthMiddleware(supabaseService, dataLayer);
 
     const { initializeAuthorizeResource, assertProductionAuthStrict } = await import('./middleware/authorizeResource');
     initializeAuthorizeResource(supabaseService);
@@ -278,7 +278,7 @@ async function initializeServices() {
     initializeAdminRoutes(dataLayer, cacheService);
     initializeAICompanionRoutes(dataLayer);
     initializeAIRoutes(dataLayer);
-    initializeAiBonusUses(supabaseService);
+    initializeAiBonusUses(dataLayer);
     initializeNotesRoutes(dataLayer, cacheService);
     initializeChallengeRoutes(dataLayer, cacheService);
     initializeAuthRoutes(dataLayer, cacheService);
@@ -302,7 +302,7 @@ async function initializeServices() {
     initializeSchoolRoutes(dataLayer);
 
     const { initializeWalletService } = await import('./services/walletService');
-    initializeWalletService(supabaseService, cacheService);
+    initializeWalletService(dataLayer, cacheService);
 
     const { initializeRecurringBudgetService } = await import('./services/recurringBudget');
     initializeRecurringBudgetService(dataLayer);

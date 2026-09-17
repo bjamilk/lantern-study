@@ -14,20 +14,15 @@ describe('runDataRetentionPurge', () => {
       lt: () => emptyChain,
       select: async () => ({ data: [], error: null }),
     };
-    // TRANSITIONAL (M2d): `purgeScheduledAccountDeletions` still takes the
-    // facade, so the layer hands it `legacyService` — this sentinel is what the
-    // call is asserted against until `accountLifecycle` flips too.
-    const legacyService = { marker: 'facade' };
     const supabaseService = {
       getClient: () => ({
         from: () => emptyChain,
       }),
-      legacyService,
     } as unknown as DataLayer;
 
     const result = await runDataRetentionPurge(supabaseService);
 
-    expect(purgeScheduledAccountDeletions).toHaveBeenCalledWith(legacyService);
+    expect(purgeScheduledAccountDeletions).toHaveBeenCalledWith(supabaseService);
     expect(result).toEqual({
       aiInferenceLogs: 0,
       aiAnalytics: 0,

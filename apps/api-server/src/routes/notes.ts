@@ -647,7 +647,7 @@ async function startNoteOcrJob(params: {
     // Avoid huge Redis payloads — worker re-downloads from storage.
   };
   const outcome = await runSyncOrEnqueue('notes.ocr.extract', payload, params.userId, () =>
-    runNoteOcrJob(legacyService(), {
+    runNoteOcrJob(dataLayer, {
       ...params,
       buffer: params.buffer,
     }),

@@ -27,7 +27,7 @@
  *     beats contains, which beats a match in secondary text; ties by recency.
  *     Flashcards stay grouped under their deck.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -515,14 +515,15 @@ export class LibrarySearchService {
   private topicColumnMissingSince: number | null = null;
 
   constructor(
-    private supabaseService: SupabaseService,
+    private data: DataLayer,
     courses?: AcademicCoursesService
   ) {
-    this.courses = courses ?? new AcademicCoursesService(supabaseService);
+    // TRANSITIONAL (M2d): `AcademicCoursesService` still takes the `SupabaseService` facade whole.
+    this.courses = courses ?? new AcademicCoursesService(data.legacyService);
   }
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   /** True while we still believe the course_topics migration is unapplied. */
@@ -1063,7 +1064,7 @@ export class LibrarySearchService {
 
 let service: LibrarySearchService | null = null;
 
-export function getLibrarySearchService(supabaseService: SupabaseService): LibrarySearchService {
-  if (!service) service = new LibrarySearchService(supabaseService);
+export function getLibrarySearchService(data: DataLayer): LibrarySearchService {
+  if (!service) service = new LibrarySearchService(data);
   return service;
 }

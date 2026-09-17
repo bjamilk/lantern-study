@@ -36,7 +36,7 @@ function handle(err: unknown, res: Response): void {
 }
 
 function svc() {
-  return getClassSectionsService(legacyService());
+  return getClassSectionsService(dataLayer);
 }
 
 router.get(

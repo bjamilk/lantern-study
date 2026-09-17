@@ -128,7 +128,7 @@ router.patch(
     if (!userId) return;
     try {
       const isCanonical = Boolean(req.body?.isCanonical);
-      const course = await getClassSectionsService(legacyService()).setCourseCanonical(
+      const course = await getClassSectionsService(dataLayer).setCourseCanonical(
         userId,
         String(req.params.courseId),
         isCanonical,

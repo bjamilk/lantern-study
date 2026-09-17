@@ -14,7 +14,7 @@ import {
   jobReminderKey,
   minutesUntil,
 } from "@lantern/shared/jobs";
-import type { SupabaseService } from "./supabase";
+import type { DataLayer } from "./data";
 import { logger } from "../utils/logger";
 
 export const JOB_INTERVIEW_REMINDER_NOTIFICATION_TYPE =
@@ -40,12 +40,12 @@ export interface JobReminderSweepResult {
 }
 
 export async function processJobDeadlineReminders(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): Promise<JobReminderSweepResult> {
   const now = new Date();
   const [interviews, offers] = await Promise.all([
-    remindUpcomingInterviews(supabaseService, now),
-    remindExpiringOffers(supabaseService, now),
+    remindUpcomingInterviews(layer, now),
+    remindExpiringOffers(layer, now),
   ]);
 
   if (interviews || offers) {
@@ -61,11 +61,11 @@ export async function processJobDeadlineReminders(
  * rather than a read-then-write race.
  */
 async function claimReminder(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string,
   key: string,
 ): Promise<boolean> {
-  const { error } = await supabaseService
+  const { error } = await layer
     .getClient()
     .from("job_reminders_sent")
     .insert({ user_id: userId, reminder_key: key });
@@ -78,10 +78,10 @@ async function claimReminder(
 }
 
 async function remindUpcomingInterviews(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   now: Date,
 ): Promise<number> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const horizon = new Date(now.getTime() + LOOKAHEAD_MINUTES * 60000);
   const { data, error } = await db
     .from("job_interviews")
@@ -123,8 +123,8 @@ async function remindUpcomingInterviews(
       [row.created_by, `/marketplace/employer/jobs/${row.posting_id}`],
     ] as const) {
       if (!userId) continue;
-      if (!(await claimReminder(supabaseService, userId, key))) continue;
-      const notification = await supabaseService.createNotification(userId, {
+      if (!(await claimReminder(layer, userId, key))) continue;
+      const notification = await layer.notifications.createNotification(userId, {
         type: JOB_INTERVIEW_REMINDER_NOTIFICATION_TYPE,
         message: `Interview for "${title}" is ${when}`,
         link,
@@ -141,10 +141,10 @@ async function remindUpcomingInterviews(
 }
 
 async function remindExpiringOffers(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   now: Date,
 ): Promise<number> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const horizon = new Date(now.getTime() + LOOKAHEAD_MINUTES * 60000);
   const { data, error } = await db
     .from("job_offers")
@@ -196,8 +196,8 @@ async function remindExpiringOffers(
 
     for (const [userId, link, message] of targets) {
       if (!userId) continue;
-      if (!(await claimReminder(supabaseService, userId, key))) continue;
-      const notification = await supabaseService.createNotification(userId, {
+      if (!(await claimReminder(layer, userId, key))) continue;
+      const notification = await layer.notifications.createNotification(userId, {
         type: JOB_OFFER_REMINDER_NOTIFICATION_TYPE,
         message,
         link,

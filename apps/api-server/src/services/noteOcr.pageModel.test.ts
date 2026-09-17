@@ -7,7 +7,7 @@
  * blob — and a failure while storing pages cannot touch it. Smart Notes and
  * quiz generation read that blob, so this is what keeps them unchanged.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 jest.mock('./pdfPageOcr', () => ({
   ocrPdfPagesFromBuffer: jest.fn(),
@@ -33,17 +33,24 @@ const persistMock = persistPagesAfterPdfOcr as jest.MockedFunction<typeof persis
 const LAYER_TEXT = 'Chapter one. '.repeat(20);
 const OCR_TEXT = 'A scanned figure caption the text layer never had. '.repeat(6);
 
+const FACADE = { marker: 'facade' } as never;
+
 function makeService() {
   const updateNoteAttachment = jest.fn(async () => ({}) as never);
   return {
     service: {
-      updateNoteAttachment,
-      getNoteAttachment: jest.fn(async () => ({ id: 'att-1', metadata: {} })),
-      downloadNoteFile: jest.fn(async () => ({
-        buffer: Buffer.from('%PDF-1.4'),
-        contentType: 'application/pdf',
-      })),
-    } as unknown as SupabaseService,
+      // TRANSITIONAL (M2d): `persistPagesAfterPdfOcr` still takes the facade,
+      // so the layer hands it `legacyService`; `notePages` flips next.
+      legacyService: FACADE,
+      notes: {
+        updateNoteAttachment,
+        getNoteAttachment: jest.fn(async () => ({ id: 'att-1', metadata: {} })),
+        downloadNoteFile: jest.fn(async () => ({
+          buffer: Buffer.from('%PDF-1.4'),
+          contentType: 'application/pdf',
+        })),
+      },
+    } as unknown as DataLayer,
     updateNoteAttachment,
   };
 }
@@ -104,7 +111,7 @@ it('hands OCR its own per-page text so pages come from the same read', async () 
   });
 
   expect(persistMock).toHaveBeenCalledWith(
-    service,
+    FACADE,
     'att-1',
     expect.any(Buffer),
     [

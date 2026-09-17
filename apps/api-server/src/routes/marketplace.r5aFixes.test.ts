@@ -48,12 +48,14 @@ describe('R5a (c): marketplace services throw PublicError, not a bare Error', ()
   it('cart: "Cannot add your own listing to cart" is a PublicError the mapper surfaces as 400', async () => {
     const svc = new MarketplaceCartService({
       getClient: () => ({ from: () => chain({ data: null, error: null }) }),
-      getMarketplaceListingById: async () => ({
-        id: 'l1',
-        user_id: 'buyer-1',
-        status: 'active',
-        quantity: 5,
-      }),
+      marketplace: {
+        getMarketplaceListingById: async () => ({
+          id: 'l1',
+          user_id: 'buyer-1',
+          status: 'active',
+          quantity: 5,
+        }),
+      },
     } as any);
 
     const err = await thrown(() => svc.addToCart('buyer-1', 'l1', 1));

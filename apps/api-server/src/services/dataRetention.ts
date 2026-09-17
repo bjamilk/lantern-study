@@ -93,8 +93,7 @@ export async function runDataRetentionPurge(
   const aiAnalytics = await purgeExpiredAIAnalytics(layer);
   const productEvents = await purgeExpiredProductEvents(layer);
   const { purgeScheduledAccountDeletions } = await import('./accountLifecycle');
-  // TRANSITIONAL (M2d): `purgeScheduledAccountDeletions` still takes the `SupabaseService` facade whole.
-  const scheduledAccounts = await purgeScheduledAccountDeletions(layer.legacyService);
+  const scheduledAccounts = await purgeScheduledAccountDeletions(layer);
   return { aiInferenceLogs, aiAnalytics, productEvents, scheduledAccounts };
 }
 

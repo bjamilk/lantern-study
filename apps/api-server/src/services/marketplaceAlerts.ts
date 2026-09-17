@@ -452,11 +452,9 @@ export function startMarketplaceAlertJobs(
       await processStaleOfferReminders(layer);
       await processReviewReminders(layer);
       const { processJobSavedSearchAlerts } = await import("./jobAlerts");
-      // TRANSITIONAL (M2d): `processJobSavedSearchAlerts` still takes the `SupabaseService` facade whole.
-      await processJobSavedSearchAlerts(layer.legacyService);
+      await processJobSavedSearchAlerts(layer);
       const { processJobDeadlineReminders } = await import("./jobReminders");
-      // TRANSITIONAL (M2d): `processJobDeadlineReminders` still takes the `SupabaseService` facade whole.
-      await processJobDeadlineReminders(layer.legacyService);
+      await processJobDeadlineReminders(layer);
     } catch (err) {
       logger.error("Marketplace alert job failed", err);
     }

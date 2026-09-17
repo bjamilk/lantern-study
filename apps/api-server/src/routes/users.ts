@@ -973,7 +973,7 @@ router.get(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const row = await getAccountLifecycle(legacyService(), userId);
+    const row = await getAccountLifecycle(dataLayer, userId);
     if (!row) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1013,7 +1013,7 @@ router.post(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const row = await getAccountLifecycle(legacyService(), userId);
+    const row = await getAccountLifecycle(dataLayer, userId);
     if (!row) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1021,7 +1021,7 @@ router.post(
       return res.status(409).json({ success: false, error: 'Account is already paused.' });
     }
 
-    const scheduled = await scheduleAccountDeletion(legacyService(), userId);
+    const scheduled = await scheduleAccountDeletion(dataLayer, userId);
     res.json({
       success: true,
       data: {
@@ -1048,7 +1048,7 @@ router.post(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const ok = await reactivateAccount(legacyService(), userId);
+    const ok = await reactivateAccount(dataLayer, userId);
     if (!ok) {
       return res.status(409).json({ success: false, error: 'Account is not paused.' });
     }
@@ -1078,7 +1078,7 @@ router.post(
 
     const { password } = req.body as { password?: string };
     if (requestingUserId === userId) {
-      const row = await getAccountLifecycle(legacyService(), userId);
+      const row = await getAccountLifecycle(dataLayer, userId);
       const email = row?.email;
       if (!email) {
         return res.status(400).json({ success: false, error: 'Unable to verify password for this account.' });
@@ -1145,7 +1145,7 @@ router.post(
       confirmEmailMismatch?: boolean;
     };
 
-    const row = await getAccountLifecycle(legacyService(), userId);
+    const row = await getAccountLifecycle(dataLayer, userId);
     if (!row?.email) {
       return res.status(400).json({ success: false, error: 'Unable to verify password for this account.' });
     }

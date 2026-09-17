@@ -17,7 +17,7 @@ import {
   refundBonusUses,
   spendBonusUses,
 } from './aiBonusUses';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 const CAP = 50;
 
@@ -96,7 +96,7 @@ function makeLedger(options: { failWith?: PgError } = {}) {
     }),
   }));
 
-  const service = { getClient: () => ({ rpc, from }) } as unknown as SupabaseService;
+  const service = { getClient: () => ({ rpc, from }) } as unknown as DataLayer;
   return { service, balances, grants, rpc };
 }
 

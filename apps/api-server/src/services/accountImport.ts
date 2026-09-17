@@ -81,8 +81,7 @@ export async function importAccountArchive(
     (typeof exportDoc.sourceEmail === 'string' && exportDoc.sourceEmail) ||
     (typeof profile.email === 'string' ? profile.email : null);
 
-  // TRANSITIONAL (M2d): `getAccountLifecycle` still takes the `SupabaseService` facade whole.
-  const lifecycle = await getAccountLifecycle(layer.legacyService, targetUserId);
+  const lifecycle = await getAccountLifecycle(layer, targetUserId);
   const targetEmail = lifecycle?.email ?? null;
 
   if (

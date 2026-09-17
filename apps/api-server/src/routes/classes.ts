@@ -37,7 +37,7 @@ function handle(err: unknown, res: Response): void {
 }
 
 function classes() {
-  return getClassSectionsService(legacyService());
+  return getClassSectionsService(dataLayer);
 }
 
 router.get(

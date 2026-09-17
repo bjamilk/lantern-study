@@ -746,7 +746,7 @@ async function processFileJob(job: Job, progress: JobProgress): Promise<unknown>
       bufferBase64?: string;
     };
     await progress.stage("reading");
-    const result = await runNoteOcrJob(supabaseService, {
+    const result = await runNoteOcrJob(dataLayer, {
       noteId,
       attachmentId,
       storagePath,
@@ -802,11 +802,11 @@ async function processCronJob(job: Job, _progress: JobProgress): Promise<unknown
     return { saved, checkout, offers, reviews };
   }
   if (job.name === "cron.jobAlerts") {
-    const jobAlerts = await processJobSavedSearchAlerts(supabaseService);
+    const jobAlerts = await processJobSavedSearchAlerts(dataLayer);
     return { jobAlerts };
   }
   if (job.name === "cron.jobReminders") {
-    return processJobDeadlineReminders(supabaseService);
+    return processJobDeadlineReminders(dataLayer);
   }
   if (job.name === "cron.studyReminders") {
     return processStudyReminders(dataLayer);

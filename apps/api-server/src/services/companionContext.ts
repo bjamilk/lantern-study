@@ -294,8 +294,7 @@ export async function buildTrustedCompanionContext(
   const classId = UUID_RE.test(rawClassId) ? rawClassId : undefined;
   try {
     const { getClassSectionsService } = await import('./classSections');
-    // TRANSITIONAL (M2d): `getClassSectionsService` still takes the `SupabaseService` facade whole.
-    const corpus = await getClassSectionsService(layer.legacyService).corpusForCompanion(userId, classId);
+    const corpus = await getClassSectionsService(layer).corpusForCompanion(userId, classId);
     if (corpus) {
       const combined = [trusted.noteContext || '', corpus].filter(Boolean).join('\n\n').slice(0, MAX_NOTE_LEN);
       if (combined) trusted.noteContext = combined;

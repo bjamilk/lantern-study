@@ -152,8 +152,7 @@ export async function runPresentationPreviewJob(
         },
         undefined,
         () =>
-          // TRANSITIONAL (M2d): `runNoteOcrJob` still takes the `SupabaseService` facade whole.
-          runNoteOcrJob(layer.legacyService, {
+          runNoteOcrJob(layer, {
             noteId,
             attachmentId,
             storagePath: previewStoragePath,

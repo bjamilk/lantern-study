@@ -1,7 +1,7 @@
 /**
  * Server-authoritative wallet balance stored in user_preferences.preferences.budgetExtras.
  */
-import { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { CacheService } from './cache';
 import { logger } from '../utils/logger';
 
@@ -56,19 +56,19 @@ function parseInsufficientWalletError(err: unknown): WalletInsufficientError | n
 
 export class WalletService {
   constructor(
-    private supabase: SupabaseService,
+    private data: DataLayer,
     private cache?: CacheService
   ) {}
 
   private get client() {
-    return this.supabase.getClient();
+    return this.data.getClient();
   }
 
   private async loadPrefsRow(userId: string): Promise<{
     theme: string;
     preferences: Record<string, any>;
   }> {
-    const row = await this.supabase.getUserPreferences(userId);
+    const row = await this.data.categories.getUserPreferences(userId);
     return {
       theme: row?.theme || 'light',
       preferences: (row?.preferences && typeof row.preferences === 'object' ? row.preferences : {}) as Record<
@@ -148,7 +148,7 @@ export class WalletService {
         walletAwards,
       },
     };
-    await this.supabase.upsertUserPreferences(userId, {
+    await this.data.categories.upsertUserPreferences(userId, {
       theme,
       preferences: nextPrefs,
     });
@@ -215,10 +215,10 @@ export class WalletService {
 let walletService: WalletService | null = null;
 
 export function initializeWalletService(
-  supabase: SupabaseService,
+  data: DataLayer,
   cache?: CacheService
 ): WalletService {
-  walletService = new WalletService(supabase, cache);
+  walletService = new WalletService(data, cache);
   return walletService;
 }
 
