@@ -150,7 +150,8 @@ Founder decisions on the questions Phase A raised. The classification above stan
 
 A (#112, merged): helpers + ratchet + the buy-now pilot — 3 sites. B PR 1 (this one): the
 rest of `services/marketplacePayments.ts` — 24 sites, so that file is now at ZERO and the
-baseline is 87 → 63. B PR 2: `marketplaceOrders.ts` (9), including deleting the dead
-`voidOrphanPendingTransaction` and fixing the never-firing `.then(undefined, handler)`.
-Then the rest by domain, best-effort sites batched. Each PR re-freezes the ratchet baseline
+baseline is 87 → 63. B PR 2 (done): `marketplaceOrders.ts` — 8 fixed and the dead
+`voidOrphanPendingTransaction` deleted, plus the `updateOrderFieldsAsParty` call site in
+`routes/marketplace/orders.ts` that #111 marked; baseline 63 → 53. Both money services are
+now at ZERO. Then the rest by domain, best-effort sites batched. Each PR re-freezes the ratchet baseline
 downward in its own commit, with the before and after counts in the PR body.
