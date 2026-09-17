@@ -32,6 +32,19 @@
  * `FAILURE_TTL_MS` (10 minutes) and is reclaimable after that; within the
  * window the retry gets a 409 telling it to use a new key.
  *
+ * FIXED (#117): `__processing__` now has an expiry too. It never had one — only
+ * `__failed__` aged out — so a claim whose holder died (a deploy, a crash, an
+ * OOM, or a `markIdempotencyFailure` write that itself failed) owned its key for
+ * ever, and every retry on that key waited 5 s and answered 409. The claim now
+ * carries `_claimedAt`, and a claim older than `PROCESSING_LEASE_MS` is
+ * ABANDONED: the next request compare-and-swaps it (on the old status AND the
+ * old timestamp, so two racing retries cannot both win) into `__failed__` — the
+ * state the dead attempt would have written itself — which frees the key
+ * through the existing stale-failure path. A caller that has proved its handler
+ * survives a replay passes `{ leaseReclaim: true }` and takes the key
+ * immediately instead. Full derivation, and the per-caller replay-safety table
+ * the default comes from, in `docs/idempotency-lease.md`.
+ *
  * FIXED (G3 · H5): reclaiming a STALE failure marker is itself a claim and must
  * be a compare-and-set. It used to be an unconditional
  * `update({response: PROCESSING})` filtered only on (user, operation, key),
@@ -59,8 +72,11 @@
  * and the second was served the first one's cached response — the wrong cart,
  * the wrong listing, the wrong amount.
  */
+import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { PublicError } from '../utils/safeError';
+import { logger } from '../utils/logger';
+import { captureScopedException } from '../utils/sentry';
 import { bestEffortWrite } from './data/writeResult';
 
 const MAX_KEY_LENGTH = 128;
@@ -74,11 +90,74 @@ const FAILED_STATUS = '__failed__';
  * attempt uses a new key.
  */
 const FAILURE_TTL_MS = 10 * 60 * 1000;
+/**
+ * How long a `__processing__` claim owns its key before it counts as ABANDONED
+ * (#117). See `docs/idempotency-lease.md` for the derivation; in short, the
+ * number has to clear the longest run a LIVE handler can legitimately have, or
+ * the lease would hand a second request a key whose first execution is still
+ * working and duplicate its side effects.
+ *
+ * The ceiling is set by outbound HTTP, not by us. The express request timeout
+ * (30 s, `middleware/timeout.ts`) only destroys the socket — the handler keeps
+ * running — and `services/paystack.ts` passes NO `AbortSignal`, so a stalled
+ * Paystack call is bounded only by undici's defaults (300 s headers + 300 s
+ * body ≈ 10 min). The AI path is the tidy counter-example at 120 s
+ * (`AI_FETCH_TIMEOUT_MS`), and no AI route is behind this wrapper anyway.
+ * 20 minutes is that ~10-minute worst case with a 2x margin.
+ *
+ * Bounding `paystackFetch` would let this drop to the ~2 minutes the issue
+ * suggested; until then a bigger number is the cheap side of the trade, because
+ * being late to recover a key costs a client one extra key, while being early
+ * costs a buyer a second order.
+ */
+const PROCESSING_LEASE_MS = 20 * 60 * 1000;
 const POLL_INTERVAL_MS = 100;
 const POLL_MAX_ATTEMPTS = 50;
 
+/**
+ * Per-call policy for `withIdempotency`.
+ */
+export type IdempotencyOptions = {
+  /**
+   * May THIS request take an abandoned claim and run the handler again in the
+   * same breath? Default FALSE, and the default is the point.
+   *
+   * An abandoned claim says only "the attempt that held this key never came
+   * back". It does not say whether that attempt created the order, charged the
+   * card, wrote the ledger row, or did nothing at all — a crash leaves no note.
+   * Almost every handler behind this wrapper ends in a plain INSERT or a
+   * relative balance change, so replaying it duplicates something. So the
+   * default answer to an abandoned claim is not "run it again", it is "retire
+   * the claim to `__failed__`, the terminal state this codebase already has a
+   * TTL and a test suite for" — which is exactly the state the dead attempt
+   * would have reached had `markIdempotencyFailure` survived. The retry then
+   * gets the honest, actionable `IDEMPOTENCY_PREVIOUS_FAILED` ("mint a new
+   * key") immediately instead of a 5-second wait and a misleading
+   * "still in flight", and the key frees itself FAILURE_TTL_MS later through
+   * the shipped stale-failure path.
+   *
+   * `true` is the opt-in for a handler whose every write is guarded — an upsert,
+   * a CAS on a status, an RPC that refuses when the row already moved — so that
+   * running it twice cannot double anything. It only buys the FAILURE_TTL_MS;
+   * it never weakens the CAS.
+   */
+  leaseReclaim?: boolean;
+  /** Injectable clock. Tests age a claim instead of sleeping through a lease. */
+  now?: () => number;
+};
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * What may be logged about a key. The key itself may be client-chosen text (the
+ * `Idempotency-Key` header, capped at 128 chars but otherwise arbitrary), so it
+ * never reaches a log line or a Sentry tag; a short digest is enough to tie
+ * repeated reports to one key.
+ */
+function keyDigest(idempotencyKey: string): string {
+  return createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 12);
 }
 
 function hasStatus(value: unknown, status: string): boolean {
@@ -96,11 +175,35 @@ function isFailureMarker(value: unknown): boolean {
 }
 
 /** A failure marker only owns the key for FAILURE_TTL_MS; after that it is reclaimable. */
-function isFreshFailureMarker(value: unknown): boolean {
+function isFreshFailureMarker(value: unknown, nowMs: number): boolean {
   if (!isFailureMarker(value)) return false;
   const at = Date.parse(String((value as { _failedAt?: string })._failedAt || ''));
   if (!Number.isFinite(at)) return true;
-  return Date.now() - at < FAILURE_TTL_MS;
+  return nowMs - at < FAILURE_TTL_MS;
+}
+
+/** The marker one attempt writes to say "this key is mine, as of now". */
+function processingMarker(nowMs: number): { _status: string; _claimedAt: string } {
+  return { _status: PROCESSING_STATUS, _claimedAt: new Date(nowMs).toISOString() };
+}
+
+/**
+ * When the `__processing__` claim on this row was taken, in ms, or null when
+ * that cannot be established.
+ *
+ * `_claimedAt` is written into the marker itself (#117) rather than into a new
+ * column, because the marker is the thing the claim CAS already filters on and
+ * a jsonb field needs no migration. Rows claimed before this shipped have no
+ * `_claimedAt`, and for those `created_at` IS the claim time: the only write
+ * that reaches a `__processing__` marker on an existing row is a reclaim, and
+ * every reclaim now stamps `_claimedAt`. Null (an unparsable or missing pair)
+ * means "unknown", and an unknown claim is never treated as abandoned.
+ */
+function processingClaimedAt(response: unknown, createdAt: unknown): number | null {
+  const stamped = Date.parse(String((response as { _claimedAt?: string })?._claimedAt || ''));
+  if (Number.isFinite(stamped)) return stamped;
+  const created = Date.parse(String(createdAt || ''));
+  return Number.isFinite(created) ? created : null;
 }
 
 /**
@@ -189,11 +292,100 @@ async function waitForCompletedResponse<T>(
   return null;
 }
 
+/**
+ * Take an ABANDONED `__processing__` claim off whoever left it there (#117).
+ *
+ * The write is the whole safety argument, so it is one statement:
+ *
+ *   UPDATE api_idempotency_keys SET response = <next>
+ *    WHERE user_id = … AND operation = … AND idempotency_key = …
+ *      AND response->>'_status'    = '__processing__'
+ *      AND response->>'_claimedAt' = <the value this caller READ>   -- or IS NULL
+ *   RETURNING idempotency_key
+ *
+ * PostgreSQL takes a row lock for the duration of that UPDATE, and under READ
+ * COMMITTED a second UPDATE that finds the row locked waits, then re-evaluates
+ * its WHERE against the row the winner wrote. `_claimedAt` has moved by then,
+ * so the loser matches nothing and RETURNING gives it no row. That is why the
+ * old timestamp is in the predicate and not just the status: two retries
+ * reading the same abandoned claim would otherwise both see `__processing__`
+ * and both "win". The returned row is the proof of the claim — exactly one
+ * caller can hold it — which is the same shape as the stale-failure reclaim
+ * above (G3 · H5) and needs no advisory lock to be correct.
+ *
+ * `next` is where the policy lives: `__processing__` stamped NOW for a caller
+ * that opted into `leaseReclaim` (so the third racer's CAS fails too), and
+ * otherwise the `__failed__` marker the dead attempt never got to write.
+ */
+async function reclaimAbandonedClaim(
+  client: SupabaseClient,
+  userId: string,
+  operation: string,
+  idempotencyKey: string,
+  previousClaimedAt: string | null,
+  ageMs: number,
+  options: IdempotencyOptions,
+  nowMs: number
+): Promise<'claimed' | 'failed' | 'wait'> {
+  const reclaim = options.leaseReclaim === true;
+  const next = reclaim
+    ? processingMarker(nowMs)
+    : {
+        _status: FAILED_STATUS,
+        _failedAt: new Date(nowMs).toISOString(),
+        // Tells a reader of the row apart from a handler that actually threw.
+        _abandoned: true,
+        _error: 'The attempt holding this key never finished (lease expired)',
+      };
+
+  const cas = client
+    .from('api_idempotency_keys')
+    .update({ response: next })
+    .eq('user_id', userId)
+    .eq('operation', operation)
+    .eq('idempotency_key', idempotencyKey)
+    .eq('response->>_status', PROCESSING_STATUS);
+  // A pre-#117 claim carries no `_claimedAt` at all, and `IS NULL` is the CAS
+  // that matches it — PostgREST's `->>` yields SQL NULL for a missing key.
+  const scoped =
+    previousClaimedAt === null
+      ? cas.is('response->>_claimedAt', null)
+      : cas.eq('response->>_claimedAt', previousClaimedAt);
+
+  const { data, error } = await scoped.select('idempotency_key').maybeSingle();
+  if (error) throw error;
+  // No row: another retry took the abandoned claim first. Wait for its answer
+  // rather than race it — the same branch the stale-failure loser takes.
+  if (!data) return 'wait';
+
+  const scope = { operation, userId, ageMs, keyDigest: keyDigest(idempotencyKey), reclaim };
+  logger.warn(
+    reclaim
+      ? 'Idempotency claim abandoned; re-claimed under the lease'
+      : 'Idempotency claim abandoned; retired to a failure marker',
+    scope
+  );
+  if (!reclaim) {
+    // The caller opted out of replay, so nothing recovers this key inside this
+    // request: report it so somebody can see how often claims are being
+    // abandoned at all (a deploy mid-checkout, an OOM, a failed marker write).
+    // Ids and an age only — the key is client text and stays hashed.
+    captureScopedException(new Error(`Idempotency claim abandoned: ${operation}`), {
+      fingerprint: ['idempotency-key-abandoned'],
+      tags: { operation, userId },
+      extra: scope,
+    });
+  }
+  return reclaim ? 'claimed' : 'failed';
+}
+
 async function claimIdempotencySlot(
   client: SupabaseClient,
   userId: string,
   operation: string,
-  idempotencyKey: string
+  idempotencyKey: string,
+  options: IdempotencyOptions,
+  nowMs: number
 ): Promise<'claimed' | 'cached' | 'wait' | 'failed'> {
   // Advisory lock when available; unique index still owns cross-request safety.
   try {
@@ -210,7 +402,9 @@ async function claimIdempotencySlot(
     user_id: userId,
     operation,
     idempotency_key: idempotencyKey,
-    response: { _status: PROCESSING_STATUS },
+    // Stamped, so the lease can tell an in-flight claim from an abandoned one
+    // (#117) and so the reclaim CAS has an old value to compare against.
+    response: processingMarker(nowMs),
   });
 
   if (!error) return 'claimed';
@@ -218,14 +412,16 @@ async function claimIdempotencySlot(
   if (error.code === '23505') {
     const { data, error: readError } = await client
       .from('api_idempotency_keys')
-      .select('response')
+      // `created_at` is the claim time for a row claimed before `_claimedAt`
+      // existed; the lease below needs one or the other.
+      .select('response, created_at')
       .eq('user_id', userId)
       .eq('operation', operation)
       .eq('idempotency_key', idempotencyKey)
       .maybeSingle();
 
     if (readError) throw readError;
-    if (isFreshFailureMarker(data?.response)) return 'failed';
+    if (isFreshFailureMarker(data?.response, nowMs)) return 'failed';
     if (isFailureMarker(data?.response)) {
       // Stale failure: take the key back for this attempt — but only if it is
       // STILL a failure marker when the write lands. Without the status filter
@@ -235,7 +431,10 @@ async function claimIdempotencySlot(
       // this caller waits for that attempt's response instead of racing it.
       const { data: reclaimed, error: reclaimError } = await client
         .from('api_idempotency_keys')
-        .update({ response: { _status: PROCESSING_STATUS } })
+        // Stamped with THIS attempt's claim time (#117). Without it the fresh
+        // claim would fall back to the row's `created_at`, which is the ORIGINAL
+        // claim's age, and the very next request would read the key as abandoned.
+        .update({ response: processingMarker(nowMs) })
         .eq('user_id', userId)
         .eq('operation', operation)
         .eq('idempotency_key', idempotencyKey)
@@ -245,7 +444,30 @@ async function claimIdempotencySlot(
       if (reclaimError) throw reclaimError;
       return reclaimed ? 'claimed' : 'wait';
     }
-    if (data?.response && !isProcessingResponse(data.response)) {
+    if (isProcessingResponse(data?.response)) {
+      // FIXED (#117): `__processing__` used to fall straight to 'wait' with no
+      // staleness handling of any kind, so a claim whose holder died — a
+      // deploy, a crash, an OOM, or a failed `markIdempotencyFailure` write —
+      // made every retry on that key wait 5 s and answer 409, for ever.
+      const claimedAt = processingClaimedAt(data?.response, data?.created_at);
+      // Unknown claim time: treat the claim as live. Being slow to free a key
+      // costs a client one extra key; being wrong here costs a buyer a second
+      // order.
+      if (claimedAt === null) return 'wait';
+      const ageMs = nowMs - claimedAt;
+      if (ageMs < PROCESSING_LEASE_MS) return 'wait';
+      return reclaimAbandonedClaim(
+        client,
+        userId,
+        operation,
+        idempotencyKey,
+        (data?.response as { _claimedAt?: string })?._claimedAt ?? null,
+        ageMs,
+        options,
+        nowMs
+      );
+    }
+    if (data?.response) {
       return 'cached';
     }
     return 'wait';
@@ -291,11 +513,11 @@ async function markIdempotencyFailure(
   // `withIdempotency`, one line before the handler's own error is rethrown, so
   // throwing here would REPLACE the error the caller needs with this one.
   //
-  // It is reported at error level under a fingerprint because the stuck state
-  // is permanent: only a FAILED marker ages out (FAILURE_TTL_MS), and there is
-  // no staleness handling for `__processing__`, so a claim left in that state
-  // makes every retry on THAT key wait and then answer 409 forever. A new key
-  // still works, so the user is not stuck — but the key is dead.
+  // It is reported at error level under a fingerprint because losing this write
+  // leaves the claim at `__processing__` with nobody behind it. Since #117 that
+  // is no longer permanent — the lease retires the claim PROCESSING_LEASE_MS
+  // later — but it is still 20 minutes of a key answering 409 for no reason,
+  // and a burst of them says a replica is dying mid-handler.
   bestEffortWrite(
     await client
     .from('api_idempotency_keys')
@@ -324,13 +546,22 @@ export async function withIdempotency<T extends Record<string, unknown>>(
   userId: string,
   operation: string,
   idempotencyKey: string | null,
-  handler: () => Promise<T>
+  handler: () => Promise<T>,
+  options: IdempotencyOptions = {}
 ): Promise<T> {
   if (!idempotencyKey) {
     return handler();
   }
 
-  const claim = await claimIdempotencySlot(client, userId, operation, idempotencyKey);
+  const nowMs = (options.now ?? Date.now)();
+  const claim = await claimIdempotencySlot(
+    client,
+    userId,
+    operation,
+    idempotencyKey,
+    options,
+    nowMs
+  );
   if (claim === 'cached') {
     // FIXED (H6): this used to fall through to the handler when the re-read
     // came back empty, so a replay of a COMPLETED checkout ran the checkout

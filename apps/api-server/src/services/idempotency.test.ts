@@ -9,20 +9,33 @@
  * filters would pass whether or not the CAS is there (G3 · H5/H6/M13).
  */
 import { withIdempotency } from './idempotency';
+import { captureScopedException } from '../utils/sentry';
+
+// The abandoned-claim report (#117) is an assertion target, and the real one is
+// a no-op without SENTRY_DSN, which would make the assertion vacuous.
+jest.mock('../utils/sentry', () => ({ captureScopedException: jest.fn() }));
+
+beforeEach(() => {
+  (captureScopedException as jest.Mock).mockClear();
+});
 
 type Row = {
   user_id: string;
   operation: string;
   idempotency_key: string;
   response: unknown;
+  /** Set by the INSERT the way the table's `DEFAULT now()` does. */
+  created_at?: string;
 };
 
 const COLUMN_READERS: Record<string, (r: Row) => unknown> = {
   user_id: (r) => r.user_id,
   operation: (r) => r.operation,
   idempotency_key: (r) => r.idempotency_key,
-  // PostgREST's JSON text accessor, as used by the claim/store CAS.
+  // PostgREST's JSON text accessors, as used by the claim/store CAS.
   'response->>_status': (r) => (r.response as { _status?: string } | null)?._status,
+  'response->>_claimedAt': (r) =>
+    (r.response as { _claimedAt?: string } | null)?._claimedAt ?? null,
 };
 
 function createMemoryClient(store: Row[] = []) {
@@ -37,6 +50,11 @@ function createMemoryClient(store: Row[] = []) {
     const filters: Array<[string, unknown]> = [];
     const chain: any = {
       eq(col: string, val: unknown) {
+        filters.push([col, val]);
+        return chain;
+      },
+      // PostgREST `is.null` on a JSON accessor: a missing key reads as SQL NULL.
+      is(col: string, val: unknown) {
         filters.push([col, val]);
         return chain;
       },
@@ -72,13 +90,19 @@ function createMemoryClient(store: Row[] = []) {
             ) {
               return Promise.resolve({ data: null, error: { code: '23505', message: 'duplicate' } });
             }
-            store.push({ ...row });
+            // The table's `created_at timestamptz NOT NULL DEFAULT now()`.
+            store.push({ created_at: new Date().toISOString(), ...row });
             return Promise.resolve({ data: row, error: null });
           },
           select(_cols: string) {
             return eqChain(async (filters) => {
               const found = store.find((r) => match(filters, r));
-              return { data: found ? { response: found.response } : null, error: null };
+              return {
+                data: found
+                  ? { response: found.response, created_at: found.created_at ?? null }
+                  : null,
+                error: null,
+              };
             });
           },
           update(patch: { response: unknown }) {
@@ -365,5 +389,299 @@ describe('withIdempotency', () => {
     const result = await withIdempotency(client as any, 'user-1', 'op', null, handler);
     expect(result).toEqual({ a: 1 });
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * #117 — the lease on `__processing__`.
+ *
+ * Before this, `__processing__` was the only marker with no expiry: a claim
+ * whose holder died owned its key for ever and every retry waited 5 s and
+ * answered 409. The tests below are the two halves of the fix — a claim older
+ * than the lease is ABANDONED and goes somewhere, and a claim younger than it
+ * behaves exactly as it did.
+ *
+ * Time is injected (`{ now }`), never slept: the lease is twenty minutes.
+ */
+describe('withIdempotency · the abandoned-claim lease (#117)', () => {
+  const LEASE_MS = 20 * 60 * 1000;
+  const T0 = Date.parse('2026-09-17T12:00:00.000Z');
+  const at = (ms: number) => () => T0 + ms;
+
+  /** A row left at `__processing__` by an attempt that never came back. */
+  function wedged(store: Row[], key: string, claimedAtMs: number | null) {
+    store.push({
+      user_id: 'user-1',
+      operation: 'op',
+      idempotency_key: key,
+      response:
+        claimedAtMs === null
+          ? // A claim written before `_claimedAt` existed: `created_at` is its age.
+            { _status: '__processing__' }
+          : { _status: '__processing__', _claimedAt: new Date(claimedAtMs).toISOString() },
+      created_at: new Date(claimedAtMs ?? T0 - LEASE_MS - 1).toISOString(),
+    });
+  }
+
+  it('leaves a claim younger than the lease alone: still 409 IDEMPOTENCY_CONCURRENT', async () => {
+    jest.useFakeTimers();
+    try {
+      const store: Row[] = [];
+      const { client } = createMemoryClient(store);
+      wedged(store, 'key-fresh', T0 - (LEASE_MS - 1000));
+      const handler = jest.fn(async () => ({ ok: true }));
+
+      const attempt = withIdempotency(client as any, 'user-1', 'op', 'key-fresh', handler, {
+        leaseReclaim: true,
+        now: at(0),
+      });
+      const asserted = expect(attempt).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'IDEMPOTENCY_CONCURRENT',
+      });
+      await jest.advanceTimersByTimeAsync(10_000); // the whole 50 x 100 ms poll window
+      await asserted;
+
+      expect(handler).not.toHaveBeenCalled();
+      // Untouched: a live claim is nobody else's to rewrite.
+      expect((store[0].response as any)._status).toBe('__processing__');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('re-claims a claim older than the lease when the caller opted in, and runs it once', async () => {
+    const store: Row[] = [];
+    const { client } = createMemoryClient(store);
+    wedged(store, 'key-stale', T0 - LEASE_MS - 1);
+    const handler = jest.fn(async () => ({ recovered: true }));
+
+    const result = await withIdempotency(client as any, 'user-1', 'op', 'key-stale', handler, {
+      leaseReclaim: true,
+      now: at(0),
+    });
+
+    expect(result).toEqual({ recovered: true });
+    expect(handler).toHaveBeenCalledTimes(1);
+    // …and the response is STORED, so the next retry on this key replays it
+    // instead of running the handler a second time.
+    expect(store[0].response).toEqual({ recovered: true });
+    const replay = jest.fn(async () => ({ recovered: 'again' }));
+    await expect(
+      withIdempotency(client as any, 'user-1', 'op', 'key-stale', replay, { leaseReclaim: true })
+    ).resolves.toEqual({ recovered: true });
+    expect(replay).not.toHaveBeenCalled();
+  });
+
+  it('ages a pre-#117 claim, which has no `_claimedAt`, off its `created_at`', async () => {
+    const store: Row[] = [];
+    const { client } = createMemoryClient(store);
+    wedged(store, 'key-legacy', null);
+    const handler = jest.fn(async () => ({ recovered: true }));
+
+    await expect(
+      withIdempotency(client as any, 'user-1', 'op', 'key-legacy', handler, {
+        leaseReclaim: true,
+        now: at(0),
+      })
+    ).resolves.toEqual({ recovered: true });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a claim with no usable timestamp at all as live, never as abandoned', async () => {
+    jest.useFakeTimers();
+    try {
+      const store: Row[] = [];
+      const { client } = createMemoryClient(store);
+      store.push({
+        user_id: 'user-1',
+        operation: 'op',
+        idempotency_key: 'key-undated',
+        response: { _status: '__processing__' },
+        created_at: undefined,
+      });
+      const handler = jest.fn(async () => ({ ok: true }));
+
+      const attempt = withIdempotency(client as any, 'user-1', 'op', 'key-undated', handler, {
+        leaseReclaim: true,
+        now: at(0),
+      });
+      const asserted = expect(attempt).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONCURRENT' });
+      await jest.advanceTimersByTimeAsync(10_000);
+      await asserted;
+      expect(handler).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  /**
+   * The CAS is the whole safety argument: two retries that read the same
+   * abandoned claim must not both take it, or the lease would do exactly what
+   * it exists to prevent — run one money handler twice. The losing side is
+   * driven through the fake client, which applies every filter for real.
+   */
+  it('lets only ONE of two simultaneous retries take an abandoned claim', async () => {
+    const store: Row[] = [];
+    const { client } = createMemoryClient(store);
+    wedged(store, 'key-race', T0 - LEASE_MS - 1);
+
+    let running = 0;
+    let maxConcurrent = 0;
+    const handler = jest.fn(async () => {
+      running += 1;
+      maxConcurrent = Math.max(maxConcurrent, running);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      running -= 1;
+      return { charged: true };
+    });
+
+    const results = await Promise.allSettled([
+      withIdempotency(client as any, 'user-1', 'op', 'key-race', handler, {
+        leaseReclaim: true,
+        now: at(0),
+      }),
+      withIdempotency(client as any, 'user-1', 'op', 'key-race', handler, {
+        leaseReclaim: true,
+        now: at(0),
+      }),
+    ]);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(maxConcurrent).toBe(1);
+    for (const r of results.filter((r) => r.status === 'fulfilled')) {
+      expect((r as PromiseFulfilledResult<unknown>).value).toEqual({ charged: true });
+    }
+    for (const r of results.filter((r) => r.status === 'rejected')) {
+      expect((r as PromiseRejectedResult).reason).toMatchObject({
+        statusCode: 409,
+        code: 'IDEMPOTENCY_CONCURRENT',
+      });
+    }
+  });
+
+  /**
+   * The timestamp has to be IN the predicate, not just the status. Without it
+   * the loser's CAS would still see `__processing__` — the winner rewrote the
+   * marker to `__processing__` too — and both would "win".
+   */
+  it('refuses a retry whose read is stale: the CAS compares the claim timestamp', async () => {
+    const store: Row[] = [];
+    const { client } = createMemoryClient(store);
+    wedged(store, 'key-moved', T0 - LEASE_MS - 1);
+
+    // Another replica re-claims it between our read and our write.
+    const realFrom = (client as any).from.bind(client);
+    (client as any).from = (table: string) => {
+      const api = realFrom(table);
+      const originalUpdate = api.update;
+      api.update = (patch: any) => {
+        store[0].response = { _status: '__processing__', _claimedAt: new Date(T0).toISOString() };
+        api.update = originalUpdate;
+        return originalUpdate.call(api, patch);
+      };
+      return api;
+    };
+
+    const handler = jest.fn(async () => ({ charged: true }));
+    await expect(
+      withIdempotency(client as any, 'user-1', 'op', 'key-moved', handler, {
+        leaseReclaim: true,
+        now: at(0),
+      })
+    ).rejects.toMatchObject({ statusCode: 409, code: 'IDEMPOTENCY_CONCURRENT' });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The DEFAULT, and the answer for every caller whose handler cannot survive a
+   * replay: the abandoned claim is retired to the failure marker its dead
+   * holder never got to write, the retry is told the honest thing ("mint a new
+   * key") straight away instead of waiting 5 s for a "still in flight" that is
+   * not true, and the event is reported.
+   */
+  it('retires an abandoned claim instead of replaying it when reclaim is off', async () => {
+    const store: Row[] = [];
+    const { client } = createMemoryClient(store);
+    wedged(store, 'key-retired', T0 - LEASE_MS - 1);
+    const handler = jest.fn(async () => ({ charged: true }));
+
+    await expect(
+      withIdempotency(client as any, 'user-1', 'op', 'key-retired', handler, { now: at(0) })
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'IDEMPOTENCY_PREVIOUS_FAILED',
+      retryable: false,
+    });
+    expect(handler).not.toHaveBeenCalled();
+
+    const row = store[0].response as any;
+    expect(row._status).toBe('__failed__');
+    expect(row._abandoned).toBe(true);
+
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        fingerprint: ['idempotency-key-abandoned'],
+        tags: { operation: 'op', userId: 'user-1' },
+      })
+    );
+    // Ids and an age only: the key is client-chosen text and stays hashed.
+    const reported = (captureScopedException as jest.Mock).mock.calls[0][1];
+    expect(JSON.stringify(reported)).not.toContain('key-retired');
+    expect(reported.extra.ageMs).toBeGreaterThanOrEqual(LEASE_MS);
+  });
+
+  /**
+   * And the retired key is not dead for ever, which is the whole complaint in
+   * #117: FAILURE_TTL_MS later it ages out through the stale-failure path that
+   * already shipped, with no new code and no new risk.
+   */
+  it('frees the retired key through the existing failure TTL', async () => {
+    const store: Row[] = [];
+    const { client } = createMemoryClient(store);
+    wedged(store, 'key-eventually', T0 - LEASE_MS - 1);
+
+    await expect(
+      withIdempotency(client as any, 'user-1', 'op', 'key-eventually', async () => ({ a: 1 }), {
+        now: at(0),
+      })
+    ).rejects.toMatchObject({ code: 'IDEMPOTENCY_PREVIOUS_FAILED' });
+
+    const handler = jest.fn(async () => ({ recovered: true }));
+    await expect(
+      withIdempotency(client as any, 'user-1', 'op', 'key-eventually', handler, {
+        now: at(10 * 60 * 1000 + 1), // FAILURE_TTL_MS later
+      })
+    ).resolves.toEqual({ recovered: true });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('stamps its own claim time when it reclaims a stale FAILURE marker', async () => {
+    // Otherwise the fresh claim would be aged off the row's original
+    // `created_at` and read as abandoned by the very next request.
+    const store: Row[] = [];
+    const { client } = createMemoryClient(store);
+    store.push({
+      user_id: 'user-1',
+      operation: 'op',
+      idempotency_key: 'key-restamp',
+      response: { _status: '__failed__', _failedAt: new Date(T0 - 60 * 60 * 1000).toISOString() },
+      created_at: new Date(T0 - 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    let seen: string | undefined;
+    await withIdempotency(
+      client as any,
+      'user-1',
+      'op',
+      'key-restamp',
+      async () => {
+        seen = (store[0].response as any)._claimedAt;
+        return { ok: true };
+      },
+      { now: at(0) }
+    );
+    expect(seen).toBe(new Date(T0).toISOString());
   });
 });

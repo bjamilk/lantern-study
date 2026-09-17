@@ -388,7 +388,11 @@ router.patch(
 router.post(
   '/orders/:id/payment-link',
   authMiddleware,
-  idempotencyMiddleware({ operation: 'marketplace_payment_link' }),
+  // #117: safe to replay after an abandoned claim. `createPaymentLinkOrder`
+  // writes no row and deliberately moves no status — its only side effect is the
+  // buyer's "payment requested" notification, so a second run costs one repeat
+  // notification and nothing else.
+  idempotencyMiddleware({ operation: 'marketplace_payment_link', leaseReclaim: true }),
   asyncHandler(async (req: IdempotentRequest, res: any) => {
     try {
       const { marketplacePaystackEnabled } = await import('../../services/marketplacePayments');

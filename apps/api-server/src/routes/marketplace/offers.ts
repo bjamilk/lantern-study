@@ -173,7 +173,11 @@ export async function attachOrdersToOffers<T extends Record<string, any>>(
 router.post(
   '/offers',
   authMiddleware,
-  idempotencyMiddleware({ operation: 'marketplace_create_offer' }),
+  // #117: safe to replay after an abandoned claim. The insert is covered by the
+  // one-pending-offer-per-buyer unique index, and the `23505` is caught below
+  // and answered with the offer the dead attempt created — so a second run
+  // returns that offer rather than making another.
+  idempotencyMiddleware({ operation: 'marketplace_create_offer', leaseReclaim: true }),
   asyncHandler(async (req: IdempotentRequest, res: any) => {
     const userId = req.user!.id!;
     const { listingId, amount, message } = req.body;
