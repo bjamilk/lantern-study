@@ -5,6 +5,33 @@
  * (`constructor` → `data/client.ts`'s `createDataClient`) and every route
  * handler in the server reaches Postgres and Storage through it.
  *
+ * ## STATUS: this file is now a pure facade
+ *
+ * As of monolith lane M1h it issues NO queries of its own. A repo-wide grep
+ * for `.from(` / `.rpc(` / `.storage.` / `.channel(` in this file returns
+ * nothing: every body lives in `services/data/*` and every one of the 382
+ * `SupabaseService` methods is a one-line delegation. Two things stayed behind
+ * deliberately:
+ *
+ *  - `getClient()`, the escape hatch callers still use to run their own query;
+ *  - `ratingColumnsBrokenUntil` + `ratingColumnsAvailable` /
+ *    `noteRatingColumnsMissing`, the per-INSTANCE circuit breaker for the
+ *    unapplied rating-column migration, which `supabase.reviewSignals.test.ts`
+ *    asserts per instance (`expect(self.ratingColumnsAvailable()).toBe(false)`)
+ *    and which is therefore injected into `data/marketplace.ts` rather than
+ *    moved there.
+ *
+ * So do not add a query here. Add it to the `services/data/*` module that owns
+ * the table, and delegate. The `deps` literal is always built INLINE at the
+ * call site, as arrows that read `this.<method>` at CALL time: the tests drive
+ * the prototype against bare stand-in objects, where an instance field would
+ * read as `undefined` and a `jest.spyOn` on the class would be bypassed.
+ *
+ * The 18-step decomposition plan (`TEAM-S1-api-structure.md` §3, P0) has one
+ * step left: delete the class and flip the importers to the domain modules.
+ * Until then this module is also carrying ~100 now-orphaned imports, kept so
+ * the deletion lane can sweep them in one pass.
+ *
  * ## The service role bypasses RLS
  *
  * The service-role key is a superuser credential: row-level security does not
