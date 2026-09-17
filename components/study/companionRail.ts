@@ -147,8 +147,22 @@ export function decideCompanionRail(input: {
   preference: CompanionRailPreference;
   request?: 'expand' | null;
 }): CompanionRailMode {
-  const fit = companionRailFit(input.rowWidth);
+  return companionRailMode(companionRailFit(input.rowWidth), input.preference, input.request);
+}
+
+/**
+ * The same decision, taken from a fit the hook has already computed.
+ *
+ * `useCompanionRail` keeps a FIT in state rather than a width, so that a resize
+ * that does not change the answer does not re-render the room; this is where it
+ * turns that fit into a mode.
+ */
+export function companionRailMode(
+  fit: CompanionRailFit,
+  preference: CompanionRailPreference,
+  request?: 'expand' | null
+): CompanionRailMode {
   if (!fit.fits) return 'none';
-  const wantsOpen = input.request === 'expand' || input.preference === 'open';
+  const wantsOpen = request === 'expand' || preference === 'open';
   return wantsOpen && fit.canDock ? 'docked' : 'collapsed';
 }
