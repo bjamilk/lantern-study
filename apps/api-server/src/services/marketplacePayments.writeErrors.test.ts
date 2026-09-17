@@ -15,14 +15,6 @@
  * the money suites' recording client, so a failure is modelled the way the real
  * one behaves: the await RESOLVES, nothing rejects, nothing catches.
  *
- * ## What this commit pins
- *
- * TODAY'S behaviour, which is that all three failures are invisible: the buyer
- * is sent to Paystack every time and nothing is logged. These expectations are
- * wrong on purpose. The next commit changes the code and flips them, so the
- * diff shows exactly which behaviour moved — and running this suite against
- * today's code proves the tests can tell the difference at all.
- *
  * ## The gotcha
  *
  * Every write in this flow goes to one of two tables, so "which call is this?"
@@ -167,7 +159,10 @@ describe('buy-now checkout, with every write succeeding', () => {
   });
 });
 
-describe('TODAY: the order-status write after the create RPC fails', () => {
+describe('the order-status write after the create RPC fails', () => {
+  // BEST-EFFORT: the RPC creates the order as `pending_payment`, and every
+  // reader on the payment path accepts both spellings, so the charge must go
+  // ahead — but the failure must be reported.
   it('still sends the buyer to Paystack', async () => {
     const { run } = await buyNow('order_status');
     const session = await run();
@@ -175,42 +170,60 @@ describe('TODAY: the order-status write after the create RPC fails', () => {
     expect(mockInitializePaystackTransaction).toHaveBeenCalledTimes(1);
   });
 
-  it('says nothing at all about the failure', async () => {
+  it('reports the failure', async () => {
     const { run } = await buyNow('order_status');
     await run();
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'marketplace_orders', op: 'update', code: '40001' }),
+    );
   });
 });
 
-describe('TODAY: the order → payment link fails', () => {
-  it('calls Paystack anyway, so the buyer is sent to pay for an unlinked order', async () => {
+describe('the order → payment link fails', () => {
+  // MUST-SUCCEED: nothing external has happened yet. Sending the buyer to pay
+  // for an order that does not point at the payment row means the webhook
+  // later settles a payment whose order was never linked.
+  it('does not call Paystack', async () => {
     const { run } = await buyNow('order_link');
-    const session = await run();
-    expect(session.authorizationUrl).toBe('https://checkout.paystack.com/acc_1');
-    expect(mockInitializePaystackTransaction).toHaveBeenCalledTimes(1);
+    await expect(run()).rejects.toThrow(/marketplace_orders/);
+    expect(mockInitializePaystackTransaction).not.toHaveBeenCalled();
   });
 
-  it('says nothing at all about the failure', async () => {
+  it('throws a typed WriteFailedError carrying the PostgREST code', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
     const { run } = await buyNow('order_link');
-    await run();
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    const error = await run().catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WriteFailedError);
+    expect((error as InstanceType<typeof WriteFailedError>).code).toBe('40001');
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({ orderId: 'ord_1', paymentId: 'pay_1' }),
+    );
   });
 
-  it('leaves the payment row it already inserted at `initialized`', async () => {
+  it('is not a PublicError, so the buyer is not told this was their mistake', async () => {
+    const { PublicError } = await import('../utils/safeError');
+    const { run } = await buyNow('order_link');
+    const error = await run().catch((err: unknown) => err);
+    expect(error).not.toBeInstanceOf(PublicError);
+  });
+
+  it('leaves the already-inserted payment row alone', async () => {
+    // Decided in docs/write-errors-plan.md: `initialized` already means "no
+    // money captured", nothing can settle a reference no session was opened
+    // for, and a second write on a failing path would have the same problem.
     const { run, calls } = await buyNow('order_link');
-    await run();
-    const inserted = calls.find(
-      (call) => call.table === 'marketplace_payments' && call.ops.some((op) => op.fn === 'insert'),
+    await run().catch(() => undefined);
+    const paymentWrites = calls.filter(
+      (call) => call.table === 'marketplace_payments' && call.ops.some((op) => op.fn === 'update'),
     );
-    expect(writePayload(inserted as Call, 'insert')).toEqual(
-      expect.objectContaining({ status: 'initialized' }),
-    );
+    expect(paymentWrites).toHaveLength(0);
   });
 });
 
-describe('TODAY: the access-code write after Paystack answers fails', () => {
+describe('the access-code write after Paystack answers fails', () => {
+  // BEST-EFFORT: the session is live and the response already carries the URL.
+  // Throwing here would strand a real Paystack charge the buyer never sees.
   it('still returns the authorization URL', async () => {
     const { run } = await buyNow('access_code');
     const session = await run();
@@ -218,10 +231,17 @@ describe('TODAY: the access-code write after Paystack answers fails', () => {
     expect(session.accessCode).toBe('acc_1');
   });
 
-  it('says nothing at all about the failure, so resume silently degrades', async () => {
+  it('reports the failure, because resume degrades without the stored code', async () => {
     const { run } = await buyNow('access_code');
     await run();
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({
+        table: 'marketplace_payments',
+        op: 'update',
+        paymentId: 'pay_1',
+        code: '40001',
+      }),
+    );
   });
 });

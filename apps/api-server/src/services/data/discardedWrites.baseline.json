@@ -18,7 +18,7 @@
   "services/marketplaceCheckout.ts": 2,
   "services/marketplaceFavoriteMilestones.ts": 1,
   "services/marketplaceOrders.ts": 9,
-  "services/marketplacePayments.ts": 27,
+  "services/marketplacePayments.ts": 24,
   "services/marketplaceQuestionBanks.ts": 2,
   "services/marketplaceSellerTools.ts": 1,
   "services/marketplaceStudyPacks.ts": 3,

@@ -93,6 +93,28 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
   return found;
 }
 
+/**
+ * Is the `await` at `index` the start of a STATEMENT, rather than an
+ * expression handed to something?
+ *
+ * The fixed shape puts the awaited write on its own line inside a call —
+ *
+ *   mustWrite(
+ *     await db.from('t').update(patch).eq('id', id),
+ *     ctx,
+ *   );
+ *
+ * — so "first thing on the line" is not enough: the result IS read, by the
+ * helper. A statement's `await` follows a statement boundary; an expression's
+ * follows an opening bracket, a comma or an operator.
+ */
+export function startsAStatement(src: string, index: number): boolean {
+  let i = index - 1;
+  while (i >= 0 && /\s/.test(src[i])) i -= 1;
+  if (i < 0) return true;
+  return !'(,=>:?&|+['.includes(src[i]);
+}
+
 /** `file → line numbers`, for the whole scanned tree. */
 export function scan(): Record<string, number[]> {
   const out: Record<string, number[]> = {};
@@ -102,10 +124,12 @@ export function scan(): Record<string, number[]> {
     const src = fs.readFileSync(file, 'utf8');
     // A bare awaited statement: start of a line, only whitespace before
     // `await`, up to the first `;`.
-    const statements = /(?:^|\n)[ \t]*await\s+([\s\S]*?);/g;
+    const statements = /(?:^|\n)([ \t]*)await\s+([\s\S]*?);/g;
     let match: RegExpExecArray | null;
     while ((match = statements.exec(src))) {
-      if (!isDiscardedWrite(match[1])) continue;
+      const awaitAt = match.index + (match[0].startsWith('\n') ? 1 : 0) + match[1].length;
+      if (!startsAStatement(src, awaitAt)) continue;
+      if (!isDiscardedWrite(match[2])) continue;
       const line = src.slice(0, match.index + 1).split('\n').length;
       (out[relative] ||= []).push(line);
     }
@@ -206,7 +230,24 @@ describe('the matcher recognises what it is for', () => {
     // The scan's own statement regex is what enforces this; pin it directly so
     // a change to it cannot start counting checked writes.
     const src = "const { error } = await db.from('t').insert({ a: 1 });\n";
-    const statements = /(?:^|\n)[ \t]*await\s+([\s\S]*?);/g;
+    const statements = /(?:^|\n)([ \t]*)await\s+([\s\S]*?);/g;
     expect(statements.exec(src)).toBeNull();
+  });
+
+  it('does not count a write handed to mustWrite / bestEffortWrite', () => {
+    // The fixed shape puts the awaited write on its own line INSIDE a call, so
+    // it is first on its line and would be counted without the statement check.
+    const fixed = [
+      "mustWrite(\n  await db.from('marketplace_orders').update(patch).eq('id', id),\n  ctx,\n);",
+      "bestEffortWrite(\n  await db.from('marketplace_payments').update(p).eq('id', id),\n  ctx,\n);",
+    ];
+    for (const src of fixed) {
+      const at = src.indexOf('await');
+      expect(startsAStatement(src, at)).toBe(false);
+    }
+    // …and a genuine statement still reads as one, after `;`, `{` and `}`.
+    for (const src of ['a();\nawait db.from(…)', '{\n  await db.from(…)', '}\nawait db.from(…)']) {
+      expect(startsAStatement(src, src.indexOf('await'))).toBe(true);
+    }
   });
 });

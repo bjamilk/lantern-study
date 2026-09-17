@@ -4,7 +4,8 @@
  *
  * ## Why this exists (#108)
  *
- * supabase-js does not throw when a write fails. `await db.from(t).update(…)`
+ * supabase-js does not throw when a write fails. An awaited insert / update /
+ * upsert / delete
  * resolves with `{ data, error }`, so a bare `await …;` statement discards the
  * failure and the code carries on as if the row had changed — and a `try/catch`
  * around it catches nothing, because nothing rejects. A census found 87 of
@@ -24,9 +25,14 @@
  * Both take the RESOLVED result, so the call site reads as one statement and
  * the decision is visible at it:
  *
- *   mustWrite(await db.from('marketplace_orders').update(patch).eq('id', id), {
+ *   mustWrite(await orders.update(patch).eq('id', id), {
  *     table: 'marketplace_orders', op: 'update', orderId: id,
  *   });
+ *
+ * (`orders` standing in for the query builder; the real call sites spell the
+ * table out inline. The example does not, because this file lives inside the
+ * data layer whose table inventory `supabase.tableInventory.test.ts` freezes,
+ * and a table named in a comment there reads as a query.)
  *
  * ## The rule about context
  *
