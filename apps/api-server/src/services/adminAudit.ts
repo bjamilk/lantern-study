@@ -34,6 +34,11 @@ export type AdminAuditAction =
   // state change; this is a privacy read — an admin opening a named student's
   // private companion conversation — and it is recorded for the same reason.
   | 'ai_companion_history_view'
+  // The second audited READ, for the same reason plus one of its own: it lists
+  // the marketplace rows whose money and record disagree (#113), which is the
+  // exact map of where the platform is vulnerable to a hand-made repair. Who
+  // looked at it, and when, is part of the money trail.
+  | 'marketplace_reconcile_view'
   | 'user_delete'
   | 'order_dispute_release_seller'
   | 'order_dispute_refund_buyer'

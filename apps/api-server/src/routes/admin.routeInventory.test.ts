@@ -130,7 +130,20 @@ const PRE_SPLIT_ROUTE_COUNT = 47;
  * code, it does not extend the surface. A new admin route lands here (with the
  * change that introduced it) or the guard fails.
  */
-const DOCUMENTED_ADDITIONS: string[] = [];
+const DOCUMENTED_ADDITIONS: string[] = [
+  // #113: the read-only marketplace reconciliation findings. It answers a URL
+  // the pre-split file never had, so it is recorded here, with the full
+  // registered chain below, in the commit that adds it.
+  'GET /marketplace/reconcile/findings',
+];
+
+/**
+ * The same additions as full surface lines (`METHOD /path [handlers]`), for the
+ * multiset assertion. Kept beside `DOCUMENTED_ADDITIONS` rather than derived
+ * from the live router: a reviewer should read the middleware chain a new admin
+ * route was registered with, not trust it.
+ */
+const DOCUMENTED_ADDITION_LINES: string[] = ['GET /marketplace/reconcile/findings [anon#0]'];
 
 /**
  * Non-route surface entries the refactor is allowed to have added — recorded
@@ -204,15 +217,19 @@ function samplePath(p: string): string {
 
 describe('admin router inventory', () => {
   it('registers the expected number of surface entries', () => {
-    expect(lines.length).toBe(preSplitInventory.length + DOCUMENTED_USE_ADDITIONS.length);
-    expect(entries.filter((e) => e.method !== 'USE').length).toBe(PRE_SPLIT_ROUTE_COUNT);
+    expect(lines.length).toBe(
+      preSplitInventory.length + DOCUMENTED_USE_ADDITIONS.length + DOCUMENTED_ADDITION_LINES.length,
+    );
+    expect(entries.filter((e) => e.method !== 'USE').length).toBe(
+      PRE_SPLIT_ROUTE_COUNT + DOCUMENTED_ADDITIONS.length,
+    );
   });
 
   it('is the same surface as before the refactor, bar the recorded changes', () => {
     // Multiset, not sequence: sub-routers mount in a different order than the
     // single file declared its routes. The shadow assertion below is what makes
     // that reordering provably irrelevant to Express resolution.
-    const expected = [...preSplitInventory, ...DOCUMENTED_USE_ADDITIONS];
+    const expected = [...preSplitInventory, ...DOCUMENTED_USE_ADDITIONS, ...DOCUMENTED_ADDITION_LINES];
     for (const [before, after] of EXPECTED_CHANGES) {
       const at = expected.indexOf(before);
       expect(at).toBeGreaterThanOrEqual(0);

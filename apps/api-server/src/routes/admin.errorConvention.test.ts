@@ -79,6 +79,9 @@ const EXPECTED_MAPPING: Record<string, Mapping> = {
   'PATCH /marketplace/listings/:id': 'legacy',
   'GET /learning-connections': 'legacy',
   'GET /marketplace/orders': 'legacy',
+  // #113: the read-only reconciliation findings. Registered with `adminRoute`
+  // like its marketplace neighbours, so it takes the legacy mapping.
+  'GET /marketplace/reconcile/findings': 'legacy',
   'PATCH /marketplace/orders/:id/dispute': 'dispute',
   'GET /reports': 'moderation',
   'PUT /reports/:id': 'moderation',
@@ -227,7 +230,10 @@ const routes = collectRoutes(router);
 
 describe('admin router error convention', () => {
   it('covers every registered route, and only registered routes', () => {
-    expect(routes.length).toBe(47);
+    // 47 at the split (M4), plus the one route added since: #113's read-only
+    // reconciliation findings. A route added without a line in EXPECTED_MAPPING
+    // fails the assertion below, which is the point.
+    expect(routes.length).toBe(48);
     expect(routes.map((r) => r.key).sort()).toEqual(Object.keys(EXPECTED_MAPPING).sort());
   });
 
