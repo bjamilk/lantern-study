@@ -15,10 +15,10 @@
  * and that union is what made it survive the extraction: in step 1 it was
  * `supabase.ts` alone, and with every later step the moved `.from("…")` calls
  * landed in `services/data/*` while the union stayed the same. The class is
- * deleted (lane M3) and `services/supabase.ts` now holds no queries at all, so
- * in practice this scans `services/data/**` — the file is still in the list
- * because a query appearing there again is exactly the regression the list is
- * for. THE FROZEN SET IS UNCHANGED; only this description is.
+ * deleted (lane M3) and the deprecated `services/supabase.ts` re-export shim
+ * that outlived it is deleted too (lane R1), so the union is now just
+ * `services/data/**`. THE FROZEN SET IS UNCHANGED; only this description and
+ * the now-empty first half of the union are.
  *
  * A table that appears in NEITHER after a move is a query that was lost, and
  * this test fails.
@@ -140,7 +140,7 @@ const FROZEN_DYNAMIC_TABLE_SITES: readonly string[] = [
 ];
 
 function dataLayerSources(): string[] {
-  const files = [path.join(SERVICES_DIR, 'supabase.ts')];
+  const files: string[] = [];
   if (fs.existsSync(DATA_DIR)) {
     const walk = (dir: string): void => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

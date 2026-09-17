@@ -164,7 +164,7 @@ import {
   CoverColumnMissingError,
   CoverStorageUnavailableError,
   isMissingCoverPathColumn,
-} from '../services/supabase';
+} from '../services/data/coverImages';
 import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import {
