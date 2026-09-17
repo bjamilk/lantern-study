@@ -90,14 +90,12 @@ import { authMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePinMessage, validatePagination } from '../middleware/validation';
 import type { DataLayer } from '../services/data';
-// Type only (erased at compile time): the three result shapes are still
-// re-exported by `services/supabase.ts` for this file. Every collaborator
-// below takes the data layer now.
-import type {
-  BoardRepostResult,
-  ChatMessageMutationResult,
-  MessagePinResult,
-} from '../services/supabase';
+// Type only (erased at compile time): the three result shapes come from the
+// data modules that define them. Every collaborator below takes the data
+// layer now.
+import type { BoardRepostResult } from '../services/data/boardActions';
+import type { ChatMessageMutationResult } from '../services/data/groupMessages';
+import type { MessagePinResult } from '../services/data/chatSend';
 import { CacheService } from '../services/cache';
 import {
   addMessageReaction,

@@ -25,7 +25,7 @@ import {
   COVER_IMAGE_MIGRATION,
   CoverColumnMissingError,
   isMissingCoverPathColumn,
-} from './supabase';
+} from './data/coverImages';
 import { createDataLayer } from './data';
 import { createDataClient } from './data/client';
 

@@ -124,10 +124,15 @@ class does.
 it, and every route family, middleware and service holds a `DataLayer` or a
 narrow slice of one.
 
-`services/supabase.ts` survives for one release as 57 lines of deprecated
-re-exports — thirteen module-scope names, each forwarded from the
-`services/data/*` module that owns it — so the importers of those names did not
-have to move in the same pull request. Move them; the file goes next release.
+`services/supabase.ts` is gone as well (lane R1). It outlived the class for one
+release as 57 lines of deprecated re-exports — thirteen module-scope names, each
+forwarded from the `services/data/*` module that owns it — so the importers of
+those names did not have to move in the same pull request. They have moved:
+every name is now imported from `data/coverImages`, `data/testMappers`,
+`data/client`, `data/boardActions`, `data/groupMessages` or `data/chatSend`
+directly, and there is no `services/supabase.ts` to import from. The
+`supabase.*.test.ts` suites keep their names, which are the history of what they
+were written against.
 
 What guards the shape from here:
 

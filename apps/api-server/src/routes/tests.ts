@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateTestConfig, validatePagination, validateUserId } from '../middleware/validation';
-import { buildAttemptTally } from '../services/supabase';
+import { buildAttemptTally } from '../services/data/testMappers';
 import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
