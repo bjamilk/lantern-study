@@ -14,11 +14,11 @@
  *  - `weakTopics` used to read `result.tagBreakdown`, a field nothing on this
  *    path produces, so it was always empty (#70). It is now tallied from the
  *    data the web actually has — `session.questions` + `session.userAnswers`
- *    — under the same rules the server companion uses
- *    (apps/api-server/src/services/companionWeakTopics.ts): untagged
- *    questions fall under "General", a tag needs 3 answered questions before
- *    it can be called weak, weak is under 60% accuracy, weakest first, five
- *    at most, from the 10 most recent sessions.
+ *    — under the ONE shared rule (`@lantern/shared/study/weakTopics`), which
+ *    the server companion uses too. The thresholds and the ordering live
+ *    there and nowhere here: all `deriveWeakTopics` below does is pick the 10
+ *    most recent sessions out of this side's oldest-first list and hand their
+ *    sessions to the shared tally.
  *  - The game and offline `currentScreen` cases used to name `AppMode.GAME`
  *    and `AppMode.OFFLINE`, neither of which is an enum member, so both read
  *    as `undefined` and never matched (#69). They now name the live members
@@ -40,65 +40,28 @@ import type {
 } from '../types';
 import type { Group } from '../types';
 import { getNoteStudyContent } from '@lantern/shared';
+import {
+    WEAK_TOPIC_SESSION_LIMIT,
+    buildTagBreakdown,
+    deriveWeakTopics as deriveWeakTopicsFromBreakdown,
+} from '@lantern/shared/study/weakTopics';
 import { parseAppRoute } from './appRoutes';
 
-/** A tag needs this many answered questions before it can be called weak. */
-export const WEAK_TOPIC_MIN_QUESTIONS = 3;
-/** Accuracy strictly below this (0..1) is weak. */
-export const WEAK_TOPIC_MAX_ACCURACY = 0.6;
-/** How many weak topics the companion context carries. */
-export const WEAK_TOPIC_LIMIT = 5;
-/** Sessions tallied — keeps the companion on current standing, not all-time. */
-export const WEAK_TOPIC_SESSION_LIMIT = 10;
-
-/** Explicit tags, else "General" — the same bucket the dashboards show. */
-function questionTags(question: { tags?: string[] | null }): string[] {
-    const tags = new Set<string>();
-    for (const tag of question.tags ?? []) {
-        if (typeof tag !== 'string') continue;
-        const trimmed = tag.trim();
-        if (trimmed) tags.add(trimmed);
-    }
-    return tags.size > 0 ? [...tags] : ['General'];
-}
-
 /**
- * Tags the student is weak on, weakest first, from their most recent sessions.
+ * The web's adapter onto the shared weak-topic rule.
  *
- * `testResults` is oldest-first on this path (the last entry is the newest
- * test), so the newest sessions are taken from the end.
+ * All this does is choose which sessions the rule sees: `testResults` is
+ * oldest-first on this path (the last entry is the newest test), so the newest
+ * sessions are taken from the END — the server's adapter slices the other end
+ * because its rows arrive newest-first. No threshold, ordering or cap lives
+ * here; they are all in `@lantern/shared/study/weakTopics`.
  */
 export function deriveWeakTopics(testResults: TestResult[]): string[] {
-    const breakdown = new Map<string, { total: number; correct: number }>();
-
-    for (const result of testResults.slice(-WEAK_TOPIC_SESSION_LIMIT)) {
-        const questions = result?.session?.questions;
-        const answers = result?.session?.userAnswers;
-        if (!Array.isArray(questions) || !answers) continue;
-
-        for (const question of questions) {
-            if (!question || typeof question.id !== 'string') continue;
-            const answer = answers[question.id];
-            // Same rule as the dashboard: an answer record means the question
-            // was attempted; isCorrect decides the tally.
-            if (!answer) continue;
-
-            for (const tag of questionTags(question)) {
-                const entry = breakdown.get(tag) ?? { total: 0, correct: 0 };
-                entry.total++;
-                if (answer.isCorrect) entry.correct++;
-                breakdown.set(tag, entry);
-            }
-        }
-    }
-
-    return [...breakdown.entries()]
-        .filter(([, stats]) => stats.total >= WEAK_TOPIC_MIN_QUESTIONS)
-        .map(([tag, stats]) => ({ tag, accuracy: stats.correct / stats.total }))
-        .filter(({ accuracy }) => accuracy < WEAK_TOPIC_MAX_ACCURACY)
-        .sort((a, b) => a.accuracy - b.accuracy || a.tag.localeCompare(b.tag))
-        .slice(0, WEAK_TOPIC_LIMIT)
-        .map(({ tag }) => tag);
+    return deriveWeakTopicsFromBreakdown(
+        buildTagBreakdown(
+            testResults.slice(-WEAK_TOPIC_SESSION_LIMIT).map((result) => result?.session),
+        ),
+    );
 }
 
 /** Exactly what App.tsx's memo closed over. */

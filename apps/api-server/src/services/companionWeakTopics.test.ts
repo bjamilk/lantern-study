@@ -1,8 +1,17 @@
+/**
+ * The API's half of the weak-topic proof.
+ *
+ * The rule itself now lives in `@lantern/shared/study/weakTopics` and is
+ * asserted there; the server's copy is gone. These cases are kept verbatim
+ * (only the import moved) so the API cannot lose the coverage it had, and so
+ * this suite also proves the new shared subpath resolves under the API's
+ * tsconfig `paths` and jest — the failure mode that only shows in CI.
+ */
 import {
   WEAK_TOPIC_LIMIT,
   buildTagBreakdown,
   deriveWeakTopics,
-} from './companionWeakTopics';
+} from '@lantern/shared/study/weakTopics';
 
 function q(id: string, tags?: string[]) {
   return tags ? { id, questionStem: id, tags } : { id, questionStem: id };
