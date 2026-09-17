@@ -1415,9 +1415,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const focusActivity: WorkspaceActivityId | null =
     focusMode && activity !== 'home' && activity !== 'add' ? activity : null;
 
-  // The global sidebar steps aside at lg+ while a studio is open, and comes
-  // back when the student leaves — unless they opened it themselves in the
-  // meantime, which the hook remembers. See hooks/useFocusSidebarCollapse.
+  // The left nav chrome steps aside at lg+ while a studio is open — BOTH the
+  // sidebar rail and the chats flyout column beside it, which defaults to open
+  // and is a further 320px — and comes back when the student leaves, unless
+  // they reopened it themselves in the meantime, which the hook remembers per
+  // panel. See hooks/useFocusSidebarCollapse.
   useFocusSidebarCollapse(focusMode);
 
   const roomMenu: SetRoomHeaderMenuItem[] = studySetId
