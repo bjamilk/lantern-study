@@ -151,7 +151,7 @@ router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), 
         const generated = await generateQuestionsFromNotes(notes, { count, difficulty, questionTypes, subject });
         await recordInference(req, 'generate-questions', generated);
         if (userId && legacyService()) {
-          await recordLearningEvent(legacyService(), {
+          await recordLearningEvent(dataLayer, {
             userId,
             eventType: 'question_generated',
             count: Array.isArray(generated.questions) ? generated.questions.length : 0,
@@ -329,7 +329,7 @@ router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards')
         });
         await recordInference(req, 'generate-flashcards', generated);
         if (userId && legacyService()) {
-          await recordLearningEvent(legacyService(), {
+          await recordLearningEvent(dataLayer, {
             userId,
             eventType: 'card_generated',
             count: Array.isArray(generated.flashcards) ? generated.flashcards.length : 0,

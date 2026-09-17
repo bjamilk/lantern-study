@@ -150,8 +150,7 @@ export class ClassSectionsService {
   }
 
   private topics() {
-    // TRANSITIONAL (M2d): `getCourseTopicsService` still takes the `SupabaseService` facade whole.
-    return getCourseTopicsService(this.data.legacyService);
+    return getCourseTopicsService(this.data);
   }
 
   private async withSectionSelect(

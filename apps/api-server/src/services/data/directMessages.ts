@@ -60,6 +60,7 @@
  * read `this.<method>` at CALL time. An instance field would read `undefined`
  * there.
  */
+import type { ConnectionInput as LearningConnectionInput } from "../learningConnections";
 import { logger } from "../../utils/logger";
 import { normalizeReactions } from "@lantern/shared/chat";
 import {
@@ -131,12 +132,14 @@ export type DirectMessageDeps = {
    * `getLearningConnectionsService(this).record(...)`. Injected because it
    * wants the `SupabaseService` instance, which this module must not import.
    */
-  recordLearningConnection: (input: {
-    actorId: string;
-    beneficiaryId: string;
-    kind: string;
-    objectId: string;
-  }) => Promise<void>;
+  /**
+   * TYPED (M3 Phase B): this used to be a hand-written shape with
+   * `kind: string`, and the bridge that supplied it passed `input as never` to
+   * get past the mismatch — so a `kind` outside `CONNECTION_KINDS`, which
+   * `record()` silently DROPS at runtime, compiled fine. It is the service's
+   * own input type now, and the cast is gone.
+   */
+  recordLearningConnection: (input: LearningConnectionInput) => Promise<void>;
 };
 
 export async function getDirectMessages(

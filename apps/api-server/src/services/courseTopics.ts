@@ -13,7 +13,14 @@
  * itself works (canonical, user-extendable) — a syllabus nobody may edit goes
  * stale the first time a lecturer changes the running order.
  */
-import type { SupabaseService } from './supabase';
+/**
+ * FLIPPED (monolith lane M3, Phase B): this module took the whole
+ * `SupabaseService` facade and reached exactly one member on it, `getClient()`.
+ * It takes `DataClientHost` instead, so a flipped caller hands over
+ * `dataLayer`; the facade satisfies the type structurally, so the call sites
+ * this lane has not reached yet keep working unchanged.
+ */
+import type { DataClientHost } from './data';
 import type { CourseTopic } from '@lantern/shared/types';
 import { TOPIC_TITLE_MAX } from '@lantern/shared/learning';
 import { isMissingRelationError } from './academicCourses';
@@ -51,10 +58,10 @@ function mapRow(row: any): CourseTopic {
 }
 
 export class CourseTopicsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: DataClientHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   private assertUuid(id: unknown, label: string): string {
@@ -308,7 +315,7 @@ export class CourseTopicsService {
 
 let service: CourseTopicsService | null = null;
 
-export function getCourseTopicsService(supabaseService: SupabaseService): CourseTopicsService {
-  if (!service) service = new CourseTopicsService(supabaseService);
+export function getCourseTopicsService(host: DataClientHost): CourseTopicsService {
+  if (!service) service = new CourseTopicsService(host);
   return service;
 }

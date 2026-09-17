@@ -55,7 +55,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getLearningConnectionsService(legacyService()).summaryForUser(userId);
+    const data = await getLearningConnectionsService(dataLayer).summaryForUser(userId);
     res.json({ success: true, data });
   })
 );

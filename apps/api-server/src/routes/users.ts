@@ -1094,7 +1094,7 @@ router.post(
     // `cover-images`, so an uploaded CV outlived the account — and the route
     // reported success anyway. The purge is now a paginated recursive walk, and
     // `deleteUserAccountFully` returns what it actually managed to erase.
-    const result = await deleteUserAccountFully(legacyService(), userId);
+    const result = await deleteUserAccountFully(dataLayer, userId);
     if (!result.found) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1205,7 +1205,7 @@ router.delete(
     // paginated, covering `job-resumes`, `cover-images` and solely-owned
     // `job-company-logos`, and reporting what it could not remove instead of
     // returning a bare success.
-    const result = await deleteUserAccountFully(legacyService(), userId);
+    const result = await deleteUserAccountFully(dataLayer, userId);
     const deleted = result.found;
 
     if (!deleted) {
@@ -1216,7 +1216,7 @@ router.delete(
     }
 
     if (requestingUserId !== userId && (await isLivePlatformAdmin(requestingUserId))) {
-      await logAdminAction(legacyService(), {
+      await logAdminAction(dataLayer, {
         actorId: requestingUserId,
         action: 'user_delete',
         targetType: 'user',

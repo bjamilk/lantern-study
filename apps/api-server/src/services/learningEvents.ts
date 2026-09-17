@@ -13,8 +13,15 @@
  * the analytics cookie, kept while the account exists, exported and deleted
  * with it (userDataLifecycle.ts). dataRetention.ts must NOT purge them.
  */
+/**
+ * FLIPPED (monolith lane M3, Phase B): this module took the whole
+ * `SupabaseService` facade and reached exactly one member on it, `getClient()`.
+ * It takes `DataClientHost` instead, so a flipped caller hands over
+ * `dataLayer`; the facade satisfies the type structurally, so the call sites
+ * this lane has not reached yet keep working unchanged.
+ */
 import type { Request } from 'express';
-import type { SupabaseService } from './supabase';
+import type { DataClientHost } from './data';
 import { logger } from '../utils/logger';
 import {
   LEARNING_EVENT_TARGET_TYPES,
@@ -182,7 +189,7 @@ let warnedMissingTable = false;
  * (they are the emitter's bug, not the student's problem).
  */
 export async function recordLearningEvents(
-  service: Pick<SupabaseService, 'getClient'>,
+  host: DataClientHost,
   inputs: ReadonlyArray<LearningEventInput>
 ): Promise<number> {
   let rows: LearningEventRow[];
@@ -198,7 +205,7 @@ export async function recordLearningEvents(
 
   let written = 0;
   try {
-    const client = service.getClient();
+    const client = host.getClient();
     for (let i = 0; i < rows.length; i += LEARNING_EVENTS_BATCH_CAP) {
       const chunk = rows.slice(i, i + LEARNING_EVENTS_BATCH_CAP);
       const { error } = await client.from(LEARNING_EVENTS_TABLE).insert(chunk);
@@ -232,10 +239,10 @@ export async function recordLearningEvents(
 
 /** Single-row convenience over recordLearningEvents (same never-throws contract). */
 export async function recordLearningEvent(
-  service: Pick<SupabaseService, 'getClient'>,
+  host: DataClientHost,
   input: LearningEventInput
 ): Promise<number> {
-  return recordLearningEvents(service, [input]);
+  return recordLearningEvents(host, [input]);
 }
 
 /** decks.course_id for course attribution on card events; null on any failure. */
@@ -250,12 +257,12 @@ export async function recordLearningEvent(
  * Never throws — a review must never fail on telemetry.
  */
 export async function lookupDeckOwnerAndCourse(
-  service: Pick<SupabaseService, 'getClient'>,
+  host: DataClientHost,
   deckId: unknown
 ): Promise<{ ownerId: string | null; courseId: string | null }> {
   if (!isUuidLike(deckId)) return { ownerId: null, courseId: null };
   try {
-    const { data, error } = await service
+    const { data, error } = await host
       .getClient()
       .from('decks')
       .select('user_id, course_id')
@@ -272,12 +279,12 @@ export async function lookupDeckOwnerAndCourse(
 }
 
 export async function lookupDeckCourseId(
-  service: Pick<SupabaseService, 'getClient'>,
+  host: DataClientHost,
   deckId: unknown
 ): Promise<string | null> {
   if (!isUuidLike(deckId)) return null;
   try {
-    const { data, error } = await service
+    const { data, error } = await host
       .getClient()
       .from('decks')
       .select('course_id')
@@ -390,7 +397,7 @@ export function buildQuestionAnsweredEvents(
  * cheaper than a lost session.
  */
 export async function recordTestSessionAnswers(
-  service: Pick<SupabaseService, 'getClient'>,
+  host: DataClientHost,
   params: { session: TestSessionRowForEvents | null | undefined; userId: string; surface?: LearningSurface | null }
 ): Promise<{ inserted: number; skipped: boolean }> {
   const session = params.session;
@@ -411,7 +418,7 @@ export async function recordTestSessionAnswers(
   if (events.length === 0) return { inserted: 0, skipped: false };
 
   try {
-    const { data, error } = await service
+    const { data, error } = await host
       .getClient()
       .from(LEARNING_EVENTS_TABLE)
       .select('id')
@@ -426,7 +433,7 @@ export async function recordTestSessionAnswers(
     /* fall through and insert */
   }
 
-  const inserted = await recordLearningEvents(service, events);
+  const inserted = await recordLearningEvents(host, events);
 
   // North-star metric (Phase 3 · O) — `group_question_answered`.
   //
@@ -438,7 +445,7 @@ export async function recordTestSessionAnswers(
   //
   // Placed after the once-per-session guard above, so a client calling both
   // completion paths cannot double-write.
-  void recordGroupQuestionConnections(service, events, params.userId).catch(() => {});
+  void recordGroupQuestionConnections(host, events, params.userId).catch(() => {});
 
   return { inserted, skipped: false };
 }
@@ -452,7 +459,7 @@ export async function recordTestSessionAnswers(
  * self-connections, so answering your own question is naturally ignored).
  */
 async function recordGroupQuestionConnections(
-  service: Pick<SupabaseService, 'getClient'>,
+  host: DataClientHost,
   events: LearningEventInput[],
   userId: string
 ): Promise<void> {
@@ -473,7 +480,7 @@ async function recordGroupQuestionConnections(
   if (questionIds.length === 0) return;
 
   try {
-    const { data, error } = await service
+    const { data, error } = await host
       .getClient()
       .from('messages')
       .select('id, sender_id')
@@ -505,7 +512,7 @@ async function recordGroupQuestionConnections(
     const bounded = authors.slice(0, 25);
 
     const { getLearningConnectionsService } = await import('./learningConnections');
-    const connections = getLearningConnectionsService(service as never);
+    const connections = getLearningConnectionsService(host);
     await Promise.all(
       bounded.map((authorId) =>
         connections.record({

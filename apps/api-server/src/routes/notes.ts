@@ -241,8 +241,8 @@ import { logger } from '../utils/logger';
 import { processImageForUpload } from '../services/imageProcessing';
 import { storageThumbPath } from '@lantern/shared/utils/storageUrl';
 import { isFlashcardTypeMix } from '@lantern/shared/flashcards';
-// TRANSITIONAL (M2b): `recordLearningEvent` takes the `SupabaseService` whole — called with
-// `legacyService()` (4 sites). `surfaceFromRequest` is pure.
+// `recordLearningEvent` takes a `DataClientHost` since M3 Phase B and is called
+// with `dataLayer` (4 sites). `surfaceFromRequest` is pure.
 import { recordLearningEvent, surfaceFromRequest } from '../services/learningEvents';
 
 const router = Router();
@@ -3064,7 +3064,7 @@ router.get('/:noteId', validateNoteId, handleValidationErrors, asyncHandler(asyn
   const attachments = await dataLayer.notes.getNoteAttachments(req.params.noteId);
   // learning_events: resource_opened — the single-note fetch is the "opened
   // a note" signal (list/search reads are not). Never throws.
-  await recordLearningEvent(legacyService(), {
+  await recordLearningEvent(dataLayer, {
     userId,
     eventType: 'resource_opened',
     targetType: 'note',
@@ -3408,7 +3408,7 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
         topic: q.topic,
       }));
       // learning_events: question_generated with count + note. Never throws.
-      await recordLearningEvent(legacyService(), {
+      await recordLearningEvent(dataLayer, {
         userId,
         eventType: 'question_generated',
         targetType: 'note',
@@ -3548,7 +3548,7 @@ router.post(
       requestId: (req as { requestId?: string }).requestId,
     });
 
-    await recordLearningEvent(legacyService(), {
+    await recordLearningEvent(dataLayer, {
       userId,
       eventType: 'question_generated',
       targetType: 'note',
@@ -3633,7 +3633,7 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
         difficulty,
       });
       // learning_events: card_generated with count + note. Never throws.
-      await recordLearningEvent(legacyService(), {
+      await recordLearningEvent(dataLayer, {
         userId,
         eventType: 'card_generated',
         targetType: 'note',

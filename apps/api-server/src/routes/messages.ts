@@ -1069,7 +1069,7 @@ router.post(
     // learning_events: group_question_posted (type QUESTION only; plain chat
     // is not learning activity). course_id from the group. Never throws.
     if (String(message?.type || '').toUpperCase() === 'QUESTION') {
-      await recordLearningEvent(legacyService(), {
+      await recordLearningEvent(dataLayer, {
         userId,
         eventType: 'group_question_posted',
         targetType: 'question',
@@ -1800,7 +1800,7 @@ router.post(
     // 'up' counts. Actor = the question's author (they did the helping).
     if (voteType === 'up' && authorized.sender_id) {
       const { getLearningConnectionsService } = await import('../services/learningConnections');
-      await getLearningConnectionsService(legacyService()).record({
+      await getLearningConnectionsService(dataLayer).record({
         actorId: authorized.sender_id,
         beneficiaryId: userId,
         kind: 'question_voted',
@@ -2115,7 +2115,7 @@ router.put(
     // question_verified connection.
     if (questionStatus === 'VERIFIED' && authorized.type === 'QUESTION' && authorized.sender_id) {
       const { getLearningConnectionsService } = await import('../services/learningConnections');
-      await getLearningConnectionsService(legacyService()).record({
+      await getLearningConnectionsService(dataLayer).record({
         actorId: authorized.sender_id,
         beneficiaryId: userId,
         kind: 'question_verified',

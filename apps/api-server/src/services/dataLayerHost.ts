@@ -5,7 +5,7 @@
  * ## Purpose
  *
  * `services/data/index.ts` builds every `deps` literal the data modules need.
- * Seven of those deps cannot be built from the data layer alone, and this
+ * Four of those deps cannot be built from the data layer alone, and this
  * module is the one place that admits it.
  *
  * It held fifteen until monolith lane M3. The five bodies that never left the
@@ -17,8 +17,10 @@
  * `legacyService`:
  *
  *  1. SERVICES THAT TAKE THE WHOLE `SupabaseService` — `marketplaceOrders`,
- *     `marketplaceSellerTools`, `marketplaceFavoriteAlerts`,
- *     `learningConnections`, `userDataLifecycle`, `courseTopics`. The bodies
+ *     `marketplaceSellerTools` and `marketplaceFavoriteAlerts`.
+ *     `courseTopics`, `learningConnections` and `userDataLifecycle` left in
+ *     M3 Phase B: they take `DataClientHost` now, which the layer satisfies,
+ *     so it builds those arrows itself. The bodies
  *     here are the facade's own inline arrows, moved verbatim, lazy `import()`
  *     included — the import still happens when the dep is CALLED, never at
  *     module load, which is what keeps the cycle out of the boot path.
@@ -42,15 +44,6 @@ export function createDataLayerHost(service: SupabaseService): DataLayerHost {
   return {
     legacyService: service,
 
-    resolveTopicForArtefact: async (topicId, courseId) => {
-      const { getCourseTopicsService } = await import('./courseTopics');
-      return getCourseTopicsService(service).resolveForArtefact(topicId, courseId);
-    },
-
-    recordLearningConnection: async (input) => {
-      const { getLearningConnectionsService } = await import('./learningConnections');
-      await getLearningConnectionsService(service).record(input as never);
-    },
     createOrderFromBuyNow: async (lid, buyerId, couponCode, quantity) => {
       const { getMarketplaceOrdersService } = await import('./marketplaceOrders');
       return getMarketplaceOrdersService(service).createOrderFromBuyNow(
@@ -77,10 +70,5 @@ export function createDataLayerHost(service: SupabaseService): DataLayerHost {
       const { notifyListingBackAvailable } = await import('./marketplaceFavoriteAlerts');
       await notifyListingBackAvailable(service, listing, previousStatus);
     },
-
-    deleteUserAccountFully: async (userId) =>
-      (await import('./userDataLifecycle')).deleteUserAccountFully(service, userId),
-    exportUserDataArchive: async (userId) =>
-      (await import('./userDataLifecycle')).exportUserDataArchive(service, userId),
   };
 }

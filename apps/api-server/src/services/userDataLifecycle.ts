@@ -51,9 +51,16 @@
  * and the routes answer 207 `PARTIAL_DELETION` when `ok` is false, so support
  * can finish by hand instead of a green 200 hiding files left in a bucket.
  */
+/**
+ * FLIPPED (monolith lane M3, Phase B): this module took the whole
+ * `SupabaseService` facade and reached exactly one member on it, `getClient()`.
+ * It takes `DataClientHost` instead, so a flipped caller hands over
+ * `dataLayer`; the facade satisfies the type structurally, so the call sites
+ * this lane has not reached yet keep working unchanged.
+ */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../utils/logger';
-import type { SupabaseService } from './supabase';
+import type { DataClientHost } from './data';
 import { cacheService } from './cache';
 import { resetAIUsageForUser } from '../middleware/aiRateLimit';
 
@@ -511,10 +518,10 @@ async function purgeUserDmData(
  * user's own data.
  */
 export async function exportUserDataArchive(
-  supabaseService: SupabaseService,
+  host: DataClientHost,
   userId: string
 ): Promise<Record<string, unknown>> {
-  const client = supabaseService.getClient();
+  const client = host.getClient();
 
   const [
     profileRes,
@@ -647,10 +654,10 @@ export async function exportUserDataArchive(
  * `PARTIAL_DELETION` code when `ok` is false so support can finish by hand.
  */
 export async function deleteUserAccountFully(
-  supabaseService: SupabaseService,
+  host: DataClientHost,
   userId: string
 ): Promise<DeleteUserAccountResult> {
-  const client = supabaseService.getClient();
+  const client = host.getClient();
   const failures: DeletionFailure[] = [];
   const skipped: DeletionSkip[] = [];
   const empty = {

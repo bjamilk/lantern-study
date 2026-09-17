@@ -728,8 +728,7 @@ export class ChallengeService {
       // above, so a replayed request cannot double-write.
       {
         const { getLearningConnectionsService } = await import('./learningConnections');
-        // TRANSITIONAL (M2d): `getLearningConnectionsService` still takes the `SupabaseService` facade whole.
-        const connections = getLearningConnectionsService(this.data.legacyService);
+        const connections = getLearningConnectionsService(this.data);
         await Promise.all([
           connections.record({
             actorId: challenge.challengerId,

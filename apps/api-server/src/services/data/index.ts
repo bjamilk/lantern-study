@@ -98,16 +98,28 @@ export type DataLayerHost = {
    * (`getCommunitiesService`, `getActivityFeedService`, …).
    */
   legacyService: SupabaseService;
-  /** `getCourseTopicsService(service).resolveForArtefact`. */
-  resolveTopicForArtefact: academicData.ResolveTopicForArtefact;
-  recordLearningConnection: marketplaceData.MarketplaceDeps["recordLearningConnection"];
   createOrderFromBuyNow: marketplaceData.MarketplaceDeps["createOrderFromBuyNow"];
   createOrderFromOfferAccept: marketplaceData.MarketplaceDeps["createOrderFromOfferAccept"];
   consumeBoostCredit: marketplaceData.MarketplaceDeps["consumeBoostCredit"];
   notifyListingBackAvailable: marketplaceData.MarketplaceDeps["notifyListingBackAvailable"];
-  deleteUserAccountFully: usersData.DeleteAccountDeps["deleteUserAccountFully"];
-  exportUserDataArchive: usersData.ExportAccountDeps["exportUserDataArchive"];
 };
+
+/**
+ * What a `services/*` module needs when all it wants is the service-role
+ * client: `getClient()`, and nothing else.
+ *
+ * Most of the nineteen services frozen by the facade (`services-flip-plan.md`)
+ * took the whole `SupabaseService` and reached exactly one member on it. They
+ * take this instead (monolith lane M3, Phase B), so a flipped caller hands
+ * over `dataLayer` itself. `SupabaseService` satisfies it structurally too,
+ * which is what lets call sites this lane has not reached keep working
+ * unchanged — nothing has to move twice, and the alias dies with the class.
+ *
+ * A service that reaches a DOMAIN method does NOT get this type: it takes the
+ * namespaces it uses (`Pick<DataLayer, "getClient" | "notifications">`) or the
+ * whole `DataLayer`, so that the compiler still checks the call.
+ */
+export type DataClientHost = Pick<DataLayer, "getClient">;
 
 export type CreateDataLayerOptions = {
   client: DataClient;
@@ -217,8 +229,30 @@ export function createDataLayer(options: CreateDataLayerOptions) {
       const { getLearningConnectionsService } = await import(
         "../learningConnections"
       );
-      await getLearningConnectionsService(host.legacyService).record(input);
+      await getLearningConnectionsService(layer).record(input);
     };
+  // Four deps that used to come off `DataLayerHost` and now do not: their
+  // services were flipped onto `DataClientHost` (M3 Phase B), which `layer`
+  // satisfies, so the layer builds them for itself and the bridge shrinks.
+  const resolveTopicForArtefact: academicData.ResolveTopicForArtefact = async (
+    topicId,
+    courseId,
+  ) => {
+    const { getCourseTopicsService } = await import("../courseTopics");
+    return getCourseTopicsService(layer).resolveForArtefact(topicId, courseId);
+  };
+  const deleteUserAccountFully: usersData.DeleteAccountDeps["deleteUserAccountFully"] =
+    async (userId) =>
+      (await import("../userDataLifecycle")).deleteUserAccountFully(
+        layer,
+        userId,
+      );
+  const exportUserDataArchive: usersData.ExportAccountDeps["exportUserDataArchive"] =
+    async (userId) =>
+      (await import("../userDataLifecycle")).exportUserDataArchive(
+        layer,
+        userId,
+      );
   const recordActivity: notesData.NotesDeps["recordActivity"] = async (input) => {
     const { getActivityFeedService } = await import("../activityFeed");
     // TRANSITIONAL (M3): `activityFeed` still takes the facade whole.
@@ -286,7 +320,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     enrichDmMessageReceipts: (messages, threadId, uid, otherId) => layer.chatSend.enrichDmMessageReceipts(messages, threadId, uid, otherId),
     isDmBlockedBetween: (a, b) => layer.directMessages.isDmBlockedBetween(a, b),
     normalizeMessageRecord: (row) => layer.mappers.normalizeMessageRecord(row),
-    recordLearningConnection: host.recordLearningConnection,
+    recordLearningConnection,
     resolveThreadRootForReply: (table, replyToMessageId, scope) => layer.chatSend.resolveThreadRootForReply(table, replyToMessageId, scope),
   };
   const gamificationDeps: gamificationData.GamificationDeps = {
@@ -361,7 +395,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     notifyListingBackAvailable: host.notifyListingBackAvailable,
     pickCompactListingFields: (l) => layer.marketplace.pickCompactListingFields(l),
     ratingColumnsAvailable: () => layer.marketplace.ratingColumnsAvailable(),
-    recordLearningConnection: host.recordLearningConnection,
+    recordLearningConnection,
     resolveArtefactTopic: (input) => layer.academic.resolveArtefactTopic(input),
     signSimilarListingCards: (l) => layer.marketplace.signSimilarListingCards(l),
     signStorageDisplayUrls: (refs, options) => layer.storageAcl.signStorageDisplayUrls(refs, options),
@@ -466,17 +500,17 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     isDmThreadParticipant: (tid, uid) => layer.groups.isDmThreadParticipant(tid, uid),
   };
   const deleteAccountDeps: usersData.DeleteAccountDeps = {
-    deleteUserAccountFully: (uid) => host.deleteUserAccountFully(uid),
+    deleteUserAccountFully: (uid) => deleteUserAccountFully(uid),
   };
   const exportAccountDeps: usersData.ExportAccountDeps = {
-    exportUserDataArchive: (uid) => host.exportUserDataArchive(uid),
+    exportUserDataArchive: (uid) => exportUserDataArchive(uid),
   };
 
   // --- namespaces -----------------------------------------------------------
 
   layer.getClient = () => client;
   layer.legacyService = host.legacyService;
-  layer.academic = createAcademicApi(client, host);
+  layer.academic = createAcademicApi(client, resolveTopicForArtefact);
   layer.adminAnalytics = createAdminAnalyticsApi(client);
   layer.boardActions = createBoardActionsApi(client, boardActionsDeps);
   layer.categories = createCategoriesApi(client);
@@ -503,13 +537,13 @@ export function createDataLayer(options: CreateDataLayerOptions) {
 
 function createAcademicApi(
   client: DataClient,
-  host: DataLayerHost,
+  resolveTopicForArtefact: academicData.ResolveTopicForArtefact,
 ) {
   return {
     resolveCourseIdFromConfigLike: academicData.resolveCourseIdFromConfigLike,
     resolveStudySetIdFromConfigLike: academicData.resolveStudySetIdFromConfigLike,
-    resolveArtefactTopic: bindDeps(host.resolveTopicForArtefact, academicData.resolveArtefactTopic),
-    resolveArtefactTopicPatch: bindDbDeps(client, host.resolveTopicForArtefact, academicData.resolveArtefactTopicPatch),
+    resolveArtefactTopic: bindDeps(resolveTopicForArtefact, academicData.resolveArtefactTopic),
+    resolveArtefactTopicPatch: bindDbDeps(client, resolveTopicForArtefact, academicData.resolveArtefactTopicPatch),
     currentArtefactCourseId: bindDb(client, academicData.currentArtefactCourseId),
     writeWithTopicFallback: academicData.writeWithTopicFallback,
   };
