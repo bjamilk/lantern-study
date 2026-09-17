@@ -414,8 +414,13 @@ function scanBareEmbeds(): Record<string, number> {
 const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   // --- Aggregate embeds: `table(count)`. Reverse embeds used only to count
   //     rows; safe while the counted table has a single FK back to the source.
-  'services/supabase.ts::marketplace_favorites': 2,
-  'services/supabase.ts::marketplace_inquiries': 2,
+  // The seller-dashboard `favorites_count:` / `inquiries_count:` embeds
+  // (getListingsBySeller) and the `favorites:` / `inquiries:` ones
+  // (getSellerStats) moved verbatim out of supabase.ts into the marketplace
+  // repository (monolith lane M1h). Same queries, new file: the rows moved with
+  // them rather than any count changing — supabase.ts drops to zero for both.
+  'services/data/marketplace.ts::marketplace_favorites': 2,
+  'services/data/marketplace.ts::marketplace_inquiries': 2,
 
   // --- Marketplace listing embeds (marketplace lane owns the domain logic and
   //     the per-source constraint names). Single FK via *_listing_id today:
@@ -432,7 +437,13 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   'services/marketplaceOrders.ts::marketplace_listings': 16,
   'services/marketplaceOrders.ts::marketplace_transactions': 15,
   'services/studyPackFactory.ts::marketplace_listings': 1,
-  'services/supabase.ts::marketplace_listings': 6,
+  // The favourites embed (getUserFavorites) and the five inquiry embeds
+  // (createInquiry, getInquiryByListingAndBuyer, getSellerInquiries,
+  // getBuyerInquiries, getInquiryByThread) moved verbatim out of supabase.ts
+  // into the marketplace repository (monolith lane M1h). Same queries, new
+  // file: the rows moved with them rather than the count changing —
+  // supabase.ts drops from 6 to zero.
+  'services/data/marketplace.ts::marketplace_listings': 6,
 
   // --- Jobs board (jobs lane). Membership/company/posting joins, single FK
   //     each today.
