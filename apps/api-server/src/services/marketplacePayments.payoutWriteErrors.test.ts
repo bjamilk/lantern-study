@@ -16,7 +16,9 @@
  *    re-delivers, while the INLINE call right after a successful transfer must
  *    not 500 a buyer's confirm-received for a payout that actually worked.
  *
- * Both callers of both functions are driven below.
+ * Both callers of both functions are driven below, and they are asserted to
+ * behave OPPOSITELY on the same failing write: the webhook rejects, the inline
+ * call carries on and reports.
  */
 import { scriptedDb, writePayload, type Call } from '../testSupport/scriptedDb';
 
@@ -178,37 +180,92 @@ describe('a single-order payout, with every write succeeding', () => {
   });
 });
 
-describe('TODAY: a payout write failing', () => {
-  it('reports the payout as done when the transfer code was never stamped', async () => {
-    // The money has left. Nothing records where it went, and nothing is logged.
+const MONEY_MOVED = 'Database write failed AFTER the money moved; needs reconciliation';
+
+describe('a payout write failing after the money moved', () => {
+  it('still reports the payout as done when the transfer code cannot be stamped', async () => {
+    // MONEY ALREADY MOVED: throwing would be a lie, and a retry could transfer
+    // twice. The claim marker is deliberately left in place so a later
+    // transfer.success can still be reconciled by reference.
     const { service } = await serviceFor('transfer_stamp');
     await expect(service.forcePayoutForOrder('ord_1')).resolves.toBeUndefined();
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({ table: 'marketplace_payments', paymentId: 'pay_1', orderId: 'ord_1' }),
+    );
   });
 
-  it('says nothing when the rollback after a failed transfer fails', async () => {
-    // The payment is left at `payout_pending` holding a claim marker no webhook
-    // can match: the seller is never paid and the buyer's refund is refused
-    // with "Payout in progress".
+  it('reports that stamp under the stable fingerprint, tagged with both ids', async () => {
+    const { service } = await serviceFor('transfer_stamp');
+    await service.forcePayoutForOrder('ord_1');
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        fingerprint: ['money-moved-write-failed:marketplace_payments:update'],
+        tags: expect.objectContaining({ orderId: 'ord_1', paymentId: 'pay_1' }),
+      }),
+    );
+  });
+
+  it('reports a failed rollback and still rethrows the transfer error', async () => {
+    // The transfer call threw, which usually means it never reached Paystack —
+    // but a timeout after the request landed looks identical from here. The
+    // caller needs the transfer error, not this one.
     mockInitiatePaystackTransfer.mockRejectedValue(new Error('paystack timeout'));
     const { service } = await serviceFor('rollback');
     await expect(service.forcePayoutForOrder('ord_1')).rejects.toThrow(/paystack timeout/);
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({ reason: 'payout_rollback', paymentId: 'pay_1' }),
+    );
   });
 
-  it('says nothing when the payment could not be marked paid_out inline', async () => {
+  it('does NOT 500 the buyer when the inline paid_out write fails', async () => {
+    // `forcePayoutForOrder` and `payoutOnConfirmReceived` both reach this
+    // inline. The transfer worked; answering the buyer an error for it would
+    // be the wrong lie.
     const { service } = await serviceFor('paid_out');
     await expect(service.forcePayoutForOrder('ord_1')).resolves.toBeUndefined();
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({ table: 'marketplace_payments', paymentId: 'pay_1' }),
+    );
   });
 
-  it('answers ok to a transfer.success WEBHOOK that could not be recorded', async () => {
-    // Paystack is told the event is handled, so it never re-delivers, and the
-    // payment stays `payout_pending` for money the seller already has.
+  it('confirm-received still completes for the buyer when the inline write fails', async () => {
+    // The same site through the caller that actually faces a user.
     const { service } = await serviceFor('paid_out');
-    await expect(service.handleWebhook(TRANSFER_SUCCESS, 'sig')).resolves.toEqual(
-      expect.objectContaining({ ok: true }),
+    await expect(service.payoutOnConfirmReceived('ord_1', 'buyer_1')).resolves.toEqual(
+      expect.objectContaining({ status: 'completed' }),
     );
+    expect(mockReleaseEscrow).toHaveBeenCalledWith('ord_1', 'buyer_1');
+  });
+});
+
+describe('the same write, reached by the transfer.success WEBHOOK', () => {
+  it('REJECTS so Paystack retries', async () => {
+    // Opposite need, same write: a webhook that cannot record the payout should
+    // come back, and the CAS makes re-delivery a no-op once it has succeeded.
+    const { service } = await serviceFor('paid_out');
+    await expect(service.handleWebhook(TRANSFER_SUCCESS, 'sig')).rejects.toThrow(
+      /marketplace_payments/,
+    );
+  });
+
+  it('does not stamp the event processed when it could not record the payout', async () => {
+    const { service, calls } = await serviceFor('paid_out');
+    await service.handleWebhook(TRANSFER_SUCCESS, 'sig').catch(() => undefined);
+    const stamped = calls.some(
+      (call) =>
+        call.table === 'paystack_webhook_events' &&
+        call.ops.some((op) => op.fn === 'update'),
+    );
+    expect(stamped).toBe(false);
+  });
+
+  it('reports nothing to Sentry, because this one is retried rather than reconciled', async () => {
+    const { service } = await serviceFor('paid_out');
+    await service.handleWebhook(TRANSFER_SUCCESS, 'sig').catch(() => undefined);
+    expect(captureScopedException).not.toHaveBeenCalled();
   });
 });
