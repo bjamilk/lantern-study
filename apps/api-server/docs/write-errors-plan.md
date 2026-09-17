@@ -17,11 +17,11 @@ so does a `try/catch` wrapped around one.
    | shape | how it is found | today |
    |---|---|---|
    | `bare` — bare awaited `.from('t').update(…)`, incl. the GoTrue writes | statement scan | 87 |
-   | `helper` — bare awaited call to a function returning `Promise<{ error … }>` | return-type annotations, then call sites | 2 (`routes/auth.ts:525`, `:559` → `signOutUserGlobally`, #110) |
-   | `chain` — a write chain parked in a variable, awaited through an expression | identifiers assigned a write chain (functions excluded), then bare awaits naming them | 1 (`routes/marketplace/orders.ts:336`, #111) |
+   | `helper` — bare awaited call to a function returning `Promise<{ error … }>` | return-type annotations, then call sites | 3 (`routes/auth.ts:525`, `:559` → `signOutUserGlobally`, #110; `routes/marketplace/orders.ts:339` → `updateOrderFieldsAsParty`, #111) |
+   | `chain` — a write chain parked in a variable, awaited through an expression | identifiers assigned a write chain (functions excluded), then bare awaits naming them | **0** — #111 moved the one R2 found behind `updateOrderFieldsAsParty`, where it reads as `helper`; the detector stays, with a fixture |
    | `unread` — destructured, `error` never read in the enclosing scope or never bound | brace-counted scope walk | **0** |
 
-   The true floor is **90 in 30 files**, of which this PR fixes 3. `unread` being zero is a
+   The true floor is **90 in 30 files**, of which this PR fixes 3 (baseline: 87). `unread` being zero is a
    real finding, not a dead detector — this codebase checks when it destructures; the three
    apparent hits before comment-blanking were the bug above. Two `.then` spellings go
    opposite ways: `data/boardActions.ts:780` ends in `.then(({ error }) => …)`, a real
@@ -115,10 +115,11 @@ each BE · `adminAudit` 1 **MS** (an audit log that can vanish is not one) · `a
 `companionConversations`, `creators`, `data/categories`, `data/directMessages`,
 `data/marketplace`, `data/readState`, `jobAlerts`, `marketplaceFavoriteMilestones`,
 `marketplaceSellerTools` 1 each BE. Plus the two non-bare shapes, both in routes and both
-already marked `KNOWN ISSUE`: `routes/auth.ts` 2 (`signOutUserGlobally`, **BE** — the
-session cutoff written first is what actually revokes, so this is a reporting gap, not an
-integrity one) and `routes/marketplace/orders.ts` 1 (`updateOrderFieldsAsParty`, **MS** —
-the handler answers success for a meeting point and note that may have saved nothing).
+already marked `KNOWN ISSUE` and both the `helper` shape: `routes/auth.ts` 2
+(`signOutUserGlobally`, **BE** — the session cutoff written first is what actually revokes,
+so this is a reporting gap, not an integrity one) and `routes/marketplace/orders.ts` 1
+(`updateOrderFieldsAsParty`, **MS** — the handler answers success for a meeting point and
+note that may have saved nothing).
 
 ## Order of work
 

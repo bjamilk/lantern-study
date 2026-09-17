@@ -240,7 +240,7 @@ export function errorReturningHelpers(sources: Array<{ src: string }>): Set<stri
  *   const scoped = supabase.from("marketplace_orders").update(patch).eq(…);
  *   await (isSeller ? scoped.eq("seller_id", id) : scoped.eq("buyer_id", id));
  */
-function chainVariables(src: string): Set<string> {
+export function chainVariables(src: string): Set<string> {
   const names = new Set<string>();
   const assignment = /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*([\s\S]*?);/g;
   let match: RegExpExecArray | null;
@@ -379,18 +379,21 @@ describe('discarded write errors do not grow', () => {
     expect(Object.keys(current)).toContain('services/marketplacePayments.ts');
   });
 
-  it('still finds the two shapes the bare-await regex cannot see', () => {
-    // Both were found by lane R2 and are the reason the scan is more than one
-    // regex. If either count reaches zero because a detector rotted rather than
-    // because the site was fixed, the ratchet's decrease check fires first —
-    // but this says which shape went missing.
+  it('still finds the shape the bare-await regex cannot see', () => {
+    // `await dataLayer.users.signOutUserGlobally(id)` (#110) and
+    // `await dataLayer.marketplace.updateOrderFieldsAsParty(…)` (#111) are both
+    // bare awaits of a helper that RESOLVES with `{ error }`. If this reaches
+    // zero because the detector rotted rather than because the sites were
+    // fixed, the ratchet's decrease check fires first — this says which shape
+    // went missing.
     const kinds = Object.values(found).flat().map((finding) => finding.kind);
-    // `await dataLayer.users.signOutUserGlobally(id)` — a helper that RESOLVES
-    // with `{ error }` (#110).
     expect(kinds).toContain('helper');
-    // `await (isSeller ? scoped.eq(…) : scoped.eq(…))` — a write chain parked
-    // in a variable and awaited through an expression (#111).
-    expect(kinds).toContain('chain');
+    // `chain` has no site in the tree right now: #111 moved the one R2 found
+    // (`await (isSeller ? scoped.eq(…) : scoped.eq(…))`) behind
+    // `updateOrderFieldsAsParty`, which is the `helper` shape. The detector
+    // stays, with a fixture instead of a live site — the pattern is easy to
+    // write again.
+    expect(kinds).not.toContain('chain');
   });
 });
 
@@ -484,6 +487,25 @@ describe('the matcher recognises what it is for', () => {
       },
     ]);
     expect([...names].sort()).toEqual(['signOutUserGlobally', 'updateOrderFieldsAsParty']);
+  });
+
+  it('spots a write chain parked in a variable, and not a function that writes', () => {
+    // The shape R2 found in `updateOrderFieldsAsParty` before #111 moved it:
+    // the awaited expression names no table, so only the assignment gives it
+    // away.
+    const parked = [
+      'const scoped = supabase',
+      '  .from("marketplace_orders")',
+      '  .update(fieldUpdates)',
+      '  .eq("id", orderId);',
+      'await (isSeller ? scoped.eq("seller_id", id) : scoped.eq("buyer_id", id));',
+    ].join('\n');
+    expect([...chainVariables(parked)]).toEqual(['scoped']);
+    // A FUNCTION that performs a write is not a parked chain — awaiting a call
+    // to it is an ordinary call. `const clearPins = () => …` in data/chatSend.ts
+    // read as one until the detector excluded these.
+    const fn = 'const clearPins = () => supabase.from("messages").update({ pinned: false });';
+    expect([...chainVariables(fn)]).toEqual([]);
   });
 
   it('does not count a write handed to mustWrite / bestEffortWrite', () => {
