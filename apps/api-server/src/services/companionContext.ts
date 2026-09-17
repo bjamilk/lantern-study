@@ -32,7 +32,7 @@
  * client fields honoured, and only through their normalisers.
  */
 import { isCardDue } from '@lantern/shared/utils/srs';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import {
   normalizeCompanionMode,
   normalizeGuidedSessionContext,
@@ -94,11 +94,11 @@ function extractMessageText(message: Record<string, unknown>): string {
  *   3. Otherwise the class corpus is appended for `classId`.
  */
 export async function buildTrustedCompanionContext(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string,
   clientContext: CompanionContext & { noteId?: string } = {}
 ): Promise<CompanionContext> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
 
   // --- Server-derived facts -------------------------------------------------
   // Four owner-scoped reads in parallel, plus the test history. Nothing below
@@ -124,7 +124,7 @@ export async function buildTrustedCompanionContext(
     db.from('user_preferences').select('preferences, theme').eq('user_id', userId).maybeSingle(),
   ]);
 
-  const testResults = await supabaseService.fetchTestResults(userId);
+  const testResults = await layer.tests.fetchTestResults(userId);
 
   const profile = profileResult.data;
   const userName =
@@ -165,7 +165,8 @@ export async function buildTrustedCompanionContext(
   let weakTopics: string[] = [];
   try {
     const { getTopicMasteryService } = await import('./topicMastery');
-    const masteryWeak = await getTopicMasteryService(supabaseService).weakTopics(userId, 5);
+    // TRANSITIONAL (M2d): `getTopicMasteryService` still takes the `SupabaseService` facade whole.
+    const masteryWeak = await getTopicMasteryService(layer.legacyService).weakTopics(userId, 5);
     weakTopics = masteryWeak.map((row) => row.topic);
   } catch {
     /* fall through to the inline tally */
@@ -275,7 +276,8 @@ export async function buildTrustedCompanionContext(
     trusted.noteContext = undefined;
     try {
       const { getPageText } = await import('./notePages');
-      const page = await getPageText(supabaseService, { noteId, attachmentId, pageIndex });
+      // TRANSITIONAL (M2d): `getPageText` still takes the `SupabaseService` facade whole.
+      const page = await getPageText(layer.legacyService, { noteId, attachmentId, pageIndex });
       const text = page.reason === 'ok' ? page.text.trim() : '';
       if (text) trusted.noteContext = text.slice(0, MAX_NOTE_LEN);
     } catch {
@@ -292,7 +294,8 @@ export async function buildTrustedCompanionContext(
   const classId = UUID_RE.test(rawClassId) ? rawClassId : undefined;
   try {
     const { getClassSectionsService } = await import('./classSections');
-    const corpus = await getClassSectionsService(supabaseService).corpusForCompanion(userId, classId);
+    // TRANSITIONAL (M2d): `getClassSectionsService` still takes the `SupabaseService` facade whole.
+    const corpus = await getClassSectionsService(layer.legacyService).corpusForCompanion(userId, classId);
     if (corpus) {
       const combined = [trusted.noteContext || '', corpus].filter(Boolean).join('\n\n').slice(0, MAX_NOTE_LEN);
       if (combined) trusted.noteContext = combined;
@@ -324,21 +327,21 @@ export async function buildTrustedCompanionContext(
  * companion.
  */
 export async function fetchAuthorizedGroupSummaryMessages(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   groupId: string,
   userId: string,
   limit = 50
 ): Promise<{ groupName: string; messages: string[] }> {
-  const isMember = await supabaseService.isGroupMember(groupId, userId);
+  const isMember = await layer.groups.isGroupMember(groupId, userId);
   if (!isMember) {
     throw Object.assign(new Error('You are not a member of this group'), { statusCode: 403 });
   }
 
-  const group = await supabaseService.getGroupById(groupId);
+  const group = await layer.groups.getGroupById(groupId);
   const groupName = group?.name || 'Group';
 
   // Use full profile so QUESTION stems in question_data are included (compact omits them).
-  const rows = await supabaseService.getGroupMessages(groupId, {
+  const rows = await layer.groupMessages.getGroupMessages(groupId, {
     page: 1,
     limit: Math.min(limit, 50),
     responseProfile: 'full',

@@ -62,7 +62,7 @@ import {
   imageContentTypeFromFileName,
 } from './noteFiles';
 import { detectImageMime } from '../utils/fileValidation';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 
 // --- Table, caps and the missing-migration signal ----------------------------
@@ -123,14 +123,14 @@ export class CompanionImageTableMissingError extends Error {
 // --- Upload and transcribe ---------------------------------------------------
 
 export async function createCompanionImageAttachment(params: {
-  supabaseService: SupabaseService;
+  layer: DataLayer;
   userId: string;
   buffer: Buffer;
   fileName: string;
   contentType?: string | null;
   ocrTimeoutMs?: number;
 }): Promise<CompanionImageAttachmentRecord> {
-  const { supabaseService, userId, buffer } = params;
+  const { layer, userId, buffer } = params;
   const rawFileName = (params.fileName || 'image.jpg').trim() || 'image.jpg';
 
   let contentType =
@@ -151,7 +151,7 @@ export async function createCompanionImageAttachment(params: {
   const storedName = `${baseName}.${normalized.ext}`;
   const storagePath = buildNoteStoragePath(userId, `companion-${storedName}`);
 
-  await supabaseService.uploadNoteFile({
+  await layer.notes.uploadNoteFile({
     storagePath,
     buffer: normalized.buffer,
     contentType: normalized.contentType,
@@ -173,7 +173,7 @@ export async function createCompanionImageAttachment(params: {
 
   const wordCount = countWords(extractedText);
 
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from(COMPANION_IMAGE_TABLE)
     .insert({
@@ -190,12 +190,12 @@ export async function createCompanionImageAttachment(params: {
 
   if (error || !data?.id) {
     // Nothing usable was created, so do not leave the object behind.
-    await supabaseService.deleteNoteFile(storagePath).catch(() => {});
+    await layer.notes.deleteNoteFile(storagePath).catch(() => {});
     if (isMissingCompanionImageTable(error)) throw new CompanionImageTableMissingError();
     throw new Error(error?.message || 'Failed to save image attachment');
   }
 
-  const url = await supabaseService.createSignedNoteFileUrl(storagePath);
+  const url = await layer.notes.createSignedNoteFileUrl(storagePath);
 
   return {
     attachmentId: data.id as string,
@@ -252,7 +252,7 @@ const UUID_RE =
  * answering without the picture.
  */
 export async function loadTrustedCompanionImages(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string,
   rawIds: unknown
 ): Promise<TrustedCompanionImage[]> {
@@ -264,7 +264,7 @@ export async function loadTrustedCompanionImages(
     : [];
   if (ids.length === 0) return [];
 
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from(COMPANION_IMAGE_TABLE)
     .select('id, file_name, extracted_text, word_count')

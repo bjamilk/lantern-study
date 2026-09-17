@@ -534,7 +534,7 @@ discoverRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getStudyPresenceService(legacyService()).now(userId, {
+    const data = await getStudyPresenceService(dataLayer).now(userId, {
       courseId: str(req.query.courseId) ?? null,
       institutionId: str(req.query.institutionId) ?? null,
     });

@@ -6,7 +6,7 @@
  * retry never pays twice, and a run where every model call failed throws
  * rather than storing an empty script and calling it ready.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 jest.mock('./aiService', () => ({
   chatCompletion: jest.fn(),
@@ -160,11 +160,11 @@ function makeStore(options: { failWith?: PgError } = {}) {
   return { rows, from, key, writes };
 }
 
-function makeService(store: ReturnType<typeof makeStore>): SupabaseService {
+function makeService(store: ReturnType<typeof makeStore>): DataLayer {
   return {
     getClient: () => ({ from: store.from }),
     getNoteAttachment: jest.fn(async () => ({ id: ATTACHMENT_ID, type: 'pdf' })),
-  } as unknown as SupabaseService;
+  } as unknown as DataLayer;
 }
 
 function pages(count: number) {

@@ -1,14 +1,14 @@
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 
 const RETENTION_DAYS = parseInt(process.env.AI_LOG_RETENTION_DAYS || '90', 10);
 
-export async function purgeExpiredAIInferenceLogs(supabaseService: SupabaseService): Promise<number> {
+export async function purgeExpiredAIInferenceLogs(layer: DataLayer): Promise<number> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
   const cutoffIso = cutoff.toISOString();
 
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from('ai_inference_log')
     .delete()
@@ -27,12 +27,12 @@ export async function purgeExpiredAIInferenceLogs(supabaseService: SupabaseServi
   return count;
 }
 
-export async function purgeExpiredAIAnalytics(supabaseService: SupabaseService): Promise<number> {
+export async function purgeExpiredAIAnalytics(layer: DataLayer): Promise<number> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
   const cutoffIso = cutoff.toISOString();
 
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from('ai_analytics')
     .delete()
@@ -46,12 +46,12 @@ export async function purgeExpiredAIAnalytics(supabaseService: SupabaseService):
   return data?.length ?? 0;
 }
 
-export async function purgeExpiredProductEvents(supabaseService: SupabaseService): Promise<number> {
+export async function purgeExpiredProductEvents(layer: DataLayer): Promise<number> {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - RETENTION_DAYS);
   const cutoffIso = cutoff.toISOString();
 
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from('product_events')
     .delete()
@@ -87,24 +87,25 @@ export type DataRetentionPurgeResult = {
  * 90-day `product_events` log. docs/compliance/retention-schedule.md pins this.
  */
 export async function runDataRetentionPurge(
-  supabaseService: SupabaseService
+  layer: DataLayer
 ): Promise<DataRetentionPurgeResult> {
-  const aiInferenceLogs = await purgeExpiredAIInferenceLogs(supabaseService);
-  const aiAnalytics = await purgeExpiredAIAnalytics(supabaseService);
-  const productEvents = await purgeExpiredProductEvents(supabaseService);
+  const aiInferenceLogs = await purgeExpiredAIInferenceLogs(layer);
+  const aiAnalytics = await purgeExpiredAIAnalytics(layer);
+  const productEvents = await purgeExpiredProductEvents(layer);
   const { purgeScheduledAccountDeletions } = await import('./accountLifecycle');
-  const scheduledAccounts = await purgeScheduledAccountDeletions(supabaseService);
+  // TRANSITIONAL (M2d): `purgeScheduledAccountDeletions` still takes the `SupabaseService` facade whole.
+  const scheduledAccounts = await purgeScheduledAccountDeletions(layer.legacyService);
   return { aiInferenceLogs, aiAnalytics, productEvents, scheduledAccounts };
 }
 
-export function startDataRetentionJobs(supabaseService: SupabaseService): void {
+export function startDataRetentionJobs(layer: DataLayer): void {
   if (process.env.ENABLE_DATA_RETENTION_JOBS !== 'true') {
     return;
   }
 
   const INTERVAL_MS = 24 * 60 * 60 * 1000;
   const run = async () => {
-    await runDataRetentionPurge(supabaseService);
+    await runDataRetentionPurge(layer);
   };
 
   void run();

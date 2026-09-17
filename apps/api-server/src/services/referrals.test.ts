@@ -51,7 +51,7 @@ jest.mock('./walletService', () => ({
 
 import { ReferralsService } from './referrals';
 import { REFERRAL_BONUS_AI_USES } from '@lantern/shared/utils/aiCredits';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 const REFERRAL_ID = '11111111-1111-4111-8111-111111111111';
 const REFERRER = '22222222-2222-4222-8222-222222222222';
@@ -89,7 +89,7 @@ function makeDb(row: Record<string, unknown> | null, activated = true) {
       return { data: null, error: null };
     }),
   };
-  return { service: { getClient: () => client } as unknown as SupabaseService, readRow: () => current };
+  return { service: { getClient: () => client } as unknown as DataLayer, readRow: () => current };
 }
 
 function makeService(row: Record<string, unknown> | null, activated = true) {

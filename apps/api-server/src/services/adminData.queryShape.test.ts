@@ -34,7 +34,7 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import * as adminData from './adminData';
 
 /** One recorded call: the builder method and the arguments it was given. */
@@ -107,12 +107,12 @@ function recorder() {
     },
   };
 
-  const svc = { getClient: () => client } as unknown as SupabaseService;
+  const svc = { getClient: () => client } as unknown as DataLayer;
   return { svc, trace, authCalls, client };
 }
 
 /** Run one data-layer call and return the chain it built. */
-async function traceOf(run: (svc: SupabaseService) => unknown): Promise<string[]> {
+async function traceOf(run: (svc: DataLayer) => unknown): Promise<string[]> {
   const rec = recorder();
   await run(rec.svc);
   return rec.trace;

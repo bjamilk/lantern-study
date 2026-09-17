@@ -187,7 +187,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceCheckoutService } = await import('../../services/marketplaceCheckout');
-    const checkout = await getMarketplaceCheckoutService(supabaseService).getCheckout(
+    const checkout = await getMarketplaceCheckoutService(dataLayer).getCheckout(
       req.params.id,
       req.user.id,
     );
@@ -285,7 +285,7 @@ router.post(
           }
         }
 
-        const unified = await getMarketplaceCheckoutService(supabaseService).createFromCart(buyerId, {
+        const unified = await getMarketplaceCheckoutService(dataLayer).createFromCart(buyerId, {
           groups: [...modeBySeller.values()] as any,
           addressId: typeof req.body?.addressId === 'string' ? req.body.addressId : null,
           buyerEmail: email,

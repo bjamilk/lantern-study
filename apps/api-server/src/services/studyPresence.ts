@@ -12,7 +12,7 @@
  * counts only and never name anybody unless the viewer shares a course with
  * them and they allow activity sharing.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -46,10 +46,10 @@ export interface PresenceSnapshot {
 }
 
 export class StudyPresenceService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   /**
@@ -206,7 +206,7 @@ export class StudyPresenceService {
 
 let service: StudyPresenceService | null = null;
 
-export function getStudyPresenceService(supabaseService: SupabaseService): StudyPresenceService {
-  if (!service) service = new StudyPresenceService(supabaseService);
+export function getStudyPresenceService(data: DataLayer): StudyPresenceService {
+  if (!service) service = new StudyPresenceService(data);
   return service;
 }

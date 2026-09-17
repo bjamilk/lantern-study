@@ -1,11 +1,11 @@
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 
 export async function notifySellerFavoriteMilestone(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   listingId: string
 ): Promise<void> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
 
   const { data: listing, error: listingErr } = await db
     .from('marketplace_listings')
@@ -46,7 +46,7 @@ export async function notifySellerFavoriteMilestone(
       milestone,
     });
 
-    await supabaseService.createNotification(listing.user_id, {
+    await layer.notifications.createNotification(listing.user_id, {
       type: 'marketplace_favorite_milestone',
       message: `${milestone} students saved "${listing.title}" — consider a promo to convert interest.`,
       link: `marketplace:listing:${listingId}`,

@@ -13,7 +13,7 @@
  * generator; the contract's ≤5 essay variant (with a marking rubric) is a
  * follow-up — the content shape already carries a `kind` on each question.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -107,10 +107,10 @@ function mapQuestion(q: any, index: number) {
 }
 
 export class StudyPackFactoryService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   /** Resolve which of the user's notes seed the draft (explicit ids, a folder, or a course). */
@@ -208,8 +208,8 @@ export class StudyPackFactoryService {
       const sources: Array<{ title: string; body: string }> = [];
       for (const nid of noteIds) {
         try {
-          const note = await this.supabaseService.getNote(nid, userId);
-          const attachments = await this.supabaseService.getNoteAttachments(nid);
+          const note = await this.data.notes.getNote(nid, userId);
+          const attachments = await this.data.notes.getNoteAttachments(nid);
           const attachText = attachments
             .map((a: any) => a.extractedText)
             .filter(Boolean)
@@ -459,7 +459,7 @@ export class StudyPackFactoryService {
       let stillProcessing = false;
       for (const nid of noteIds) {
         try {
-          const attachments = await this.supabaseService.getNoteAttachments(nid);
+          const attachments = await this.data.notes.getNoteAttachments(nid);
           if ((attachments || []).some(attachmentIsProcessing)) stillProcessing = true;
         } catch {
           /* ignore a missing note */
@@ -483,7 +483,8 @@ export class StudyPackFactoryService {
       academicYearRaw && isValidAcademicYear(academicYearRaw)
         ? academicYearRaw
         : currentAcademicYear();
-    const overview = await getLibrarySearchService(this.supabaseService).getOverview(userId);
+    // TRANSITIONAL (M2d): `getLibrarySearchService` still takes the `SupabaseService` facade whole.
+    const overview = await getLibrarySearchService(this.data.legacyService).getOverview(userId);
     const year = (overview.years || []).find((y) => y.academicYear === academicYear) || overview.years?.[0];
     const resolvedYear = year?.academicYear || academicYear;
     const proposals: SemesterPackProposal[] = [];
@@ -547,7 +548,7 @@ export class StudyPackFactoryService {
 
 let service: StudyPackFactoryService | null = null;
 
-export function getStudyPackFactoryService(supabaseService: SupabaseService): StudyPackFactoryService {
-  if (!service) service = new StudyPackFactoryService(supabaseService);
+export function getStudyPackFactoryService(data: DataLayer): StudyPackFactoryService {
+  if (!service) service = new StudyPackFactoryService(data);
   return service;
 }

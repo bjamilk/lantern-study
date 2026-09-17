@@ -19,7 +19,7 @@
  * it is there, Africa/Lagos otherwise (where the students are). A "morning of"
  * reminder that lands at 01:00 is not a morning reminder.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { getTopicMasteryService } from './topicMastery';
 import { logger } from '../utils/logger';
 
@@ -122,11 +122,11 @@ export function examReminderMessage(input: {
 }
 
 async function claimReminder(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string,
   key: string
 ): Promise<boolean> {
-  const { error } = await supabaseService
+  const { error } = await layer
     .getClient()
     .from('retention_reminders_sent')
     .insert({ user_id: userId, reminder_key: key });
@@ -147,10 +147,10 @@ export interface ExamReminderSweepResult {
  * what makes a reminder fire once.
  */
 export async function processExamReminders(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   now: Date = new Date()
 ): Promise<ExamReminderSweepResult> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const result: ExamReminderSweepResult = { sent: 0, claimed: 0 };
 
   // A window wide enough that no timezone can push a due exam outside it.
@@ -208,7 +208,7 @@ export async function processExamReminders(
     let delivered = false;
     for (const stage of stages) {
       const claimed = await claimReminder(
-        supabaseService,
+        layer,
         userId,
         examReminderKey(courseId, examDate, stage)
       );
@@ -220,7 +220,8 @@ export async function processExamReminders(
       let weakestTopic: string | null = null;
       let nextActionLabel: string | null = null;
       try {
-        const [readiness] = await getTopicMasteryService(supabaseService).courseReadiness(userId, {
+        // TRANSITIONAL (M2d): `getTopicMasteryService` still takes the `SupabaseService` facade whole.
+        const [readiness] = await getTopicMasteryService(layer.legacyService).courseReadiness(userId, {
           courseId,
         });
         weakestTopic = readiness?.weakestTopics?.[0] ?? null;
@@ -233,7 +234,7 @@ export async function processExamReminders(
         });
       }
 
-      const notification = await supabaseService.createNotification(userId, {
+      const notification = await layer.notifications.createNotification(userId, {
         type: EXAM_REMINDER_NOTIFICATION_TYPE,
         message: examReminderMessage({ stage, daysUntil, courseLabel, weakestTopic }),
         link: `/dashboard?readiness=${courseId}`,
@@ -257,14 +258,14 @@ export async function processExamReminders(
   return result;
 }
 
-export function startExamReminderJobs(supabaseService: SupabaseService): void {
+export function startExamReminderJobs(layer: DataLayer): void {
   if (process.env.ENABLE_MARKETPLACE_JOBS !== 'true') {
     logger.info('Exam reminder jobs disabled (set ENABLE_MARKETPLACE_JOBS=true)');
     return;
   }
   const run = async () => {
     try {
-      await processExamReminders(supabaseService);
+      await processExamReminders(layer);
     } catch (err) {
       logger.error('Exam reminder job failed', err);
     }

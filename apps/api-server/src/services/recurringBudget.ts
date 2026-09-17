@@ -5,7 +5,7 @@
  * computeDueRuns) so the "when does it post next / how many missed periods do we
  * back-fill" logic is verified independently of the DB.
  */
-import { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 export type RecurringFrequency = 'weekly' | 'monthly';
 
@@ -94,10 +94,10 @@ function mapRow(row: any): RecurringRule {
 }
 
 export class RecurringBudgetService {
-  constructor(private supabase: SupabaseService) {}
+  constructor(private data: DataLayer) {}
 
   private get client() {
-    return this.supabase.getClient();
+    return this.data.getClient();
   }
 
   async list(userId: string): Promise<RecurringRule[]> {
@@ -205,8 +205,8 @@ export class RecurringBudgetService {
 
 let recurringBudgetService: RecurringBudgetService | null = null;
 
-export function initializeRecurringBudgetService(supabase: SupabaseService): RecurringBudgetService {
-  recurringBudgetService = new RecurringBudgetService(supabase);
+export function initializeRecurringBudgetService(data: DataLayer): RecurringBudgetService {
+  recurringBudgetService = new RecurringBudgetService(data);
   return recurringBudgetService;
 }
 

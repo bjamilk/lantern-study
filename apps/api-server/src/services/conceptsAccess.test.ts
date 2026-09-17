@@ -29,7 +29,10 @@ function makeDb(rows: Record<string, any>) {
 function service(rows: Record<string, any>) {
   const db = makeDb(rows);
   const self: any = Object.create(ConceptsService.prototype);
-  self.supabaseService = { getClient: () => db, isGroupMember: async () => rows.__isGroupMember === true };
+  self.data = {
+    getClient: () => db,
+    groups: { isGroupMember: async () => rows.__isGroupMember === true },
+  };
   return self;
 }
 

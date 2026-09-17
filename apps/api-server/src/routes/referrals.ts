@@ -37,7 +37,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getReferralsService(legacyService()).summary(userId);
+    const data = await getReferralsService(dataLayer).summary(userId);
     res.json({ success: true, data });
   })
 );
@@ -52,7 +52,7 @@ router.get(
     try {
       const institutionId =
         typeof req.query.institutionId === 'string' ? req.query.institutionId : '';
-      const data = await getReferralsService(legacyService()).listAmbassadors(
+      const data = await getReferralsService(dataLayer).listAmbassadors(
         institutionId,
         req.query.limit ? Number(req.query.limit) : undefined
       );

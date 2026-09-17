@@ -15,7 +15,7 @@
  * Counts only. No names, no ids, no user content — a campus page says how much
  * is happening, never who is doing it.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,60}$/;
@@ -40,10 +40,10 @@ export interface CampusSummary {
 }
 
 export class CampusSummaryService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   /** Normalised slug, or null when it could not possibly be one. */
@@ -175,7 +175,7 @@ export class CampusSummaryService {
 
 let service: CampusSummaryService | null = null;
 
-export function getCampusSummaryService(supabaseService: SupabaseService): CampusSummaryService {
-  if (!service) service = new CampusSummaryService(supabaseService);
+export function getCampusSummaryService(data: DataLayer): CampusSummaryService {
+  if (!service) service = new CampusSummaryService(data);
   return service;
 }

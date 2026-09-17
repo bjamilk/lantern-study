@@ -95,7 +95,7 @@ router.get('/users', adminRoute(async (req: any, res: any) => {
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   if (search && uuidPattern.test(search)) {
-    const { data: profile, error } = await adminData.getUserForAdminList(supabaseService, search);
+    const { data: profile, error } = await adminData.getUserForAdminList(dataLayer, search);
     if (error) throw error;
     const authMap = profile ? await getAuthUserInfoForUserIds([profile.id]) : {};
     const normalized = profile
@@ -118,15 +118,14 @@ router.get('/users', adminRoute(async (req: any, res: any) => {
     // RPC (20260817120000): the old listUsers page scan stopped at 1000
     // users and silently fell back to name-only matching, so a real email
     // could return "no results". Returns every match, not just the first.
-    const { data: emailMatches, error: rpcError } = await adminData.searchUsersByEmail(
-      supabaseService,
+    const { data: emailMatches, error: rpcError } = await adminData.searchUsersByEmail(dataLayer,
       search,
       limit
     );
 
     if (!rpcError && Array.isArray(emailMatches) && emailMatches.length > 0) {
       const ids = emailMatches.map((m: any) => m.id);
-      const { data: profiles } = await adminData.getUsersForAdminList(supabaseService, ids);
+      const { data: profiles } = await adminData.getUsersForAdminList(dataLayer, ids);
       const profileById = new Map<string, any>((profiles || []).map((p: any) => [p.id, p]));
       const normalized = emailMatches.map((m: any) => {
         const row = profileById.get(m.id) || { id: m.id, name: m.email, settings: {} };
@@ -149,15 +148,14 @@ router.get('/users', adminRoute(async (req: any, res: any) => {
     if (rpcError) {
       let matchedUser: any = null;
       for (let authPage = 1; authPage <= 5 && !matchedUser; authPage++) {
-        const { data: authData } = await adminData.listAuthUsers(supabaseService, authPage, 200);
+        const { data: authData } = await adminData.listAuthUsers(dataLayer, authPage, 200);
         matchedUser = (authData?.users || []).find((u: any) =>
           u.email?.toLowerCase().includes(search.toLowerCase())
         );
         if ((authData?.users || []).length < 200) break;
       }
       if (matchedUser) {
-        const { data: profile } = await adminData.getUserForAdminList(
-          supabaseService,
+        const { data: profile } = await adminData.getUserForAdminList(dataLayer,
           matchedUser.id
         );
         const row = profile || {
@@ -181,7 +179,7 @@ router.get('/users', adminRoute(async (req: any, res: any) => {
     }
   }
 
-  const { data, error, count } = await adminData.listUsersPage(supabaseService, {
+  const { data, error, count } = await adminData.listUsersPage(dataLayer, {
     escapedSearch: search ? escapePostgrestSearch(search) : undefined,
     offset,
     limit,
@@ -236,7 +234,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
     suspendedUntil = parsed.toISOString();
   }
 
-  const { data: profile, error: fetchErr } = await adminData.getUserSettings(supabaseService, id);
+  const { data: profile, error: fetchErr } = await adminData.getUserSettings(dataLayer, id);
 
   if (fetchErr || !profile) {
     return res.status(404).json({ success: false, error: 'User not found' });
@@ -257,7 +255,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
   if (status === 'suspended') nextSettings.suspended_until = suspendedUntil;
   else if (status === 'active') delete nextSettings.suspended_until;
 
-  const { error } = await adminData.setUserSettings(supabaseService, id, nextSettings);
+  const { error } = await adminData.setUserSettings(dataLayer, id, nextSettings);
   if (error) throw error;
 
   await logAdminAction(supabaseService, {
@@ -281,7 +279,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
 
   if (status === 'banned') {
     try {
-      await adminData.signOutEverywhere(supabaseService, id);
+      await adminData.signOutEverywhere(dataLayer, id);
     } catch (signOutErr) {
       logger.warn('Supabase global signOut failed on ban', { id, signOutErr });
     }
@@ -298,10 +296,10 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
     // API. What it does reopen is token minting outside the API: a client
     // talking to GoTrue directly with the anon key can still sign in. Treat
     // `authBanApplied: false` as work to redo, not as noise.
-    authBanApplied = await adminData.applyAuthBan(supabaseService, id, AUTH_BAN_DURATION);
+    authBanApplied = await adminData.applyAuthBan(dataLayer, id, AUTH_BAN_DURATION);
   } else if (status === 'active') {
     // Lift the auth-layer ban, or an unbanned user could never sign in again.
-    authBanApplied = await adminData.applyAuthBan(supabaseService, id, 'none');
+    authBanApplied = await adminData.applyAuthBan(dataLayer, id, 'none');
   } else if (status === 'suspended') {
     await dataLayer.notifications.createNotification(id, {
         type: 'warning',
@@ -404,7 +402,7 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
     return res.status(400).json({ success: false, error: 'You cannot revoke your own admin role.' });
   }
 
-  const { data: userData, error: fetchErr } = await adminData.getAuthUser(supabaseService, id);
+  const { data: userData, error: fetchErr } = await adminData.getAuthUser(dataLayer, id);
   if (fetchErr || !userData?.user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
@@ -423,20 +421,20 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
     is_platform_admin: isPlatformAdmin === true,
   };
 
-  const { error: updateErr } = await adminData.setAuthUserMetadata(supabaseService, id, nextMetadata);
+  const { error: updateErr } = await adminData.setAuthUserMetadata(dataLayer, id, nextMetadata);
   if (updateErr) throw updateErr;
 
-  const { data: profile } = await adminData.getUserSettings(supabaseService, id);
+  const { data: profile } = await adminData.getUserSettings(dataLayer, id);
   const nextSettings = {
     ...(profile?.settings || {}),
     is_platform_admin: isPlatformAdmin === true,
   };
-  await adminData.setUserSettings(supabaseService, id, nextSettings);
+  await adminData.setUserSettings(dataLayer, id, nextSettings);
 
   if (isPlatformAdmin === true) {
-    await adminData.grantPlatformAdmin(supabaseService, id, req.user.id);
+    await adminData.grantPlatformAdmin(dataLayer, id, req.user.id);
   } else {
-    await adminData.revokePlatformAdmin(supabaseService, id);
+    await adminData.revokePlatformAdmin(dataLayer, id);
   }
 
   await logAdminAction(supabaseService, {
@@ -448,7 +446,7 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
 
   if (isPlatformAdmin !== true) {
     try {
-      await adminData.signOutEverywhere(supabaseService, id);
+      await adminData.signOutEverywhere(dataLayer, id);
     } catch (signOutErr) {
       logger.warn('Supabase global signOut failed on role revoke', { id, signOutErr });
     }
@@ -466,13 +464,13 @@ router.get('/users/:id', adminRoute(async (req: any, res: any) => {
   const { id } = req.params;
   const last7d = daysAgoIso(7);
 
-  const { data: profile, error } = await adminData.getUserDetail(supabaseService, id);
+  const { data: profile, error } = await adminData.getUserDetail(dataLayer, id);
   if (error) throw error;
   if (!profile) return res.status(404).json({ success: false, error: 'User not found' });
 
   const authMap = await getAuthUserInfoForUserIds([id]);
   const [{ groupCount, listingCount, deckCount, aiEvents7d }, activeStrikes] = await Promise.all([
-    adminData.getUserCounts(supabaseService, id, last7d),
+    adminData.getUserCounts(dataLayer, id, last7d),
     getModerationService(supabaseService).countActiveStrikes(id).catch(() => 0),
   ]);
 
@@ -621,7 +619,7 @@ router.get('/ai/companion/:userId', adminRoute(async (req: any, res: any) => {
     targetId: userId,
     metadata: { limit },
   });
-  const { data, error } = await adminData.listCompanionMessages(supabaseService, userId, limit);
+  const { data, error } = await adminData.listCompanionMessages(dataLayer, userId, limit);
   if (error) throw error;
   res.json({ success: true, data: (data || []).reverse() });
 }));

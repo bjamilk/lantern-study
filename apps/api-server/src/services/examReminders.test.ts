@@ -108,9 +108,11 @@ function harness(enrolments: Enrolment[]) {
         return chain([]);
       },
     }),
-    createNotification: async (userId: string, payload: any) => {
-      notifications.push({ userId, ...payload });
-      return { id: `n${notifications.length}` };
+    notifications: {
+      createNotification: async (userId: string, payload: any) => {
+        notifications.push({ userId, ...payload });
+        return { id: `n${notifications.length}` };
+      },
     },
   };
 

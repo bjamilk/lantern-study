@@ -43,7 +43,7 @@ router.get('/groups', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const search = (req.query.search as string)?.trim() || '';
   const offset = (page - 1) * limit;
-  const { data, error, count } = await adminData.listGroupsForAdmin(supabaseService, {
+  const { data, error, count } = await adminData.listGroupsForAdmin(dataLayer, {
     escapedSearch: search ? escapePostgrestSearch(search) : undefined,
     offset,
     limit,
@@ -56,7 +56,7 @@ router.get('/groups', adminRoute(async (req: any, res: any) => {
 router.patch('/groups/:id', adminRoute(async (req: any, res: any) => {
   const { id } = req.params;
   const { isArchived, reason } = req.body as { isArchived: boolean; reason?: string };
-  const { error } = await adminData.setGroupArchived(supabaseService, id, isArchived === true);
+  const { error } = await adminData.setGroupArchived(dataLayer, id, isArchived === true);
   if (error) throw error;
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
@@ -74,7 +74,7 @@ router.get('/messages', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const groupId = (req.query.groupId as string) || '';
   const offset = (page - 1) * limit;
-  const { data, error, count } = await adminData.listMessagesForAdmin(supabaseService, {
+  const { data, error, count } = await adminData.listMessagesForAdmin(dataLayer, {
     groupId: groupId || undefined,
     offset,
     limit,
@@ -87,7 +87,7 @@ router.get('/messages', adminRoute(async (req: any, res: any) => {
 router.delete('/messages/:id', adminRoute(async (req: any, res: any) => {
   const { id } = req.params;
   const { reason } = req.body || {};
-  const { error } = await adminData.deleteMessage(supabaseService, id);
+  const { error } = await adminData.deleteMessage(dataLayer, id);
   if (error) throw error;
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
@@ -105,7 +105,7 @@ router.get('/decks', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const search = (req.query.search as string)?.trim() || '';
   const offset = (page - 1) * limit;
-  const { data, error, count } = await adminData.listDecksForAdmin(supabaseService, {
+  const { data, error, count } = await adminData.listDecksForAdmin(dataLayer, {
     escapedSearch: search ? escapePostgrestSearch(search) : undefined,
     offset,
     limit,
@@ -115,7 +115,7 @@ router.get('/decks', adminRoute(async (req: any, res: any) => {
   const deckIds = (data || []).map((d: any) => d.id);
   const cardCounts: Record<string, number> = {};
   if (deckIds.length) {
-    const { data: cards } = await adminData.listFlashcardDeckIds(supabaseService, deckIds);
+    const { data: cards } = await adminData.listFlashcardDeckIds(dataLayer, deckIds);
     for (const c of cards || []) {
       cardCounts[c.deck_id] = (cardCounts[c.deck_id] || 0) + 1;
     }
@@ -132,7 +132,7 @@ router.get('/decks', adminRoute(async (req: any, res: any) => {
 router.delete('/decks/:id', adminRoute(async (req: any, res: any) => {
   const { id } = req.params;
   const { reason } = req.body || {};
-  const { error } = await adminData.removeDeck(supabaseService, id, new Date().toISOString());
+  const { error } = await adminData.removeDeck(dataLayer, id, new Date().toISOString());
   if (error) throw error;
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
@@ -148,7 +148,7 @@ router.delete('/decks/:id', adminRoute(async (req: any, res: any) => {
 router.get('/offline/summary', adminRoute(async (req: any, res: any) => {
   // count:'exact' so the console can say "showing 50 of N" — the hard cap
   // used to be invisible, indistinguishable from a complete list.
-  const { data: bundles, error, count } = await adminData.listOfflineBundles(supabaseService);
+  const { data: bundles, error, count } = await adminData.listOfflineBundles(dataLayer);
   if (error) throw error;
 
   const rows = bundles || [];
@@ -156,8 +156,7 @@ router.get('/offline/summary', adminRoute(async (req: any, res: any) => {
   let profileById: Record<string, { id: string; name?: string; username?: string }> = {};
 
   if (userIds.length > 0) {
-    const { data: profiles, error: profileError } = await adminData.getProfileSummaries(
-      supabaseService,
+    const { data: profiles, error: profileError } = await adminData.getProfileSummaries(dataLayer,
       userIds
     );
     if (profileError) throw profileError;

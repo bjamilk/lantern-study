@@ -152,10 +152,14 @@ function createHarness(options: { enforceUniquePending?: boolean } = {}) {
     }),
   };
 
+  // The same stubs the flat `SupabaseService` stand-in carried, regrouped under
+  // the `DataLayer` namespace that owns each one.
   const supabaseService = {
     getClient: () => db,
-    createNotification,
-    getUserById: jest.fn().mockResolvedValue({ id: 'challenger-1', name: 'Challenger' }),
+    notifications: { createNotification },
+    users: {
+      getUserById: jest.fn().mockResolvedValue({ id: 'challenger-1', name: 'Challenger' }),
+    },
   } as any;
 
   const service = new ChallengeService(supabaseService);

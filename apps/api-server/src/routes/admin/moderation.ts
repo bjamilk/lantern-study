@@ -37,7 +37,7 @@ import * as adminData from '../../services/adminData';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { logger } from '../../utils/logger';
 import { isMarketplaceListingModerated } from '@lantern/shared/marketplace';
-import { cacheService, normalizeReportStatus, supabaseService } from './context';
+import { cacheService, dataLayer, normalizeReportStatus, supabaseService } from './context';
 import { adminRoute, mappedRoute, moderationRoute, respondDisputeError } from './errors';
 
 const router = Router();
@@ -64,7 +64,7 @@ router.get('/marketplace/listings', adminRoute(async (req: any, res: any) => {
   const status = (req.query.status as string) || '';
   const offset = (page - 1) * limit;
 
-  const { data, error, count } = await adminData.listListingsForAdmin(supabaseService, {
+  const { data, error, count } = await adminData.listListingsForAdmin(dataLayer, {
     status: status || undefined,
     offset,
     limit,
@@ -115,7 +115,7 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
     return res.status(400).json({ success: false, error: 'status must be active or suspended_by_admin' });
   }
 
-  const { data: current } = await adminData.getListingForModeration(supabaseService, id);
+  const { data: current } = await adminData.getListingForModeration(dataLayer, id);
   if (!current) return res.status(404).json({ success: false, error: 'Listing not found' });
 
   const moderation = getModerationService(supabaseService);
@@ -126,7 +126,7 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
       ? await moderation.resolveRestoredListingStatus(id)
       : status;
 
-  const { error } = await adminData.setListingStatus(supabaseService, id, statusToWrite);
+  const { error } = await adminData.setListingStatus(dataLayer, id, statusToWrite);
   if (error) throw error;
 
   // Restoring a listing outside the appeal flow clears its takedown state
@@ -136,7 +136,7 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
     await moderation.clearListingTakedown(id).catch((e) => logger.warn('clearListingTakedown failed', { id, e }));
   } else if (status === 'suspended_by_admin' && current.status !== 'suspended_by_admin') {
     await adminData
-      .setListingUnderReview(supabaseService, id, {
+      .setListingUnderReview(dataLayer, id, {
         reason: reason || 'Suspended pending Lantern review',
         at: new Date().toISOString(),
         by: req.user.id,
@@ -278,7 +278,7 @@ router.put('/reports/:id', validateUuidParam('id'), handleValidationErrors, mode
 
   if (result.action === 'remove_content') {
     // Listing takedowns change what the public sees.
-    const { data: report } = await adminData.getReportTarget(supabaseService, id);
+    const { data: report } = await adminData.getReportTarget(dataLayer, id);
     if (report && (report.target_type === 'listing' || report.target_type === 'question_bank')) {
       await invalidateListingCaches(cacheService, String(report.target_id));
       await cacheService.deletePattern('marketplace:listings:*');
@@ -347,7 +347,7 @@ router.patch('/jobs/reports/:id', validateUuidParam('id'), handleValidationError
     );
     return res.json({ success: true, data: result });
   }
-  const { data: updated, error } = await adminData.resolveReport(supabaseService, req.params.id, {
+  const { data: updated, error } = await adminData.resolveReport(dataLayer, req.params.id, {
     note: typeof note === 'string' && note.trim() ? note.trim().slice(0, 1000) : null,
     resolvedBy: req.user.id,
     resolvedAt: new Date().toISOString(),

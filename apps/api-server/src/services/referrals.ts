@@ -13,7 +13,7 @@
  * money for a script. Activation requires real study events across two distinct
  * calendar days, which cannot be manufactured in one burst.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { getWalletService, type WalletService } from './walletService';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
@@ -64,12 +64,12 @@ export interface ReferralSummary {
 
 export class ReferralsService {
   constructor(
-    private supabaseService: SupabaseService,
+    private data: DataLayer,
     private wallet: WalletService
   ) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   /**
@@ -380,9 +380,9 @@ export class ReferralsService {
 
 let service: ReferralsService | null = null;
 
-export function getReferralsService(supabaseService: SupabaseService): ReferralsService {
+export function getReferralsService(data: DataLayer): ReferralsService {
   // WalletService is a no-arg singleton initialised at server boot, so it is
   // resolved lazily here rather than threaded through every caller.
-  if (!service) service = new ReferralsService(supabaseService, getWalletService());
+  if (!service) service = new ReferralsService(data, getWalletService());
   return service;
 }

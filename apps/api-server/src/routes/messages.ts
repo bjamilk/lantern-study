@@ -1914,7 +1914,7 @@ router.post(
 
     try {
       const result = await addMessageReaction(
-        legacyService(),
+        dataLayer,
         messageId,
         userId,
         emoji,
@@ -1962,7 +1962,7 @@ router.delete(
 
     try {
       const result = await removeMessageReaction(
-        legacyService(),
+        dataLayer,
         messageId,
         userId,
         emoji,

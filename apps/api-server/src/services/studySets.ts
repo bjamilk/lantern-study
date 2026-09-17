@@ -50,7 +50,7 @@
  * owned (and, for a topic, the unit to belong to that same owned set).
  */
 import { PublicError } from '../utils/safeError';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { isUuid } from './academicCourses';
 import { normalizeCoverRef } from '@lantern/shared/utils/storageUrl';
 import { notePlainPreview } from '@lantern/shared/utils/noteBlocks';
@@ -282,10 +282,10 @@ function optionalUuid(value: unknown, field: string): string | null {
 }
 
 export class StudySetsService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly data: DataLayer) {}
 
   private get db() {
-    return this.supabase.getClient();
+    return this.data.getClient();
   }
 
   /**
@@ -903,7 +903,7 @@ export class StudySetsService {
 
 let singleton: StudySetsService | null = null;
 
-export function getStudySetsService(supabase: SupabaseService): StudySetsService {
-  if (!singleton) singleton = new StudySetsService(supabase);
+export function getStudySetsService(data: DataLayer): StudySetsService {
+  if (!singleton) singleton = new StudySetsService(data);
   return singleton;
 }

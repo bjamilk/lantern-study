@@ -1,4 +1,4 @@
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import {
   formatTranscriptForNote,
   getYoutubeTranscript,
@@ -29,7 +29,7 @@ export interface YoutubeTranscriptJobResult {
  * Never throws — failures are written to attachment metadata instead.
  */
 export async function runYoutubeTranscriptJob(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: YoutubeTranscriptJobParams
 ): Promise<YoutubeTranscriptJobResult> {
   const { noteId, attachmentId, videoId, meta } = params;
@@ -41,10 +41,10 @@ export async function runYoutubeTranscriptJob(
   } = meta;
 
   try {
-    const transcript = await getYoutubeTranscript(supabaseService.getClient(), videoId);
+    const transcript = await getYoutubeTranscript(layer.getClient(), videoId);
     const formatted = formatTranscriptForNote(transcript.segments) || transcript.text;
 
-    await supabaseService.updateNoteAttachment(attachmentId, {
+    await layer.notes.updateNoteAttachment(attachmentId, {
       extractedText: formatted,
       metadata: {
         ...baseMeta,
@@ -71,7 +71,7 @@ export async function runYoutubeTranscriptJob(
     const message = err instanceof Error ? err.message : 'Transcript fetch failed.';
     logger.warn('YouTube transcript job failed', { noteId, videoId, error: message });
 
-    await supabaseService
+    await layer.notes
       .updateNoteAttachment(attachmentId, {
         metadata: {
           ...baseMeta,
