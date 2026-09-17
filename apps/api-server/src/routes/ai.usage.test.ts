@@ -17,7 +17,6 @@ jest.mock('../middleware/auth', () => ({
   requirePermission: () => (_req: any, _res: any, next: any) => next(),
 }));
 
-jest.mock('../services/supabase', () => ({ SupabaseService: class {} }));
 jest.mock('../services/aiService', () => ({
   generateQuestionsFromNotes: jest.fn(),
   generateFlashcardsFromNotes: jest.fn(),

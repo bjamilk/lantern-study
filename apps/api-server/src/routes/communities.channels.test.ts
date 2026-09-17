@@ -14,9 +14,6 @@ jest.mock('../middleware/auth', () => ({
     next();
   },
 }));
-jest.mock('../services/supabase', () => ({
-  SupabaseService: class {},
-}));
 jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));

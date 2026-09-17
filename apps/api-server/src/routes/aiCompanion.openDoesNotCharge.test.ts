@@ -27,9 +27,6 @@ jest.mock('../services/companionConversations', () => ({
   touchConversation: jest.fn(),
 }));
 
-jest.mock('../services/supabase', () => ({
-  SupabaseService: class {},
-}));
 
 jest.mock('../services/aiService', () => ({
   companionChat: jest.fn(),
