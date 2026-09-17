@@ -19,7 +19,6 @@ import { MarketplaceQuestionBanksService } from './marketplaceQuestionBanks';
 // below stay FLAT and are regrouped by the production adapter
 // (`marketplaceHostFromFlat`), so every assertion still names the same
 // `jest.fn()` and the adapter itself is exercised by these suites.
-import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 import { PublicError } from '../utils/safeError';
 
 type TableResult = { data: unknown; error?: unknown };
@@ -106,8 +105,19 @@ function makeService(overrides: {
     createMarketplaceListing: jest.fn(async () => overrides.createdListing ?? { id: 'listing-1' }),
     saveOfflineBundle,
   };
+  // The stand-in stays FLAT, because the assertions below name its members;
+  // the service takes the namespaced host, built from the very same
+  // `jest.fn()`s. (This is what the transitional `marketplaceHostFromFlat`
+  // adapter did while the facade still existed — written out here now that it
+  // is deleted.)
+  const host: any = {
+    getClient: supabaseService.getClient,
+    groups: { getGroupById: supabaseService.getGroupById, },
+    marketplace: { getMarketplaceListingById: supabaseService.getMarketplaceListingById, createMarketplaceListing: supabaseService.createMarketplaceListing, },
+    offlineBundles: { saveOfflineBundle: supabaseService.saveOfflineBundle, },
+  };
   return {
-    service: new MarketplaceQuestionBanksService(marketplaceHostFromFlat(supabaseService)),
+    service: new MarketplaceQuestionBanksService(host),
     supabaseService,
     writes,
     saveOfflineBundle,
@@ -384,10 +394,9 @@ describe('recordScore', () => {
     chain.select = self;
     chain.eq = self;
     chain.maybeSingle = async () => ({ data: entitled ? { id: 'ent-1' } : null, error: null });
-    const supabaseService: any = {
-      getClient: () => ({ from: () => chain, rpc }),
-    };
-    return { service: new MarketplaceQuestionBanksService(marketplaceHostFromFlat(supabaseService)), rpc };
+    // This one reaches only the client.
+    const host: any = { getClient: () => ({ from: () => chain, rpc }) };
+    return { service: new MarketplaceQuestionBanksService(host), rpc };
   }
 
   it('refuses users who do not own the bank', async () => {

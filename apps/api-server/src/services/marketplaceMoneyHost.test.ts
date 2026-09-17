@@ -33,7 +33,6 @@
 import * as ordersModule from './marketplaceOrders';
 import { MarketplaceOrdersService } from './marketplaceOrders';
 import { MarketplaceSellerToolsService } from './marketplaceSellerTools';
-import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 
 jest.mock('./cache', () => ({
   cacheService: {
@@ -104,11 +103,11 @@ describe('escrow release writes the budget mirror through marketplace.', () => {
         }),
     };
     const self: any = Object.create(MarketplaceOrdersService.prototype);
-    self.host = marketplaceHostFromFlat({
+    self.host = {
       getClient: () => db,
-      logMarketplaceBudgetTransactions,
-      createNotification: jest.fn(async () => null),
-    } as never);
+      marketplace: { logMarketplaceBudgetTransactions },
+      notifications: { createNotification: jest.fn(async () => null), },
+  } as never;
     return { self, logMarketplaceBudgetTransactions };
   }
 
@@ -152,10 +151,10 @@ describe('seller shop media is signed through storageAcl.', () => {
       async (url: string, _ttl?: number, variant?: string) => `signed:${variant}:${url}`,
     );
     const self: any = Object.create(MarketplaceSellerToolsService.prototype);
-    self.host = marketplaceHostFromFlat({
+    self.host = {
       getClient: () => ({}),
-      signStorageDisplayUrl,
-    } as never);
+      storageAcl: { signStorageDisplayUrl },
+  } as never;
     return { self, signStorageDisplayUrl };
   }
 
@@ -206,11 +205,11 @@ describe('a seller campaign notifies through notifications. and DMs through dire
       },
     };
     const self: any = Object.create(MarketplaceSellerToolsService.prototype);
-    self.host = marketplaceHostFromFlat({
+    self.host = {
       getClient: () => db,
-      createNotification,
-      sendDirectMessage,
-    } as never);
+      notifications: { createNotification },
+      directMessages: { sendDirectMessage },
+  } as never;
     return { self, createNotification, sendDirectMessage, inserted };
   }
 
