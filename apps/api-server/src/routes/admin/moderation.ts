@@ -19,6 +19,12 @@
  * `adminNote` maps to `note`. `GET /jobs/reports` is the same queue filtered
  * to `target_type: 'job_posting'`, in the shape the jobs console reads.
  *
+ * `GET /marketplace/reconcile/findings` is the one route here that touches no
+ * table of its own: it runs the read-only reconciliation planner (#113) over
+ * the money tables and Paystack and returns what it found. It writes nothing
+ * and initiates no transfer or refund; it is audited anyway, because the list
+ * itself is sensitive.
+ *
  * These are the routes registered with `moderationRoute`, so a service
  * `PublicError` keeps its own status instead of becoming a 500.
  *
@@ -33,6 +39,10 @@ import { handleValidationErrors, validateUuidParam } from '../../middleware/vali
 import { logAdminAction } from '../../services/adminAudit';
 import { getModerationService } from '../../services/moderation';
 import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../../services/marketplaceOrders';
+import {
+  createPaystackReconcileReader,
+  planMarketplaceReconcile,
+} from '../../services/marketplaceReconcile';
 import * as adminData from '../../services/adminData';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { logger } from '../../utils/logger';
@@ -183,6 +193,39 @@ router.get('/marketplace/orders', adminRoute(async (req: any, res: any) => {
     data,
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
   });
+}));
+
+// GET /api/v1/admin/marketplace/reconcile/findings?limit=25
+//
+// The marketplace rows whose money moved and whose record of it did not (#113).
+// READ-ONLY, in three senses that all matter: it writes nothing to our tables,
+// it asks Paystack only `GET`s (no transfer, no refund, no charge is ever
+// initiated from here), and it returns a PLAN — the repairs are Phase B, behind
+// an env flag and an explicit admin action, per class.
+//
+// It is audited even though it is a read, like `GET /ai/companion/:userId` and
+// for a sharper reason: this list is the map of every place a hand-made repair
+// could be slipped in. The audit is written BEFORE the scan, so an admin who
+// opens it and then hits a 500 is still recorded.
+//
+// Each candidate costs one or more Paystack calls, so the per-class cap is the
+// rate limit: `limit` is clamped in the planner to at most 100.
+router.get('/marketplace/reconcile/findings', adminRoute(async (req: any, res: any) => {
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 25));
+  await logAdminAction(dataLayer, {
+    actorId: req.user.id,
+    action: 'marketplace_reconcile_view',
+    targetType: 'marketplace_reconcile',
+    metadata: { limit },
+  });
+
+  const report = await planMarketplaceReconcile(
+    dataLayer.marketplaceReconcile,
+    createPaystackReconcileReader(),
+    { limit },
+  );
+
+  res.json({ success: true, data: report });
 }));
 
 router.patch('/marketplace/orders/:id/dispute', mappedRoute(respondDisputeError, async (req: any, res: any) => {

@@ -59,7 +59,7 @@ const SERVICES_DIR = __dirname;
 const DATA_DIR = path.join(SERVICES_DIR, 'data');
 
 /**
- * The 67 distinct table literals reached through `.from("…")` by the data
+ * The 68 distinct table literals reached through `.from("…")` by the data
  * layer, captured from the untouched 18,257-line `services/supabase.ts`.
  *
  * 57 of them are that original capture. The other ten arrived with monolith
@@ -109,6 +109,12 @@ const FROZEN_TABLES: readonly string[] = [
   'marketplace_listings',
   'marketplace_offers',
   'marketplace_orders',
+  // From `services/marketplacePayments.ts` (#113). The money table has always
+  // been queried by the server, but only from that service, which this scan
+  // does not cover — `data/marketplaceReconcile.ts` is the first query against
+  // it INSIDE the data layer, so the freeze sees it for the first time. No
+  // table was added to the product and no query changed.
+  'marketplace_payments',
   'marketplace_question_bank_entitlements',
   // From `routes/marketplace/listings.ts` (lane R2, PR 3). These were the last
   // two tables the API queried only from a route file.
@@ -238,7 +244,7 @@ describe('services data layer table inventory', () => {
 
   it('touches exactly the frozen set of 67 tables', () => {
     expect([...scanned.tables].sort()).toEqual([...FROZEN_TABLES].sort());
-    expect(FROZEN_TABLES).toHaveLength(67);
+    expect(FROZEN_TABLES).toHaveLength(68);
   });
 
   it('reaches exactly the frozen set of storage bucket literals', () => {

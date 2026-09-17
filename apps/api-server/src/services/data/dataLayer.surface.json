@@ -1206,6 +1206,47 @@
       ]
     },
     {
+      "namespace": "marketplaceReconcile",
+      "functions": [
+        {
+          "name": "getOrderForReconcile",
+          "arity": 0
+        },
+        {
+          "name": "getPaymentForReconcile",
+          "arity": 0
+        },
+        {
+          "name": "listCheckoutSiblingOrders",
+          "arity": 0
+        },
+        {
+          "name": "listOrphanInitializedPayments",
+          "arity": 0
+        },
+        {
+          "name": "listStuckPayingOrders",
+          "arity": 0
+        },
+        {
+          "name": "listStuckPayoutPendingPayments",
+          "arity": 0
+        },
+        {
+          "name": "listStuckRefundHoldOrders",
+          "arity": 0
+        },
+        {
+          "name": "listStuckRefundingPayments",
+          "arity": 0
+        },
+        {
+          "name": "listUnsettledInitializedPayments",
+          "arity": 0
+        }
+      ]
+    },
+    {
       "namespace": "messageSearch",
       "functions": [
         {

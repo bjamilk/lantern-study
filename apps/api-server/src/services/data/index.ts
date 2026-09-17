@@ -64,6 +64,7 @@ import * as groupMessagesData from "./groupMessages";
 import * as groupsData from "./groups";
 import * as mappersData from "./mappers";
 import * as marketplaceData from "./marketplace";
+import * as marketplaceReconcileData from "./marketplaceReconcile";
 import * as messageSearchData from "./messageSearch";
 import * as notesData from "./notes";
 import * as notificationsData from "./notifications";
@@ -524,6 +525,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   layer.groups = createGroupsApi(client, groupsDeps);
   layer.mappers = createMappersApi(mappersDeps);
   layer.marketplace = createMarketplaceApi(client, marketplaceDeps, ratingColumns);
+  layer.marketplaceReconcile = createMarketplaceReconcileApi(client);
   layer.notes = createNotesApi(client, notesDeps);
   layer.messageSearch = createMessageSearchApi(client);
   layer.notifications = createNotificationsApi(client, notificationsDeps);
@@ -613,6 +615,34 @@ function createMessageSearchApi(
     searchGroupMessages: bindDb(client, messageSearchData.searchGroupMessages),
     searchDirectMessages: bindDb(client, messageSearchData.searchDirectMessages),
     listGroupLabels: bindDb(client, messageSearchData.listGroupLabels),
+  };
+}
+
+/**
+ * The read-only candidate queries of the marketplace money reconciliation
+ * (#113). It owns no write: a repair re-applies the original write at the site
+ * that owns it.
+ */
+function createMarketplaceReconcileApi(client: DataClient) {
+  return {
+    listStuckRefundingPayments: bindDb(client, marketplaceReconcileData.listStuckRefundingPayments),
+    listStuckPayoutPendingPayments: bindDb(
+      client,
+      marketplaceReconcileData.listStuckPayoutPendingPayments,
+    ),
+    listOrphanInitializedPayments: bindDb(
+      client,
+      marketplaceReconcileData.listOrphanInitializedPayments,
+    ),
+    listUnsettledInitializedPayments: bindDb(
+      client,
+      marketplaceReconcileData.listUnsettledInitializedPayments,
+    ),
+    listStuckPayingOrders: bindDb(client, marketplaceReconcileData.listStuckPayingOrders),
+    listStuckRefundHoldOrders: bindDb(client, marketplaceReconcileData.listStuckRefundHoldOrders),
+    getOrderForReconcile: bindDb(client, marketplaceReconcileData.getOrderForReconcile),
+    getPaymentForReconcile: bindDb(client, marketplaceReconcileData.getPaymentForReconcile),
+    listCheckoutSiblingOrders: bindDb(client, marketplaceReconcileData.listCheckoutSiblingOrders),
   };
 }
 
@@ -1249,6 +1279,7 @@ export type DataLayer = {
   groups: GroupsApi;
   mappers: MappersApi;
   marketplace: MarketplaceApi;
+  marketplaceReconcile: MarketplaceReconcileApi;
   notes: NotesApi;
   messageSearch: MessageSearchApi;
   notifications: NotificationsApi;
@@ -1277,6 +1308,7 @@ export type GroupMessagesApi = ReturnType<typeof createGroupMessagesApi>;
 export type GroupsApi = ReturnType<typeof createGroupsApi>;
 export type MappersApi = ReturnType<typeof createMappersApi>;
 export type MarketplaceApi = ReturnType<typeof createMarketplaceApi>;
+export type MarketplaceReconcileApi = ReturnType<typeof createMarketplaceReconcileApi>;
 export type NotesApi = ReturnType<typeof createNotesApi>;
 export type MessageSearchApi = ReturnType<typeof createMessageSearchApi>;
 export type NotificationsApi = ReturnType<typeof createNotificationsApi>;
