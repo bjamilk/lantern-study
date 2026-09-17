@@ -54,7 +54,7 @@ import {
     ONBOARDING_COMPLETE_VALUE,
     isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { buildStudySetPath, dueReviewPlan, getNoteStudyContent, isLectureNote, isQuizzableNote, parseStudySetPath, pickOpenStudySetId, resolveLectureStudioNote, TURN_INTO_TARGETS } from '@lantern/shared';
+import { buildStudySetPath, dueReviewPlan, getNoteStudyContent, isLectureNote, isQuizzableNote, isSetRoomFocusPath, parseStudySetPath, pickOpenStudySetId, resolveLectureStudioNote, TURN_INTO_TARGETS } from '@lantern/shared';
 import type { MessageNoteDraft, TurnIntoTargetId } from '@lantern/shared';
 import { buildFlashcardReviewQueue, getTodayStudyCounts, isNewFlashcard, normalizeUserSettings } from '@lantern/shared/settings';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
@@ -2233,9 +2233,14 @@ export const App: React.FC = () => {
                 shrink pass crushes the strip as the content grows. Hidden
                 outright on the path-rendered destinations and on Create group /
                 Admin, and hidden only on narrow screens for an open chat or
-                community channel, where the chat header is the back control. */}
+                community channel, where the chat header is the back control.
+                Hidden outright in a set room's FOCUS state too: the focus bar
+                carries the trail (tile, set name, tool), so the strip would be
+                a second copy of it above a studio that wants the height. The
+                same `isSetRoomFocusPath` the room reads, off the same URL. */}
             <div className={`shrink-0 ${
                 onMePath || onTestBuilderPath || Boolean(testDetailId)
+                    || isSetRoomFocusPath(studySetPath)
                     || appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
                     ? 'hidden'
                     : (appMode === AppMode.CHAT && selectedChat)
