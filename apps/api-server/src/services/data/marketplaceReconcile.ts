@@ -12,9 +12,19 @@
  * event to know what to look at. The Sentry events are the cross-check that
  * these queries find the right rows, not the input.
  *
- * Every function here is a READ. There is no write in this module and there
- * must never be one: a repair re-applies the ORIGINAL write, with the ORIGINAL
- * compare-and-swap filters, at the site that owns it.
+ * The first half of the module is READS: the candidate scan. The second half,
+ * added in Phase B, is the REPAIRS — and every one of them is the ORIGINAL
+ * write from `services/marketplacePayments.ts` with the ORIGINAL compare-and-set
+ * filters, so applying it to a row that has moved on matches nothing and
+ * changes nothing. There is no write here that is not a copy of one that
+ * already exists on the money path, and no repair may ever be added without its
+ * original.
+ *
+ * Each repair returns the rows it matched (`.select('id')`). That RETURNING
+ * clause is the ONLY difference from the original write, and it is what lets
+ * the caller tell "repaired" from "the CAS matched nothing, so somebody or
+ * something already fixed it" — which must never be reported as a fresh
+ * success. The caller passes the result to `mustWrite`.
  *
  * ## What it touches
  *
@@ -267,4 +277,174 @@ export async function listCheckoutSiblingOrders(
     data: (data as Array<{ id: string; status: string; payout_status: string }> | null) ?? null,
     error,
   };
+}
+
+// --- The repairs (Phase B) ---------------------------------------------------
+//
+// One function per repairable class. Each is the original write, with the
+// original CAS filters, plus `.select('id')` so the caller can tell a repair
+// from a no-op. None of them decides anything: the planner decides, from what
+// Paystack said, and the apply path re-plans before calling any of these.
+
+/** What a repair write answers: the rows its CAS matched, and the write error. */
+export type RepairResult = { data: Array<{ id: string }> | null; error: any };
+
+/**
+ * Class 1 — the `refunded` + `refund_reference` stamp Paystack has already
+ * honoured (`marketplacePayments.ts:2017`).
+ */
+export async function stampPaymentRefunded(
+  supabase: DataClient,
+  input: { paymentId: string; refundReference: string; nowIso: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_payments")
+    .update({
+      status: "refunded",
+      refund_reference: input.refundReference,
+      updated_at: input.nowIso,
+    })
+    .eq("id", input.paymentId)
+    .eq("status", "refunding")
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
+}
+
+/**
+ * Class 3 — the refund rollback that never ran (`:1983`). A CLAIM RELEASE: the
+ * caller may only reach it on a positive "no refund accepted for this charge".
+ */
+export async function releasePaymentRefundClaim(
+  supabase: DataClient,
+  input: { paymentId: string; nowIso: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_payments")
+    .update({ status: "paid", updated_at: input.nowIso })
+    .eq("id", input.paymentId)
+    .eq("status", "refunding")
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
+}
+
+/** Class 4 — the refunded order that must never pay out (`:2071`). */
+export async function markOrderRefundedNotPayable(
+  supabase: DataClient,
+  input: { orderId: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_orders")
+    .update({ payout_status: "skipped", payout_failed_reason: "refunded" })
+    .eq("id", input.orderId)
+    .eq("payout_status", "refund_hold")
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
+}
+
+/**
+ * Class 5 — `releaseRefundHold` (`:2119`). A CLAIM RELEASE, on a positive
+ * "no refund accepted for this charge" and nothing else.
+ */
+export async function releaseOrderRefundHold(
+  supabase: DataClient,
+  input: { orderId: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_orders")
+    .update({ payout_status: "pending" })
+    .eq("id", input.orderId)
+    .eq("payout_status", "refund_hold")
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
+}
+
+/**
+ * Class 6 — `releaseOrderPayoutClaim` (`:1629`). A CLAIM RELEASE, on a positive
+ * Paystack 404 for the transfer reference and only while the order carries no
+ * transfer code.
+ */
+export async function releaseOrderPayoutClaim(
+  supabase: DataClient,
+  input: { orderId: string; reason: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_orders")
+    .update({ payout_status: "pending", payout_failed_reason: input.reason.slice(0, 500) })
+    .eq("id", input.orderId)
+    .eq("payout_status", "paying")
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
+}
+
+/**
+ * Class 7 — `finalizeOrderPayout`'s settle (`:1672`). The roll-up to the shared
+ * payment row is deliberately NOT part of this repair; class 10 settles that,
+ * per row, on a later plan.
+ */
+export async function settleOrderPayout(
+  supabase: DataClient,
+  input: { orderId: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_orders")
+    .update({ payout_status: "paid_out", payout_failed_reason: null })
+    .eq("id", input.orderId)
+    .in("payout_status", ["paying", "pending"])
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
+}
+
+/**
+ * Class 8 — the payout rollback (`:1581`). A CLAIM RELEASE, conditional on THIS
+ * attempt's claim marker exactly as the original was: a release must never
+ * clear a transfer another caller has stamped as live.
+ */
+export async function releasePaymentPayoutClaim(
+  supabase: DataClient,
+  input: { paymentId: string; claimMarker: string; reason: string; nowIso: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_payments")
+    .update({
+      status: "paid",
+      payout_transfer_code: null,
+      payout_failed_reason: input.reason.slice(0, 500),
+      updated_at: input.nowIso,
+    })
+    .eq("id", input.paymentId)
+    .eq("status", "payout_pending")
+    .eq("payout_transfer_code", input.claimMarker)
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
+}
+
+/**
+ * Class 9 — the post-transfer code stamp (`:1546`). Only the holder of the
+ * claim may stamp the real code, which is what the marker filter enforces.
+ */
+export async function stampPaymentTransferCode(
+  supabase: DataClient,
+  input: { paymentId: string; claimMarker: string; transferCode: string; nowIso: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_payments")
+    .update({ payout_transfer_code: input.transferCode, updated_at: input.nowIso })
+    .eq("id", input.paymentId)
+    .eq("payout_transfer_code", input.claimMarker)
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
+}
+
+/** Class 10 — `markPaymentPaidOut` (`:1825`). */
+export async function settlePaymentPaidOut(
+  supabase: DataClient,
+  input: { paymentId: string; nowIso: string },
+): Promise<RepairResult> {
+  const { data, error } = await supabase
+    .from("marketplace_payments")
+    .update({ status: "paid_out", payout_at: input.nowIso, updated_at: input.nowIso })
+    .eq("id", input.paymentId)
+    .in("status", ["payout_pending", "paid"])
+    .select("id");
+  return { data: (data as Array<{ id: string }> | null) ?? null, error };
 }

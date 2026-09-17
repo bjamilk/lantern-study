@@ -643,6 +643,18 @@ function createMarketplaceReconcileApi(client: DataClient) {
     getOrderForReconcile: bindDb(client, marketplaceReconcileData.getOrderForReconcile),
     getPaymentForReconcile: bindDb(client, marketplaceReconcileData.getPaymentForReconcile),
     listCheckoutSiblingOrders: bindDb(client, marketplaceReconcileData.listCheckoutSiblingOrders),
+    // The nine repairs (Phase B). Each is the ORIGINAL money-path write with
+    // its ORIGINAL compare-and-set filters; `services/marketplaceReconcileRepair.ts`
+    // re-plans a finding before it reaches any of them.
+    stampPaymentRefunded: bindDb(client, marketplaceReconcileData.stampPaymentRefunded),
+    releasePaymentRefundClaim: bindDb(client, marketplaceReconcileData.releasePaymentRefundClaim),
+    markOrderRefundedNotPayable: bindDb(client, marketplaceReconcileData.markOrderRefundedNotPayable),
+    releaseOrderRefundHold: bindDb(client, marketplaceReconcileData.releaseOrderRefundHold),
+    releaseOrderPayoutClaim: bindDb(client, marketplaceReconcileData.releaseOrderPayoutClaim),
+    settleOrderPayout: bindDb(client, marketplaceReconcileData.settleOrderPayout),
+    releasePaymentPayoutClaim: bindDb(client, marketplaceReconcileData.releasePaymentPayoutClaim),
+    stampPaymentTransferCode: bindDb(client, marketplaceReconcileData.stampPaymentTransferCode),
+    settlePaymentPaidOut: bindDb(client, marketplaceReconcileData.settlePaymentPaidOut),
   };
 }
 

@@ -1243,6 +1243,42 @@
         {
           "name": "listUnsettledInitializedPayments",
           "arity": 0
+        },
+        {
+          "name": "markOrderRefundedNotPayable",
+          "arity": 0
+        },
+        {
+          "name": "releaseOrderPayoutClaim",
+          "arity": 0
+        },
+        {
+          "name": "releaseOrderRefundHold",
+          "arity": 0
+        },
+        {
+          "name": "releasePaymentPayoutClaim",
+          "arity": 0
+        },
+        {
+          "name": "releasePaymentRefundClaim",
+          "arity": 0
+        },
+        {
+          "name": "settleOrderPayout",
+          "arity": 0
+        },
+        {
+          "name": "settlePaymentPaidOut",
+          "arity": 0
+        },
+        {
+          "name": "stampPaymentRefunded",
+          "arity": 0
+        },
+        {
+          "name": "stampPaymentTransferCode",
+          "arity": 0
         }
       ]
     },
