@@ -1,40 +1,51 @@
 # Discarded write errors in the API (#108) — census and plan
 
-supabase-js never throws on a failed write: `await db.from(t).update(…)` RESOLVES with
-`{ data, error }`. A bare `await …;` statement therefore ignores failure, and so does a
-`try/catch` wrapped around one.
+supabase-js never throws on a failed write: an awaited insert / update / upsert / delete
+RESOLVES with `{ data, error }`. A bare `await …;` statement therefore ignores failure, and
+so does a `try/catch` wrapped around one.
 
 ## How the census was taken
 
 1. The issue's perl one-liner, re-run over non-test `.ts` under `routes services middleware
    queue utils`: **87 bare awaited writes in 28 files** (reproduced exactly).
-2. `scripts/census.mjs`-style statement scan (a throwaway script, superseded by the guard
-   test below) that also looked for: writes whose result IS destructured, where either no
-   `error` is bound or the bound name is never read in the next 60 lines; `auth.admin.*`;
-   `.storage.from(…)`; `.rpc(…)`. Results:
-   - destructured-but-unread `.from()` writes: **0** — when this codebase destructures, it
-     checks. The bare-await shape is the whole problem.
-   - bare awaited `.rpc(…)`: 2 (`services/data/adminAnalytics.ts:35`,
-     `services/idempotency.ts:199`).
-   - bare awaited `.storage.from(…).remove(…)`: 3, all in `services/data/uploads.ts`
-     (365, 796, 863) — all inside a `catch` that can never fire.
-   - GoTrue: the scan finds 0 *bare* awaits because the one real site returns the error.
-     `services/data/users.ts:963 signOutUserGlobally` returns `{ error }` and its two
-     callers (`routes/auth.ts:525`, `:559`) discard it — already marked `KNOWN ISSUE` by
-     #110. `services/adminData.ts:154 signOutEverywhere` has the same shape.
-     `services/adminData.ts:107 setAuthBan` is the correct pattern and is the model.
-   The guard test (A2) re-derives 1 and the GoTrue shape on every run and agrees with the
-   perl census exactly: **87 in 28 files**. One shape needs care in both directions —
-   `services/data/boardActions.ts:780` ends in `.then(({ error }) => …)`, which *is* a
-   check, while `services/marketplaceOrders.ts:741` ends in `.then(undefined, handler)`,
-   whose rejection handler can never fire because nothing rejects. The guard counts the
-   second and not the first, and self-tests both.
+2. The guard test (A2) re-derives that number and widens it to the three shapes the
+   one-liner cannot see, all confirmed by lane R2. It scans with comments and string bodies
+   blanked out, which matters: a `;` inside a comment in `marketplacePayments.ts` ("…opened
+   against; settlement refuses…") ended three payment inserts early and made three writes
+   that DO check their error read as unchecked.
+
+   | shape | how it is found | today |
+   |---|---|---|
+   | `bare` — bare awaited `.from('t').update(…)`, incl. the GoTrue writes | statement scan | 87 |
+   | `helper` — bare awaited call to a function returning `Promise<{ error … }>` | return-type annotations, then call sites | 2 (`routes/auth.ts:525`, `:559` → `signOutUserGlobally`, #110) |
+   | `chain` — a write chain parked in a variable, awaited through an expression | identifiers assigned a write chain (functions excluded), then bare awaits naming them | 1 (`routes/marketplace/orders.ts:336`, #111) |
+   | `unread` — destructured, `error` never read in the enclosing scope or never bound | brace-counted scope walk | **0** |
+
+   The true floor is **90 in 30 files**, of which this PR fixes 3. `unread` being zero is a
+   real finding, not a dead detector — this codebase checks when it destructures; the three
+   apparent hits before comment-blanking were the bug above. Two `.then` spellings go
+   opposite ways: `data/boardActions.ts:780` ends in `.then(({ error }) => …)`, a real
+   check, while `marketplaceOrders.ts:741` ends in `.then(undefined, handler)`, whose
+   rejection handler can never fire.
+
+3. Not table writes, counted separately: bare `.rpc(…)` — 2 (`data/adminAnalytics.ts:35`,
+   `idempotency.ts:199`); bare `.storage…remove(…)` — 3 in `data/uploads.ts` (365, 796,
+   863), all inside a `catch` that can never fire. `adminData.ts:154 signOutEverywhere` is
+   the `helper` shape with no return-type annotation, so the guard cannot see it;
+   `adminData.ts:107 setAuthBan` is the correct pattern and the model for all of them.
+
+**What the guard cannot catch** — the number is a FLOOR. It misses a write reached through a
+value the scan cannot type (an unannotated helper, one typed through an alias or interface
+method, a chain passed as an argument); a promise returned, stored and awaited by a caller
+that ignores it; `Promise.all([...writes])`, whose elements are not statements; and an
+`error` "read" only in dead code. A shape found later becomes a detector and RAISES the
+baseline in the same commit — expected, not a regression.
 
 ## The money sites — `services/marketplacePayments.ts` (27)
 
-Classes: **MS** = must-succeed (stop, typed error); **BE** = best-effort (read, warn,
-continue); **CR** = compensate/reconcile (an external side effect already happened).
-"Idempotent?" is answered per webhook site because Paystack retries a non-2xx.
+**MS** = must-succeed (stop, typed error) · **BE** = best-effort (read, warn, continue) ·
+**CR** = compensate/reconcile (an external side effect already happened). Idempotency is
+answered per webhook site, because Paystack retries a non-2xx.
 
 | ln | function | write | what happens next | class + action |
 |---|---|---|---|---|
@@ -83,32 +94,34 @@ continue); **CR** = compensate/reconcile (an external side effect already happen
 ## The orphan payment row (decision for 346 / 702, the pilot)
 
 When the order-link write fails, a `marketplace_payments` row already exists at
-`initialized` with a reference no Paystack session was ever opened for. It is **left as
-is**, and the request fails. Reasons: `initialized` is already the "no money captured"
-state; nothing can settle it, because no charge exists for the reference; `refundPayment
-ForOrder` and `createCheckoutForExistingOrder` both already handle an `initialized` row
-(fail it / supersede it); and flipping it to `failed` would be a second write on the same
-failing path, with the same silent-failure problem. No existing status means "abandoned
-before a session existed", and this lane does not invent a migration — if reconciliation
-wants to distinguish them, propose a `metadata.abandoned_reason` stamp in a later PR.
+`initialized` with a reference no Paystack session was ever opened for. It is **left as is**
+and the request fails: `initialized` already means "no money captured", nothing can settle a
+reference with no charge behind it, both `refundPaymentForOrder` and
+`createCheckoutForExistingOrder` already handle an `initialized` row, and flipping it to
+`failed` would be a second write on the same failing path. No existing status means
+"abandoned before a session existed" and this lane does not invent a migration — a
+`metadata` marker is proposed for a later PR if reconciliation ever needs to tell them apart.
 
-## The other 26 files — counts and a one-line class guess each (later PRs)
+## The other files — count and a one-line class guess each (later PRs)
 
-`jobsBoard` 8 BE (denorm counters, alert stamps) · `studyPackFactory` 4 BE (job progress) ·
-`communities` 3 BE (member counters) · `marketplaceAddresses` 3 **MS** (default-address
-flips: a lost write ships to the wrong address) · `marketplaceStudyPacks` 3 mixed
-(entitlement grant is **MS**) · `referrals` 3 BE (attribution stamps; money-adjacent, audit
-first) · `challengeService` 2 BE · `marketplaceAlerts` 2 BE · `marketplaceCheckout` 2 **MS**
-(the `failed` stamp in the rollback catch) · `marketplaceQuestionBanks` 2 mixed
-(entitlement **MS**) · `studyPresence` 2 BE · `studyRooms` 2 BE · `studySets` 2 BE ·
-`queue/processors` 1 BE · `adminAudit` 1 **MS** (an audit log that can vanish is not an
-audit log) · `apiKey` 1 **MS** (revocation) · `companionConversations` 1 BE · `creators` 1
-BE · `data/boardActions` 1 BE · `data/categories` 1 BE · `data/directMessages` 1 BE ·
-`data/marketplace` 1 BE · `data/readState` 1 BE · `idempotency` 1 **MS** (key release) ·
-`jobAlerts` 1 BE · `marketplaceFavoriteMilestones` 1 BE · `marketplaceSellerTools` 1 BE.
+`jobsBoard` 8 BE (denorm counters) · `studyPackFactory` 4 BE (job progress) · `communities`
+3 BE (member counters) · `marketplaceAddresses` 3 **MS** (a lost default-address flip ships
+to the wrong address) · `marketplaceStudyPacks` 3 and `marketplaceQuestionBanks` 2 mixed
+(entitlement grants are **MS**) · `referrals` 3 BE (attribution; money-adjacent, audit
+first) · `marketplaceCheckout` 2 **MS** (the `failed` stamp in the rollback catch) ·
+`challengeService` / `marketplaceAlerts` / `studyPresence` / `studyRooms` / `studySets` 2
+each BE · `adminAudit` 1 **MS** (an audit log that can vanish is not one) · `apiKey` 1 **MS**
+(revocation) · `idempotency` 1 **MS** (key release) · `queue/processors`,
+`companionConversations`, `creators`, `data/categories`, `data/directMessages`,
+`data/marketplace`, `data/readState`, `jobAlerts`, `marketplaceFavoriteMilestones`,
+`marketplaceSellerTools` 1 each BE. Plus the two non-bare shapes, both in routes and both
+already marked `KNOWN ISSUE`: `routes/auth.ts` 2 (`signOutUserGlobally`, **BE** — the
+session cutoff written first is what actually revokes, so this is a reporting gap, not an
+integrity one) and `routes/marketplace/orders.ts` 1 (`updateOrderFieldsAsParty`, **MS** —
+the handler answers success for a meeting point and note that may have saved nothing).
 
 ## Order of work
 
 A (this PR): helpers + ratchet + the buy-now pilot. B: the rest of `marketplacePayments.ts`,
-then `marketplaceOrders.ts`, one PR per file, every write test-first. Then the other 26 by
+then `marketplaceOrders.ts`, one PR per file, every write test-first. Then the rest by
 domain, best-effort sites batched.

@@ -1,5 +1,7 @@
 {
   "queue/processors/index.ts": 1,
+  "routes/auth.ts": 2,
+  "routes/marketplace/orders.ts": 1,
   "services/adminAudit.ts": 1,
   "services/apiKey.ts": 1,
   "services/challengeService.ts": 2,
