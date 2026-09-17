@@ -153,7 +153,10 @@ export type TestDeps = {
     courseId?: unknown;
     currentCourseId?: string | null;
   }) => Promise<string | null | undefined>;
-  /** Still in the monolith: chat-internals helpers. */
+  /**
+   * In THIS module since monolith lane M3, still reached through `deps` for
+   * the same reason as `updateUserStats`.
+   */
   generateTestQuestions: (config: any) => any[];
   calculateTestScore: (questions: any[], answers: any[]) => number;
   /**
@@ -1728,6 +1731,50 @@ export async function fetchTestResults(
   ); // Cache for 5 minutes
 }
 
+
+/**
+ * MOVED (monolith lane M3) from `SupabaseService.generateTestQuestions`,
+ * verbatim, placeholder comment included. It sat under the CHAT INTERNALS
+ * banner in the facade only by where it was pasted; the tests domain is its
+ * owner and already consumed it through `deps`.
+ *
+ * KNOWN ISSUE (tracked, found during M3): this generates SAMPLE questions —
+ * "Sample question 1?", options A–D, correct answer always "A" — for any
+ * `createTest` that does not supply its own. It is the placeholder the
+ * original comment admits to, not a generator, and it predates this lane.
+ */
+export function generateTestQuestions(config: any): any[] {
+  // Simplified question generation - in a real app this would be more sophisticated
+  const questions = [];
+  const numQuestions = config.numQuestions || 10;
+
+  for (let i = 0; i < numQuestions; i++) {
+    questions.push({
+      id: `q${i + 1}`,
+      question: `Sample question ${i + 1}?`,
+      options: ["A", "B", "C", "D"],
+      correctAnswer: "A",
+      subject: config.subject || "General",
+      difficulty: config.difficulty || "medium",
+    });
+  }
+
+  return questions;
+}
+
+/**
+ * MOVED (monolith lane M3) from `SupabaseService.calculateTestScore`,
+ * verbatim. Percentage of answers that match `correctAnswer`, positionally.
+ */
+export function calculateTestScore(questions: any[], answers: any[]): number {
+  let correct = 0;
+  questions.forEach((question, index) => {
+    if (answers[index] === question.correctAnswer) {
+      correct++;
+    }
+  });
+  return (correct / questions.length) * 100;
+}
 
 export async function updateUserStats(
   db: DataClient,

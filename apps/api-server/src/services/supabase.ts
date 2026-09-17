@@ -14,12 +14,17 @@
  * deliberately:
  *
  *  - `getClient()`, the escape hatch callers still use to run their own query;
- *  - `ratingColumnsBrokenUntil` + `ratingColumnsAvailable` /
- *    `noteRatingColumnsMissing`, the per-INSTANCE circuit breaker for the
- *    unapplied rating-column migration, which `supabase.reviewSignals.test.ts`
- *    asserts per instance (`expect(self.ratingColumnsAvailable()).toBe(false)`)
- *    and which is therefore injected into `data/marketplace.ts` rather than
- *    moved there.
+ *  - `ratingColumnsBrokenUntil`, the per-INSTANCE circuit breaker field for the
+ *    unapplied rating-column migration. Its BODY moved to `data/marketplace.ts`
+ *    in lane M3 (`createRatingColumnCircuitBreaker`, one breaker per data
+ *    layer); the field survives here only for the callers still on this class.
+ *
+ * Lane M3 also moved the last five bodies that had never left this file —
+ * `normalizeMessageRecord` (+ its helper `parseMessageContent`),
+ * `normalizeListingRecord(Async)`, `signSimilarListingCards`,
+ * `calculateTestScore`, `generateTestQuestions` — into `data/mappers.ts`,
+ * `data/marketplace.ts` and `data/tests.ts`. There is now no behaviour in this
+ * file at all.
  *
  * So do not add a query here. Add it to the `services/data/*` module that owns
  * the table, and delegate. The `deps` literal is always built INLINE at the
@@ -121,6 +126,7 @@
  *    stale `packages/shared/dist` makes `tsc` disagree with the runtime.
  */
 import * as dataClient from "./data/client";
+import * as mappersData from "./data/mappers";
 import {
   mapChatMessageRow,
   mapProfileSender,
@@ -663,39 +669,21 @@ export class SupabaseService {
   }
 
   private async normalizeListingRecordAsync(listing: any): Promise<any> {
-    const base = this.normalizeListingRecord(listing);
-    if (!base || !Array.isArray(base.images)) return base;
-    return {
-      ...base,
-      images: await Promise.all(
-        base.images.map((imageUrl: string) =>
-          this.signStorageDisplayUrl(imageUrl),
-        ),
-      ),
-    };
+    return marketplaceData.normalizeListingRecordAsync(
+      {
+        normalizeListingRecord: (l) => this.normalizeListingRecord(l),
+        signStorageDisplayUrl: (url, expiresInSeconds, variant) =>
+          this.signStorageDisplayUrl(url, expiresInSeconds, variant),
+      },
+      listing,
+    );
   }
 
   private normalizeListingRecord(listing: any): any {
-    if (!listing) return listing;
-    const salePrice =
-      listing.sale_price != null ? Number(listing.sale_price) : null;
-    const onSale =
-      salePrice != null &&
-      !!listing.sale_ends_at &&
-      new Date(listing.sale_ends_at) > new Date();
-    const base = !Array.isArray(listing.images)
-      ? listing
-      : {
-          ...listing,
-          images: listing.images.map((url: string) =>
-            this.normalizeStorageUrl(url),
-          ),
-        };
-    return {
-      ...base,
-      effective_price: onSale ? salePrice : Number(listing.price) || 0,
-      is_on_sale: onSale,
-    };
+    return marketplaceData.normalizeListingRecord(
+      { normalizeStorageUrl: (url) => this.normalizeStorageUrl(url) },
+      listing,
+    );
   }
 
   private normalizeInquiryRecord(inquiry: any): any {
@@ -713,79 +701,19 @@ export class SupabaseService {
   }
 
   private normalizeOfferRecord(offer: any): any {
-    if (!offer) return offer;
-    return {
-      ...offer,
-      listing: offer.listing
-        ? this.normalizeListingRecord(offer.listing)
-        : offer.listing,
-    };
+    return marketplaceData.normalizeOfferRecord(
+      { normalizeListingRecord: (l) => this.normalizeListingRecord(l) },
+      offer,
+    );
   }
 
   private normalizeMessageRecord(
     msg: any,
   ): Partial<Message> & { type: "TEXT" | "QUESTION" } {
-    const removedAt = msg.removed_at || msg.removedAt || null;
-    const isRemoved = !!removedAt;
-    const presentationRecord = isRemoved
-      ? { ...msg, text: null, question_data: null, image_url: null }
-      : msg;
-    const parsed = this.parseMessageContent(presentationRecord);
-    const imageUrl = presentationRecord.image_url || parsed.imageUrl;
-    const type = (parsed.type || msg.type || "TEXT") as "TEXT" | "QUESTION";
-    return {
-      ...parsed,
-      type,
-      ...(imageUrl ? { imageUrl: this.normalizeStorageUrl(imageUrl) } : {}),
-      editedAt: msg.edited_at || msg.editedAt || undefined,
-      removedAt: removedAt || undefined,
-      isRemoved,
-      // Denormalised emoji counts (20260830120000). Every listing query now
-      // SELECTs `reactions`; before it did not, so a freshly loaded board or
-      // chat read {} and the counts only appeared after a realtime UPDATE or
-      // the viewer's own tap. `normalizeReactions` also absorbs the
-      // pre-migration case, where the column is simply absent.
-      reactions: normalizeReactions(msg.reactions),
-      // Required by the shipped optimistic-send path so a client can match its
-      // own pending row to the persisted one instead of rendering it twice.
-      clientMessageId: msg.client_message_id ?? msg.clientMessageId ?? undefined,
-      // Board columns (20260903120000). Absent — not null — pre-migration, and
-      // a removed post shows its tombstone, never its title.
-      subject: isRemoved ? null : (msg.subject ?? undefined),
-      pinnedAt: msg.pinned_at ?? msg.pinnedAt ?? undefined,
-      pinnedBy: msg.pinned_by ?? msg.pinnedBy ?? undefined,
-      // Board post kinds (20260908120000). Absent — not null — pre-migration;
-      // `normalizeBoardPostKind` reads both as 'discussion'. The removal
-      // reason SURVIVES a removal on purpose: it is the tombstone's whole
-      // point, unlike the title and body, which are stripped.
-      postKind: msg.post_kind ?? msg.postKind ?? undefined,
-      removedReason: msg.removed_reason ?? msg.removedReason ?? undefined,
-      answeredMessageId:
-        msg.answered_message_id ?? msg.answeredMessageId ?? undefined,
-      replyToMessageId:
-        msg.reply_to_message_id || msg.replyToMessageId || undefined,
-      mentionedUserIds:
-        msg.mentioned_user_ids || msg.mentionedUserIds || undefined,
-      replyTo: msg.replyTo || undefined,
-      threadRootId: msg.thread_root_id || msg.threadRootId || undefined,
-      replyCount:
-        typeof msg.replyCount === "number" ? msg.replyCount : undefined,
-      // Board repost hydration (§6.4), attached by attachBoardRepostContext
-      // before this maps the row. Absent on chat pages, which never run it.
-      repostOf: msg.repostOf ?? undefined,
-      repostCount:
-        typeof msg.repostCount === "number" ? msg.repostCount : undefined,
-      // Peer-upvote progress, attached by attachPeerUpvotes before this maps the
-      // row. Absent — not 0 — on paths that do not compute it, so a client can
-      // tell "no peers yet" from "this build does not report it".
-      peerUpvotes:
-        typeof msg.peerUpvotes === "number" ? msg.peerUpvotes : undefined,
-      receiptStatus: msg.receiptStatus || undefined,
-      seenByCount:
-        typeof msg.seenByCount === "number" ? msg.seenByCount : undefined,
-      seenByTotal:
-        typeof msg.seenByTotal === "number" ? msg.seenByTotal : undefined,
-    };
+    return mappersData.normalizeMessageRecord(
+      { normalizeStorageUrl: (url) => this.normalizeStorageUrl(url) },
+      msg,
+    );
   }
 
   constructor(config: DatabaseConfig) {
@@ -4439,32 +4367,11 @@ export class SupabaseService {
   // STATIC import at the send site — see the banner in `data/communityMute.ts`.
   // Helper methods
   private generateTestQuestions(config: any): any[] {
-    // Simplified question generation - in a real app this would be more sophisticated
-    const questions = [];
-    const numQuestions = config.numQuestions || 10;
-
-    for (let i = 0; i < numQuestions; i++) {
-      questions.push({
-        id: `q${i + 1}`,
-        question: `Sample question ${i + 1}?`,
-        options: ["A", "B", "C", "D"],
-        correctAnswer: "A",
-        subject: config.subject || "General",
-        difficulty: config.difficulty || "medium",
-      });
-    }
-
-    return questions;
+    return testsData.generateTestQuestions(config);
   }
 
   private calculateTestScore(questions: any[], answers: any[]): number {
-    let correct = 0;
-    questions.forEach((question, index) => {
-      if (answers[index] === question.correctAnswer) {
-        correct++;
-      }
-    });
-    return (correct / questions.length) * 100;
+    return testsData.calculateTestScore(questions, answers);
   }
 
   private async updateUserStats(userId: string, score: number): Promise<void> {
@@ -5184,18 +5091,7 @@ export class SupabaseService {
   }
 
   private parseMessageContent(msg: any): Partial<Message> {
-    if (msg.type === "TEXT") {
-      return {
-        type: "TEXT",
-        text: msg.text,
-      };
-    } else if (msg.type === "QUESTION") {
-      return {
-        type: "QUESTION",
-        ...msg.question_data,
-      };
-    }
-    return {};
+    return mappersData.parseMessageContent(msg);
   }
 
   // Test Results Functions
@@ -5359,11 +5255,19 @@ export class SupabaseService {
    * such failure we stop asking for 10 minutes so browse traffic does not pay
    * a doomed extra round trip on every request.
    *
-   * This timestamp and its two accessors are the ONE piece of the MARKETPLACE
-   * section that did not move to `data/marketplace.ts` (monolith lane M1g,
-   * step 18): it is per-INSTANCE state, and `supabase.reviewSignals.test.ts`
-   * asserts it as such (`expect(self.ratingColumnsAvailable()).toBe(false)`).
-   * Both accessors are injected into the moved bodies through `deps`.
+   * The BODY moved to `data/marketplace.ts` in monolith lane M3
+   * (`createRatingColumnCircuitBreaker`), where the data layer holds one
+   * breaker per layer instead of one per facade instance. This field stays
+   * only for the callers still coming through this class, and it is a SECOND,
+   * independent breaker for as long as both paths exist: a 42703 seen through
+   * the facade does not silence the layer's next attempt, and vice versa. The
+   * cost of that is bounded — one doomed round trip per path per ten-minute
+   * window — and it ends when this class is deleted, with the rest of M3.
+   *
+   * It must stay a plain field read through `this`: the first two describes of
+   * `supabase.reviewSignals.test.ts` copy these accessors onto a bare stand-in
+   * (`withRatingGuards`), where an instance built by a factory would be
+   * `undefined`.
    */
   private ratingColumnsBrokenUntil = 0;
 
@@ -6036,7 +5940,10 @@ export class SupabaseService {
 
   /** Sign similar-listing rails with thumb-or-original for the first image. */
   async signSimilarListingCards(listings: any[]): Promise<any[]> {
-    return this.toListingCardRecords(listings || []);
+    return marketplaceData.signSimilarListingCards(
+      { toListingCardRecords: (rows) => this.toListingCardRecords(rows) },
+      listings,
+    );
   }
 
   // Update listing status (active, inactive, sold)
@@ -6226,16 +6133,17 @@ export class SupabaseService {
     inquiryId: string,
     extras?: { threadId?: string; buyerId?: string },
   ): Promise<void> {
-    await this.createNotification(sellerId, {
-      type: "marketplace_inquiry",
-      message: `${buyerName} is interested in your listing "${listingTitle}"`,
-      link: `/marketplace/inquiries/${inquiryId}`,
-      data: {
-        inquiryId,
-        threadId: extras?.threadId,
-        buyerId: extras?.buyerId,
+    await marketplaceData.createInquiryNotification(
+      {
+        createNotification: (userId, notification) =>
+          this.createNotification(userId, notification),
       },
-    });
+      sellerId,
+      buyerName,
+      listingTitle,
+      inquiryId,
+      extras,
+    );
   }
 
   // Create notification for listing purchase
@@ -6245,11 +6153,16 @@ export class SupabaseService {
     listingTitle: string,
     transactionId: string,
   ): Promise<void> {
-    await this.createNotification(sellerId, {
-      type: "marketplace_purchase",
-      message: `${buyerName} purchased your listing "${listingTitle}"`,
-      link: `/marketplace/transactions/${transactionId}`,
-    });
+    await marketplaceData.createPurchaseNotification(
+      {
+        createNotification: (userId, notification) =>
+          this.createNotification(userId, notification),
+      },
+      sellerId,
+      buyerName,
+      listingTitle,
+      transactionId,
+    );
   }
 
   // ===========================================================================

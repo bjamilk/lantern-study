@@ -706,6 +706,31 @@
       ]
     },
     {
+      "namespace": "mappers",
+      "functions": [
+        {
+          "name": "mapChatMessageRow",
+          "arity": 2
+        },
+        {
+          "name": "mapProfileSender",
+          "arity": 2
+        },
+        {
+          "name": "normalizeMessageRecord",
+          "arity": 0
+        },
+        {
+          "name": "parseMessageContent",
+          "arity": 1
+        },
+        {
+          "name": "resolveNestedProfile",
+          "arity": 1
+        }
+      ]
+    },
+    {
       "namespace": "marketplace",
       "functions": [
         {
@@ -761,7 +786,15 @@
           "arity": 0
         },
         {
+          "name": "createInquiryNotification",
+          "arity": 0
+        },
+        {
           "name": "createMarketplaceListing",
+          "arity": 0
+        },
+        {
+          "name": "createPurchaseNotification",
           "arity": 0
         },
         {
@@ -893,12 +926,32 @@
           "arity": 0
         },
         {
+          "name": "normalizeListingRecord",
+          "arity": 0
+        },
+        {
+          "name": "normalizeListingRecordAsync",
+          "arity": 0
+        },
+        {
+          "name": "normalizeOfferRecord",
+          "arity": 0
+        },
+        {
+          "name": "noteRatingColumnsMissing",
+          "arity": 0
+        },
+        {
           "name": "pickCompactListingFields",
           "arity": 1
         },
         {
           "name": "pickServerOwnedListingFields",
           "arity": 1
+        },
+        {
+          "name": "ratingColumnsAvailable",
+          "arity": 0
         },
         {
           "name": "removeFavorite",
@@ -914,6 +967,10 @@
         },
         {
           "name": "setMarketplaceReviewVote",
+          "arity": 0
+        },
+        {
+          "name": "signSimilarListingCards",
           "arity": 0
         },
         {
@@ -1387,6 +1444,10 @@
           "arity": 0
         },
         {
+          "name": "calculateTestScore",
+          "arity": 2
+        },
+        {
           "name": "clearCompletedTestHistory",
           "arity": 0
         },
@@ -1429,6 +1490,10 @@
         {
           "name": "fetchTestResults",
           "arity": 0
+        },
+        {
+          "name": "generateTestQuestions",
+          "arity": 1
         },
         {
           "name": "getPerformanceStats",

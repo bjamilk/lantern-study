@@ -71,33 +71,6 @@ const NOT_ON_LAYER: Record<string, string> = {
   // modules take through `deps`. Inlined once in `data/index.ts` rather than
   // published as a namespace member; no caller outside a `deps` literal.
   getResponseProfile: 'private helper, inlined in data/index.ts',
-
-  // --- PENDING, and this block must reach zero ------------------------------
-  //
-  // The bodies that never left the facade. Each one is MOVED into the data
-  // module that owns its domain in the next commit of this lane (M3 A1), and
-  // its line here is deleted in that same commit — the test above fails a
-  // stale entry, so the allowlist cannot quietly keep a name that has found a
-  // home. They are listed rather than left homeless only so that this net can
-  // be committed, green, against untouched code.
-  normalizeMessageRecord: 'PENDING (M3 A1): facade-only body → data/mappers.ts',
-  parseMessageContent: 'PENDING (M3 A1): facade-only body → data/mappers.ts',
-  normalizeListingRecord: 'PENDING (M3 A1): facade-only body → data/marketplace.ts',
-  normalizeListingRecordAsync:
-    'PENDING (M3 A1): facade-only body → data/marketplace.ts',
-  normalizeOfferRecord: 'PENDING (M3 A1): facade-only body → data/marketplace.ts',
-  signSimilarListingCards:
-    'PENDING (M3 A1): facade-only body → data/marketplace.ts',
-  ratingColumnsAvailable:
-    'PENDING (M3 A1): per-instance circuit breaker → data/marketplace.ts, held per LAYER',
-  noteRatingColumnsMissing:
-    'PENDING (M3 A1): per-instance circuit breaker → data/marketplace.ts, held per LAYER',
-  createInquiryNotification:
-    'PENDING (M3 A1): no domain home on the layer → data/marketplace.ts',
-  createPurchaseNotification:
-    'PENDING (M3 A1): no domain home on the layer → data/marketplace.ts',
-  calculateTestScore: 'PENDING (M3 A1): facade-only body → data/tests.ts',
-  generateTestQuestions: 'PENDING (M3 A1): facade-only body → data/tests.ts',
 };
 
 function fakeClient(): never {

@@ -5,6 +5,7 @@
  * votes table and rating columns may simply not exist yet, and a browse or
  * review read must never fail because of that.
  */
+import { createDataLayer } from "./data";
 import { SupabaseService } from "./supabase";
 
 type ChainResult = { data?: unknown; error?: unknown; count?: number | null };
@@ -269,28 +270,37 @@ describe("getMarketplaceListings rating sort fallback", () => {
     seller: { id: "seller-1", name: "Seller" },
   };
 
-  function fakeBrowseSelf(queues: ChainResult[]) {
+  /**
+   * MOVED ONTO THE LAYER (monolith lane M3). The breaker is no longer a field
+   * on `SupabaseService`, so the harness that used to be a bare `self` driven
+   * through `SupabaseService.prototype.getMarketplaceListings.call(self, …)`
+   * is now a real `createDataLayer(...)` over the same fake client, and the
+   * assertion reads `layer.marketplace.ratingColumnsAvailable()` instead of
+   * `self.ratingColumnsAvailable()`. The two stubs the old harness installed
+   * as `self` members are installed as namespace members instead: the deps
+   * arrows read them through the layer at CALL time, exactly as the facade's
+   * `this.` arrows did.
+   */
+  function fakeBrowseLayer(queues: ChainResult[]) {
     const rpc = jest.fn();
-    const self: any = withRatingGuards({
-      getResponseProfile: () => "full",
-      normalizeListingRecordAsync: async (row: any) => row,
-      attachSellerTrust: async (rows: any[]) => rows,
-      supabase: {
-        rpc,
-        from: queuedFrom({ marketplace_listings: queues }),
-      },
+    const layer = createDataLayer({
+      client: { rpc, from: queuedFrom({ marketplace_listings: queues }) } as never,
+      supabaseUrl: "https://example.supabase.co",
+      host: new Proxy({}, { get: () => () => undefined }) as never,
     });
-    return { self, rpc };
+    layer.marketplace.normalizeListingRecordAsync = async (row: any) => row;
+    layer.marketplace.attachSellerTrust = async (rows: any[]) => rows;
+    return { layer, rpc };
   }
 
-  const call = (self: unknown, options: any) =>
-    SupabaseService.prototype.getMarketplaceListings.call(self as any, options);
-
   it("routes rating sort to the fallback query, never the search RPC", async () => {
-    const { self, rpc } = fakeBrowseSelf([
+    const { layer, rpc } = fakeBrowseLayer([
       { data: [LISTING_ROW], error: null, count: 1 },
     ]);
-    const result = await call(self, { search: "calc", sortBy: "rating" });
+    const result = await layer.marketplace.getMarketplaceListings({
+      search: "calc",
+      sortBy: "rating",
+    });
     expect(rpc).not.toHaveBeenCalled();
     expect(result.total).toBe(1);
     expect(result.data).toHaveLength(1);
@@ -301,14 +311,22 @@ describe("getMarketplaceListings rating sort fallback", () => {
       code: "42703",
       message: 'column marketplace_listings.rating_avg does not exist',
     };
-    const { self, rpc } = fakeBrowseSelf([
+    const { layer, rpc } = fakeBrowseLayer([
       { data: null, error: missing, count: null },
       { data: [LISTING_ROW], error: null, count: 1 },
     ]);
-    const result = await call(self, { sortBy: "rating", minRating: 4 });
+    const result = await layer.marketplace.getMarketplaceListings({
+      sortBy: "rating",
+      minRating: 4,
+    });
     expect(rpc).not.toHaveBeenCalled();
     expect(result.total).toBe(1);
-    // The guard remembers the failure so later queries skip the doomed attempt.
-    expect(self.ratingColumnsAvailable()).toBe(false);
+    // The guard remembers the failure so later queries skip the doomed
+    // attempt, and it is PER LAYER: a second layer still asks.
+    expect(layer.marketplace.ratingColumnsAvailable()).toBe(false);
+    const { layer: other } = fakeBrowseLayer([
+      { data: [LISTING_ROW], error: null, count: 1 },
+    ]);
+    expect(other.marketplace.ratingColumnsAvailable()).toBe(true);
   });
 });
