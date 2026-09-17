@@ -17,6 +17,17 @@
  *    so an `image_url` pointing anywhere else is refused before the insert.
  *    Without that check a client could name another group's object.
  */
+import { SupabaseService } from './supabase';
+import * as groupMessagesData from './data/groupMessages';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as chatSendData from './data/chatSend';
 jest.mock('./cache', () => ({
   cacheService: {
     cached: jest.fn(async (_key: string, fn: () => Promise<unknown>) => fn()),
@@ -31,7 +42,6 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
 import { setSchemaCapabilities } from './schemaCapabilities';
 import { isBoardImageUrlAllowed } from '@lantern/shared/network';
 import { parseStorageObjectUrl } from '@lantern/shared/utils/storageUrl';
@@ -47,7 +57,6 @@ const signed = (path: string) =>
 
 const MINE = signed(`${USER}/chat/${GROUP}/1756900000-photo.webp`);
 
-const proto = SupabaseService.prototype as any;
 
 function makeDb(handler: (q: any) => any) {
   const calls: any[] = [];
@@ -108,7 +117,7 @@ function sendHarness(isBoard: boolean) {
   return {
     inserts,
     send: (content: string, options: Record<string, unknown>) =>
-      proto.sendMessage.call(self, GROUP, USER, content, undefined, options),
+      chatSendData.sendMessage((self as any).supabase, self as any, GROUP, USER, content, undefined, options),
   };
 }
 
@@ -213,7 +222,7 @@ describe('sendMessage with a board photo', () => {
       attachReplyPreview: jest.fn(async (row: any) => row),
       findGroupMessageByClientId: jest.fn(async () => null),
     };
-    await proto.sendMessage.call(self, GROUP, USER, 'hello', 'repost:deadbeef', {});
+    await chatSendData.sendMessage((self as any).supabase, self as any, GROUP, USER, 'hello', 'repost:deadbeef', {});
     expect(inserts[0].client_message_id).toBeUndefined();
   });
 });
@@ -224,7 +233,16 @@ describe('editing a post never touches its photo', () => {
     //   UPDATE public.messages SET text = p_new_text, edited_at = v_now
     // and the service passes only (kind, messageId, actorId, content), so
     // there is no code path from PUT /messages/:messageId to image_url.
-    const editChatMessage = proto.editChatMessage as (...args: unknown[]) => unknown;
+    // FINDING (M3 Phase B, PR 3): this is the ONE assertion in the 31
+    // retargeted suites that is tied to the FACADE's signature rather than to
+    // the behaviour under test — `toHaveLength(4)` is the arity of
+    // `SupabaseService.editChatMessage(kind, messageId, actorId, content)`.
+    // The module's own function takes `(db, deps, kind, messageId, actorId,
+    // content)`, so retargeting it would mean changing the expected length,
+    // which this PR does not do silently. Left on the prototype; PR 4 decides
+    // (either `toHaveLength(6)`, or drop the arity line and keep the source
+    // check, which is what actually proves the point).
+    const editChatMessage = SupabaseService.prototype.editChatMessage as (...args: unknown[]) => unknown;
     expect(editChatMessage).toHaveLength(4);
     expect(String(editChatMessage)).not.toContain('image_url');
   });

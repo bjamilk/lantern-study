@@ -20,6 +20,15 @@
  * The lounge is the derived exception (founder decision 1): it carries a
  * community_id but stays a live chat, so it keeps the per-message fan-out.
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as chatSendData from './data/chatSend';
 jest.mock('./cache', () => ({
   cacheService: {
     // Pass through: the board context is resolved fresh in every test.
@@ -36,7 +45,6 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
 import { setSchemaCapabilities } from './schemaCapabilities';
 
 const USER = '11111111-1111-4111-8111-111111111111';
@@ -144,15 +152,14 @@ function makeSelf(options: {
     },
   };
 
-  const proto = SupabaseService.prototype as any;
   const self: any = {
     supabase,
     // Real: these are the code under test.
-    resolveBoardContext: proto.resolveBoardContext,
-    notifyGroupMessageRecipients: proto.notifyGroupMessageRecipients,
-    notifyMentionedUsers: proto.notifyMentionedUsers,
-    notifyBoardCommentRecipients: proto.notifyBoardCommentRecipients,
-    notifyReplyRecipient: proto.notifyReplyRecipient,
+    resolveBoardContext: function (this: any, id: string) { return chatSendData.resolveBoardContext(this.supabase, this, id); },
+    notifyGroupMessageRecipients: function (this: any, params: any) { return chatSendData.notifyGroupMessageRecipients(this.supabase, this, params); },
+    notifyMentionedUsers: function (this: any, params: any) { return chatSendData.notifyMentionedUsers(this, params); },
+    notifyBoardCommentRecipients: function (this: any, params: any) { return chatSendData.notifyBoardCommentRecipients(this.supabase, this, params); },
+    notifyReplyRecipient: function (this: any, params: any) { return chatSendData.notifyReplyRecipient(this.supabase, this, params); },
     // Stubbed: resolved elsewhere and separately covered.
     getGroupById: jest.fn(async () => ({
       id: GROUP,
@@ -176,7 +183,7 @@ function makeSelf(options: {
   };
 
   const send = (content: string, opts?: Record<string, unknown>) =>
-    proto.sendMessage.call(self, GROUP, USER, content, undefined, opts);
+    chatSendData.sendMessage((self as any).supabase, self as any, GROUP, USER, content, undefined, opts);
 
   return { self, send, calls, inserted, notifications };
 }

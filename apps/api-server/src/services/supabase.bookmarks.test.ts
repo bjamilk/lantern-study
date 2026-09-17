@@ -16,6 +16,17 @@
  * see the roster, a visible save count turns a private "read this later" into
  * a social signal.
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as boardActionsData from './data/boardActions';
+import * as groupMessagesData from './data/groupMessages';
+import * as storageAclData from './data/storageAcl';
 jest.mock('./cache', () => ({
   cacheService: {
     cached: jest.fn(async (_key: string, fn: () => Promise<unknown>) => fn()),
@@ -30,7 +41,6 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
 import { setSchemaCapabilities } from './schemaCapabilities';
 
 const VIEWER = '11111111-1111-4111-8111-111111111111';
@@ -106,7 +116,6 @@ function makeDb(handler: (q: Query) => any) {
   return { db: { from }, calls };
 }
 
-const proto = SupabaseService.prototype as any;
 
 beforeEach(() => {
   // Forced so no probe query runs and the scripted handler stays predictable.
@@ -126,7 +135,7 @@ describe('setMessageBookmark', () => {
     });
     const self: any = {
       supabase: db,
-      bookmarksMissingTable: proto.bookmarksMissingTable,
+      bookmarksMissingTable: boardActionsData.bookmarksMissingTable,
       getAuthorizedGroupMessage: jest.fn(async () =>
         authorized ? { id: POST, group_id: GROUP, sender_id: VIEWER, type: 'TEXT' } : null
       ),
@@ -134,7 +143,7 @@ describe('setMessageBookmark', () => {
     };
     return {
       writes,
-      set: (bookmarked: boolean) => proto.setMessageBookmark.call(self, POST, VIEWER, bookmarked),
+      set: (bookmarked: boolean) => boardActionsData.setMessageBookmark((self as any).supabase, self as any, POST, VIEWER, bookmarked),
     };
   }
 
@@ -180,10 +189,10 @@ describe('setMessageBookmark', () => {
 describe('getBookmarkedMessageIdsForGroup', () => {
   function harness(result: any) {
     const { db, calls } = makeDb(() => result);
-    const self: any = { supabase: db, bookmarksMissingTable: proto.bookmarksMissingTable };
+    const self: any = { supabase: db, bookmarksMissingTable: boardActionsData.bookmarksMissingTable };
     return {
       calls,
-      read: () => proto.getBookmarkedMessageIdsForGroup.call(self, GROUP, VIEWER),
+      read: () => boardActionsData.getBookmarkedMessageIdsForGroup((self as any).supabase, self as any, GROUP, VIEWER),
     };
   }
 
@@ -275,20 +284,20 @@ describe('listBookmarkedPosts', () => {
     });
     const self: any = {
       supabase: db,
-      bookmarksMissingTable: proto.bookmarksMissingTable,
-      reactionsMissingTable: proto.reactionsMissingTable,
-      readBoardPostRows: proto.readBoardPostRows,
-      readBoardContextForGroups: proto.readBoardContextForGroups,
-      toBoardPostShape: proto.toBoardPostShape,
-      normalizeStorageUrl: proto.normalizeStorageUrl,
-      countRepostsFor: proto.countRepostsFor,
-      repostedByMeAmong: proto.repostedByMeAmong,
-      favoritedAmong: proto.favoritedAmong,
+      bookmarksMissingTable: boardActionsData.bookmarksMissingTable,
+      reactionsMissingTable: groupMessagesData.reactionsMissingTable,
+      readBoardPostRows: function (this: any, ids: string[]) { return boardActionsData.readBoardPostRows(this.supabase, ids); },
+      readBoardContextForGroups: function (this: any, groupIds: string[]) { return boardActionsData.readBoardContextForGroups(this.supabase, groupIds); },
+      toBoardPostShape: function (this: any, row: any, extras: any) { return boardActionsData.toBoardPostShape(this, row, extras); },
+      normalizeStorageUrl: function (this: any, url: string) { return storageAclData.normalizeStorageUrl(this.supabaseUrl, url); },
+      countRepostsFor: function (this: any, ids: string[]) { return boardActionsData.countRepostsFor(this.supabase, ids); },
+      repostedByMeAmong: function (this: any, ids: string[], uid: string) { return boardActionsData.repostedByMeAmong(this.supabase, ids, uid); },
+      favoritedAmong: function (this: any, ids: string[], uid: string) { return boardActionsData.favoritedAmong(this.supabase, this, ids, uid); },
     };
     return {
       calls,
       list: (options2: Record<string, unknown> = {}) =>
-        proto.listBookmarkedPosts.call(self, VIEWER, options2),
+        boardActionsData.listBookmarkedPosts((self as any).supabase, self as any, VIEWER, options2),
     };
   }
 
@@ -383,10 +392,10 @@ describe('importMessageBookmarks', () => {
       }
       return { data: [], error: null };
     });
-    const self: any = { supabase: db, bookmarksMissingTable: proto.bookmarksMissingTable };
+    const self: any = { supabase: db, bookmarksMissingTable: boardActionsData.bookmarksMissingTable };
     return {
       upserts,
-      run: (ids: string[]) => proto.importMessageBookmarks.call(self, VIEWER, ids),
+      run: (ids: string[]) => boardActionsData.importMessageBookmarks((self as any).supabase, self as any, VIEWER, ids),
     };
   }
 
@@ -429,9 +438,9 @@ describe('importMessageBookmarks', () => {
       }
       return { data: null, error: null };
     });
-    const self: any = { supabase: db, bookmarksMissingTable: proto.bookmarksMissingTable };
+    const self: any = { supabase: db, bookmarksMissingTable: boardActionsData.bookmarksMissingTable };
 
-    const result = await proto.importMessageBookmarks.call(self, VIEWER, ids);
+    const result = await boardActionsData.importMessageBookmarks((self as any).supabase, self as any, VIEWER, ids);
     expect(result.imported).toBe(40);
 
     const stamps = upserts[0].map((r: any) => r.created_at);
@@ -471,11 +480,11 @@ describe('enrichBoardViewerState', () => {
     });
     const self: any = {
       supabase: db,
-      bookmarksMissingTable: proto.bookmarksMissingTable,
-      repostedByMeAmong: proto.repostedByMeAmong,
-      bookmarkedAmong: proto.bookmarkedAmong,
+      bookmarksMissingTable: boardActionsData.bookmarksMissingTable,
+      repostedByMeAmong: function (this: any, ids: string[], uid: string) { return boardActionsData.repostedByMeAmong(this.supabase, ids, uid); },
+      bookmarkedAmong: function (this: any, ids: string[], uid: string) { return boardActionsData.bookmarkedAmong(this.supabase, this, ids, uid); },
     };
-    const rows = await proto.enrichBoardViewerState.call(self, [{ id: POST } as any], VIEWER);
+    const rows = await boardActionsData.enrichBoardViewerState(self as any, [{ id: POST } as any], VIEWER);
     expect(rows[0]).toMatchObject({ bookmarked: false, repostedByMe: false });
   });
 
@@ -486,11 +495,11 @@ describe('enrichBoardViewerState', () => {
     });
     const self: any = {
       supabase: db,
-      bookmarksMissingTable: proto.bookmarksMissingTable,
-      repostedByMeAmong: proto.repostedByMeAmong,
-      bookmarkedAmong: proto.bookmarkedAmong,
+      bookmarksMissingTable: boardActionsData.bookmarksMissingTable,
+      repostedByMeAmong: function (this: any, ids: string[], uid: string) { return boardActionsData.repostedByMeAmong(this.supabase, ids, uid); },
+      bookmarkedAmong: function (this: any, ids: string[], uid: string) { return boardActionsData.bookmarkedAmong(this.supabase, this, ids, uid); },
     };
-    const rows = await proto.enrichBoardViewerState.call(self, [{ id: POST } as any], VIEWER);
+    const rows = await boardActionsData.enrichBoardViewerState(self as any, [{ id: POST } as any], VIEWER);
     expect(rows[0]).toMatchObject({ bookmarked: true, repostedByMe: true });
   });
 });

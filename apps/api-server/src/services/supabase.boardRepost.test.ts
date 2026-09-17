@@ -17,6 +17,16 @@
  *     hasImage/hasAudio flags and NEVER a media URL, so it downloads zero bytes
  *     of media like every other list card.
  */
+import * as storageAclData from './data/storageAcl';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as boardActionsData from './data/boardActions';
 jest.mock('./cache', () => ({
   cacheService: {
     cached: jest.fn(async (_key: string, fn: () => Promise<unknown>) => fn()),
@@ -31,7 +41,6 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
 import { boardRepostClientId } from '@lantern/shared/network';
 import { setSchemaCapabilities } from './schemaCapabilities';
 
@@ -109,7 +118,6 @@ function makeDb(handler: (q: Query) => any) {
   return { db: { from }, calls };
 }
 
-const proto = SupabaseService.prototype as any;
 
 const liveOriginal = (over: Record<string, unknown> = {}) => ({
   id: ORIGINAL,
@@ -167,7 +175,7 @@ function repostHarness(options: {
     calls,
     self,
     repost: (quote?: string, viewer = VIEWER) =>
-      proto.createBoardRepost.call(self, GROUP, viewer, ORIGINAL, quote),
+      boardActionsData.createBoardRepost((self as any).supabase, self as any, GROUP, viewer, ORIGINAL, quote),
   };
 }
 
@@ -341,7 +349,7 @@ describe('undoBoardRepost', () => {
       deletes,
       updates,
       audits,
-      undo: () => proto.undoBoardRepost.call(self, ORIGINAL, VIEWER),
+      undo: () => boardActionsData.undoBoardRepost((self as any).supabase, ORIGINAL, VIEWER),
     };
   }
 
@@ -404,12 +412,12 @@ describe('attachBoardRepostContext', () => {
     });
     const self: any = {
       supabase: db,
-      toQuotedPost: proto.toQuotedPost,
-      countRepostsFor: proto.countRepostsFor,
-      orphanedRepostEmbed: proto.orphanedRepostEmbed,
-      normalizeStorageUrl: proto.normalizeStorageUrl,
+      toQuotedPost: boardActionsData.toQuotedPost,
+      countRepostsFor: function (this: any, ids: string[]) { return boardActionsData.countRepostsFor(this.supabase, ids); },
+      orphanedRepostEmbed: boardActionsData.orphanedRepostEmbed,
+      normalizeStorageUrl: function (this: any, url: string) { return storageAclData.normalizeStorageUrl(this.supabaseUrl, url); },
     };
-    return (rows: any[]) => proto.attachBoardRepostContext.call(self, rows, GROUP);
+    return (rows: any[]) => boardActionsData.attachBoardRepostContext((self as any).supabase, self as any, rows, GROUP);
   }
 
   const repostRow = (id: string, target = ORIGINAL) => ({
