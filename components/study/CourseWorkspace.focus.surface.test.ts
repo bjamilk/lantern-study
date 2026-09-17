@@ -39,6 +39,10 @@ describe('the set room asks one predicate which state it is in', () => {
     );
   });
 
+  it('hands the same answer to the sidebar-collapse hook', () => {
+    expect(flat(ROOM)).toContain('useFocusSidebarCollapse(focusMode);');
+  });
+
   it('gates the Study/Library tab bar on it', () => {
     expect(flat(ROOM)).toContain('{!focusActivity ? ( <StudyWorkspaceBar');
   });

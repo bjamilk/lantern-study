@@ -147,6 +147,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useNoteHandlers } from '../../hooks/useNoteHandlers';
 import { useAiJobUserId } from '../../hooks/useAiJobs';
 import { useAppNavigation } from '../../hooks/useAppNavigation';
+import { useFocusSidebarCollapse } from '../../hooks/useFocusSidebarCollapse';
 import { runAiJob } from '../../stores/aiJobRunner';
 import { touchWorkspaceRecent } from '../../utils/workspaceRecents';
 import * as notesApi from '../../services/notes';
@@ -1413,6 +1414,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const focusMode = Boolean(studySetId) && isSetRoomFocus(activity, routePath);
   const focusActivity: WorkspaceActivityId | null =
     focusMode && activity !== 'home' && activity !== 'add' ? activity : null;
+
+  // The global sidebar steps aside at lg+ while a studio is open, and comes
+  // back when the student leaves — unless they opened it themselves in the
+  // meantime, which the hook remembers. See hooks/useFocusSidebarCollapse.
+  useFocusSidebarCollapse(focusMode);
 
   const roomMenu: SetRoomHeaderMenuItem[] = studySetId
     ? [
