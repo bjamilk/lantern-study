@@ -1,4 +1,5 @@
 import type { MarketplaceFulfillmentMode } from '@lantern/shared/types';
+import { bestEffortWrite } from './data/writeResult';
 import {
   isDigitalListingKind,
   nairaToKobo,
@@ -189,10 +190,16 @@ export class MarketplaceCheckoutService {
       }
 
       if (!paystackOn) {
-        await this.db
-          .from('marketplace_checkouts')
-          .update({ status: 'awaiting_payment', updated_at: new Date().toISOString() })
-          .eq('id', checkout.id);
+        // BEST EFFORT (#108): the insert above already set `awaiting_payment`,
+        // so this re-stamps the status it already has and moves `updated_at`.
+        // Cosmetic by construction.
+        bestEffortWrite(
+          await this.db
+            .from('marketplace_checkouts')
+            .update({ status: 'awaiting_payment', updated_at: new Date().toISOString() })
+            .eq('id', checkout.id),
+          { table: 'marketplace_checkouts', op: 'update', checkoutId: checkout.id },
+        );
         return {
           checkout: { ...checkout, authorizationUrl: null },
           orders: created,
@@ -232,10 +239,24 @@ export class MarketplaceCheckoutService {
           // best-effort rollback
         }
       }
-      await this.db
-        .from('marketplace_checkouts')
-        .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .eq('id', checkout.id);
+      // BEST EFFORT at ERROR level (#108): it must not throw over the error
+      // that sent this rollback running — the caller needs that one. A failure
+      // leaves the checkout reading `awaiting_payment` while its orders have
+      // been cancelled, which is a stale row rather than a money problem: no
+      // charge was opened, and `createCheckoutCharge` throws before Paystack.
+      bestEffortWrite(
+        await this.db
+          .from('marketplace_checkouts')
+          .update({ status: 'failed', updated_at: new Date().toISOString() })
+          .eq('id', checkout.id),
+        {
+          table: 'marketplace_checkouts',
+          op: 'update',
+          checkoutId: checkout.id,
+          reason: 'checkout_rollback',
+        },
+        'error',
+      );
       throw err;
     }
   }

@@ -110,10 +110,13 @@ describe('the browse-card counts refresh after a republish', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: republishes with a stale card count and says nothing', async () => {
+  it('still republishes when the card count refresh fails, and warns', async () => {
     const { result } = await updateBank(true);
     expect(result).toEqual(expect.objectContaining({ version: 4 }));
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'marketplace_listings', reason: 'browse_card_counts' }),
+    );
     expect(logger.error).not.toHaveBeenCalled();
   });
 });
@@ -176,15 +179,31 @@ describe('the cleanup that removes a listing with no content behind it', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: says nothing when the cleanup itself fails, leaving a purchasable orphan', async () => {
-    // A listing anyone can buy, with no question bank behind it.
+  it('still rethrows the CONTENT error when the cleanup fails', async () => {
+    // It cannot throw its own: the content error is the one the seller needs.
     const { run, calls } = await publishBank(true);
     await expect(run()).rejects.toEqual(expect.objectContaining({ code: '22001' }));
     // The cleanup really did run and really did fail — without this the
     // assertions below would pass vacuously on a flow that never got there.
     expect(calls.some(isCleanupDelete)).toBe(true);
-    expect(logger.error).not.toHaveBeenCalled();
-    expect(captureScopedException).not.toHaveBeenCalled();
+  });
+
+  it('reports the purchasable orphan at ERROR level and to Sentry', async () => {
+    const { run } = await publishBank(true);
+    await run().catch(() => undefined);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({
+        table: 'marketplace_listings',
+        op: 'delete',
+        listingId: 'listing_1',
+        reason: 'orphaned_listing_cleanup',
+      }),
+    );
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ fingerprint: ['orphaned-listing-cleanup-failed'] }),
+    );
   });
 });
 
@@ -205,7 +224,10 @@ describe('the cart checkout stamps', () => {
       getMarketplaceAddressesService: () => ({ getOwned: async () => null, snapshot: () => ({}) }),
     }));
     jest.doMock('./marketplaceOrders', () => ({
-      getMarketplaceOrdersService: () => ({ updateOrderStatus: jest.fn(async () => ({})) }),
+      getMarketplaceOrdersService: () => ({
+        updateOrderStatus: jest.fn(async () => ({})),
+        createOrderFromBuyNow: jest.fn(async () => ({ id: 'ord_1', seller_id: 'seller_9' })),
+      }),
       resolveEffectivePrice: () => 1000,
     }));
 
@@ -262,17 +284,22 @@ describe('the cart checkout stamps', () => {
     return { run, calls, freshLogger, isAwaitingStamp, isFailedStamp };
   };
 
-  it('TODAY: says nothing when the awaiting_payment stamp fails', async () => {
+  it('warns when the awaiting_payment re-stamp fails', async () => {
     const { run, freshLogger } = await runCheckout({ stamp: 'awaiting', fails: true });
     await run().catch(() => undefined);
-    expect(freshLogger.warn).not.toHaveBeenCalled();
+    expect(freshLogger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'marketplace_checkouts', checkoutId: 'chk_1' }),
+    );
     expect(freshLogger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: says nothing when the rollback failed stamp fails', async () => {
+  it('reports the rollback stamp at ERROR level and still rethrows the original', async () => {
     const { run, freshLogger } = await runCheckout({ stamp: 'failed', fails: true });
-    await expect(run()).rejects.toThrow();
-    expect(freshLogger.warn).not.toHaveBeenCalled();
-    expect(freshLogger.error).not.toHaveBeenCalled();
+    await expect(run()).rejects.toEqual(expect.objectContaining({ code: '23503' }));
+    expect(freshLogger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ reason: 'checkout_rollback', checkoutId: 'chk_1' }),
+    );
   });
 });
