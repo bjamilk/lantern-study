@@ -86,9 +86,18 @@ const studentTogglesSidebar = async (focus: boolean) => {
   await show(focus);
 };
 
-function desktop(matches: boolean) {
+/**
+ * A viewport in CSS pixels, not a boolean.
+ *
+ * The regression that made this necessary was a breakpoint argument, so the
+ * tests have to be able to state a WIDTH: the founder browses at 125% zoom,
+ * where a 1258 device-px window is a 1006 CSS-px viewport — under `lg` and over
+ * `md`. A `matches: true/false` stub cannot express that, and the previous
+ * version of this helper is why an `lg` gate looked correct here.
+ */
+function viewport(cssPixels: number) {
   window.matchMedia = ((query: string) => ({
-    matches,
+    matches: cssPixels >= Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? Infinity),
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -103,7 +112,7 @@ beforeEach(() => {
   uiState.isSidebarExpanded = true;
   uiState.isChatsSectionExpanded = true;
   writes = 0;
-  desktop(true);
+  viewport(1440);
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -203,8 +212,21 @@ describe('useFocusSidebarCollapse', () => {
     root = createRoot(container);
   });
 
-  it('does nothing below lg, where both panels are overlays the shell hides', async () => {
-    desktop(false);
+  it('stands the nav down at 1006px — over the sidebar’s md, under lg', async () => {
+    // The founder's window: 1258 device px at 125% zoom. The sidebar is still a
+    // 224px column here, so the nav is still taking width from the studio.
+    viewport(1006);
+    await show(true);
+    expect(uiState.isSidebarExpanded).toBe(false);
+    expect(uiState.isChatsSectionExpanded).toBe(false);
+
+    await show(false);
+    expect(uiState.isSidebarExpanded).toBe(true);
+    expect(uiState.isChatsSectionExpanded).toBe(true);
+  });
+
+  it('does nothing below the sidebar’s own breakpoint, where it is not drawn', async () => {
+    viewport(700);
     await show(true);
     expect(writes).toBe(0);
     expect(uiState.isSidebarExpanded).toBe(true);

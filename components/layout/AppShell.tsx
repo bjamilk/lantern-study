@@ -19,7 +19,7 @@ import {
   MIN_LECTURE_RECORD_MS,
 } from '../../services/lectureRecording';
 import { fetchAIUsage } from '../../services/ai';
-import { resolveShellSideColumn } from './shellSideColumn';
+import { resolveShellSideColumn, SHELL_SIDEBAR_COLUMN_CLASS } from './shellSideColumn';
 import { useAiCredits } from './useAiCredits';
 
 interface AppShellProps {
@@ -188,8 +188,11 @@ const AppShell: React.FC<AppShellProps> = ({
       >
         Skip to main content
       </a>
-            {/* Desktop sidebar - hidden on mobile */}
-            <div className="hidden md:block">
+            {/* Desktop sidebar - hidden on mobile. The class comes from
+                shellSideColumn so the media query that asks "is the sidebar a
+                column right now" cannot drift from the class that makes it
+                one — see SHELL_SIDEBAR_COLUMN_CLASS. */}
+            <div className={SHELL_SIDEBAR_COLUMN_CLASS}>
                 <Sidebar {...sidebarProps} />
             </div>
 

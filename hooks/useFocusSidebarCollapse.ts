@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useUIStore } from '../stores/uiStore';
+import { shellSidebarIsAColumn } from '../components/layout/shellSideColumn';
 
 /**
  * Stand the left-hand nav chrome down while the student is inside a studio,
@@ -39,9 +40,18 @@ import { useUIStore } from '../stores/uiStore';
  * pass sees what the first pass actually did. The suite now mounts inside
  * StrictMode for exactly this reason.
  *
- * Below `lg` the panels are overlays the shell already hides, so the hook does
- * nothing at all — closing something that is not drawn would make the change
- * appear on the next resize for no reason a student could explain.
+ * WHERE THE BREAKPOINT COMES FROM. `shellSidebarIsAColumn()`, which is the one
+ * question that matters: is the nav taking width from the content right now?
+ * FIXED: this gated on an invented `(min-width: 1024px)`. The founder browses
+ * at 125% zoom, where a 1258 device-px window is a 1006 CSS-px viewport — under
+ * `lg`, well over the `md` at which AppShell draws the sidebar as a column, and
+ * the nav was still 224px of a 1006px screen. The hook did nothing for exactly
+ * the person the redesign was for. It now shares AppShell's own constant, so a
+ * change to one is a change to both.
+ *
+ * Below that the sidebar is not drawn at all (BottomNav is the navigation), so
+ * the hook does nothing — closing something that is not on screen would make
+ * the change appear on the next resize for no reason a student could explain.
  *
  * TRADE-OFF, KNOWN. Both flags are persisted (`ui-storage`). Closing the tab
  * mid-studio skips React's unmount, so the nav is still stood down on the next
@@ -53,13 +63,6 @@ import { useUIStore } from '../stores/uiStore';
  * because there is no motion to reduce. The panels' own transitions are the
  * shell's.
  */
-export const FOCUS_SIDEBAR_QUERY = '(min-width: 1024px)';
-
-function atDesktopWidth(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-  return window.matchMedia(FOCUS_SIDEBAR_QUERY).matches;
-}
-
 export function useFocusSidebarCollapse(focus: boolean): void {
   // Subscriptions, so the hook re-renders when the student touches either
   // panel. The VALUES are only used to notice that; every decision below reads
@@ -78,7 +81,7 @@ export function useFocusSidebarCollapse(focus: boolean): void {
   }, [focus, sidebarExpanded, chatsOpen]);
 
   useEffect(() => {
-    if (!focus || !atDesktopWidth()) return;
+    if (!focus || !shellSidebarIsAColumn()) return;
     const memory = ours.current;
     if (useUIStore.getState().isSidebarExpanded) {
       memory.sidebar = true;
