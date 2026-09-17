@@ -2,7 +2,7 @@
  * Marketplace reviews.
  *
  * Ratings on a listing plus the helpful-vote toggle. Eligibility (a delivered
- * order for this buyer) is enforced inside `supabaseService.addMarketplaceReview`,
+ * order for this buyer) is enforced inside `dataLayer.marketplace.addMarketplaceReview`,
  * which throws with a `statusCode` of 400 or 403; the handler forwards those two
  * and rethrows anything else. The helpful-vote upsert is the route family that
  * the `onConflict`-vs-partial-unique-index trap previously broke.
@@ -14,13 +14,13 @@ import { handleValidationErrors, validateListingId } from '../../middleware/vali
 import { logger } from '../../utils/logger';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { computeMarketplaceReviewSummary } from '@lantern/shared/marketplace';
-import { cacheService, dataLayer, supabaseService } from './context';
+import { cacheService, dataLayer } from './context';
 const router = Router();
 // ============================================================
 // REVIEWS
 //
 // Ratings on a listing plus the helpful-vote toggle. Eligibility (a delivered
-// order for this buyer) is enforced inside `supabaseService.addMarketplaceReview`,
+// order for this buyer) is enforced inside `dataLayer.marketplace.addMarketplaceReview`,
 // which throws with a `statusCode` of 400 or 403; the handler forwards those two
 // and rethrows anything else. The helpful-vote upsert is the route family that
 // the `onConflict`-vs-partial-unique-index trap previously broke.

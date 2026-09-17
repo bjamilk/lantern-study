@@ -117,8 +117,6 @@ import {
   getNarrationCreditCost,
   getSmartNotesCreditCost,
 } from '@lantern/shared/utils/aiCredits';
-// TRANSITIONAL (M2b): every function here takes the `SupabaseService` whole — called with
-// `legacyService()` (13 sites, the largest cluster in this file).
 import {
   NARRATION_IMAGE_URL_TTL_SECONDS,
   buildNarrationScript,
@@ -167,9 +165,6 @@ import {
   CoverStorageUnavailableError,
   isMissingCoverPathColumn,
 } from '../services/supabase';
-// Type only (erased at compile time): the services listed at `legacyService`
-// below still take the `SupabaseService` facade whole.
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import {
@@ -186,7 +181,6 @@ import {
 import { type AiJobCharge, runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted, stampAiChargeOnJob, aiChargeFromRes } from '../queue/respondAsync';
 import { isVersionConflictError } from '../utils/versionConflict';
-// TRANSITIONAL (M2b): takes the `SupabaseService` whole — called with `legacyService()` (1 site).
 import { runPresentationPreviewJob } from '../services/presentationPreview';
 import {
   assertPdfSize,
@@ -223,13 +217,8 @@ import {
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/youtube';
 import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
-// TRANSITIONAL (M2b): takes the `SupabaseService` whole — called with `legacyService()` (2 sites).
 import { runYoutubeTranscriptJob } from '../services/youtubeNote';
-// TRANSITIONAL (M2b): `runNoteOcrJob` takes the `SupabaseService` whole — called with
-// `legacyService()` (1 site). The other two exports are pure.
 import { ocrPlaceholder, runNoteOcrJob, shouldAutoEnqueueOcr } from '../services/noteOcr';
-// TRANSITIONAL (M2b): every export here takes the `SupabaseService` whole — called with
-// `legacyService()` (5 sites).
 import {
   ensurePageImages,
   ensurePages,
@@ -253,15 +242,6 @@ const router = Router();
 let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-// TRANSITIONAL (M2b): the services called below — `noteOcr`, `notePages`,
-// `narrationService`, `presentationPreview`, `youtubeNote` and
-// `learningEvents` — still take the `SupabaseService` facade whole, so a
-// flipped route hands them `dataLayer.legacyService`. The seam disappears when
-// the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector runs
-// (several suites drive a handler without calling it), exactly as the old
-// module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 
 export const initializeNotesRoutes = (layer: DataLayer, cache: CacheService) => {
   dataLayer = layer;

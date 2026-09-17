@@ -18,7 +18,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../middleware/errorHandler';
 import { authMiddleware } from '../../middleware/auth';
 import { requireAuthUserId } from '../../utils/requestAuth';
-import { dataLayer, supabaseService } from './context';
+import { dataLayer } from './context';
 import { respondMarketplaceError } from './errors';
 const router = Router();
 // ============================================================

@@ -37,7 +37,7 @@ import * as adminData from '../../services/adminData';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { logger } from '../../utils/logger';
 import { isMarketplaceListingModerated } from '@lantern/shared/marketplace';
-import { cacheService, dataLayer, normalizeReportStatus, supabaseService } from './context';
+import { cacheService, dataLayer, normalizeReportStatus } from './context';
 import { adminRoute, mappedRoute, moderationRoute, respondDisputeError } from './errors';
 
 const router = Router();
@@ -142,7 +142,7 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
         by: req.user.id,
       })
       .then(({ error: e }: { error?: unknown }) => e && logger.warn('suspend takedown fields failed', { id, e }));
-    await supabaseService
+    await dataLayer.notifications
       .createNotification(current.user_id, {
         type: 'warning',
         message: `Your listing "${current.title}" was suspended by Lantern moderation and is hidden from buyers while we review it.${reason ? ` Reason: ${reason}.` : ''} You can appeal once from My Listings.`,

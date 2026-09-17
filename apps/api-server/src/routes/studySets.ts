@@ -71,7 +71,6 @@ import {
   CoverColumnMissingError,
   CoverStorageUnavailableError,
 } from '../services/supabase';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import {
   SET_TILE_MIGRATION,
@@ -84,13 +83,6 @@ import { uploadBurstRateLimit } from '../middleware/rateLimit';
 const router = Router();
 let dataLayer: DataLayer;
 
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `data.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 
 export const initializeStudySetRoutes = (layer: DataLayer) => {
   dataLayer = layer;
@@ -357,7 +349,7 @@ router.post(
       await getStudySetsService(dataLayer).get(userId, setId);
       // Probe the COLUMN before storing bytes: on a database without the
       // migration this answers 503 without ever leaving an orphan object.
-      await legacyService().assertCoverColumn?.('study-set');
+      await dataLayer.uploads.assertCoverColumn('study-set');
       uploaded = await dataLayer.uploads.uploadCoverImage({
         userId,
         kind: 'study-set',

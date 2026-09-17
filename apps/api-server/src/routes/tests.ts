@@ -3,7 +3,6 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateTestConfig, validatePagination, validateUserId } from '../middleware/validation';
 import { buildAttemptTally } from '../services/supabase';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -205,13 +204,6 @@ const router = Router();
 // Initialize services (will be injected in main server)
 let dataLayer: DataLayer;
 
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `data.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
 // Initialize function to be called from main server
@@ -261,7 +253,7 @@ export const initializeTestRoutes = (layer: DataLayer, cache: CacheService) => {
       logger.debug('Fetching tests', { page, limit, status, courseId, topicId, lean, sort, from, to, userId });
 
       try {
-        if (!legacyService()) {
+        if (!dataLayer) {
           res.json({
             success: true,
             data: [],

@@ -1,12 +1,11 @@
 /**
  * Shared state and helpers for the marketplace sub-routers.
  *
- * `supabaseService` and `cacheService` are injected once from server.ts (via
+ * `dataLayer` and `cacheService` are injected once from server.ts (via
  * `initializeMarketplaceRoutes` in ./index) and then read as live ES-module
  * bindings by every sub-router — the same single-assignment shape the file had
  * before the R5a split, without threading the services through ten modules.
  */
-import type { SupabaseService } from '../../services/supabase';
 import type { DataLayer } from '../../services/data';
 import { CacheService } from '../../services/cache';
 import { MARKETPLACE_DEFAULT_COUNTRY, OTHER_CITY_CAMPUS_SLUG } from '@lantern/shared/marketplace';
@@ -15,19 +14,10 @@ import { createHash } from 'crypto';
 
 // Initialized from the main server; every sub-router imports these bindings.
 export let dataLayer: DataLayer;
-/**
- * TRANSITIONAL (M2a): several sub-routers still hand the `SupabaseService`
- * facade whole to the `services/` singletons that take it
- * (`getMarketplaceOrdersService`, `getMarketplacePaymentsService`, …). It is
- * the SAME instance the data layer is built from (`dataLayer.legacyService`),
- * and this binding disappears when those callees are flipped.
- */
-export let supabaseService: SupabaseService;
 export let cacheService: CacheService;
 
 export const initializeMarketplaceContext = (layer: DataLayer, cache: CacheService) => {
   dataLayer = layer;
-  supabaseService = layer.legacyService;
   cacheService = cache;
 };
 
@@ -68,7 +58,7 @@ export async function resolveRequiredMarketplaceCampus(
     );
   }
 
-  const campus = await supabaseService.getMarketplaceCampusById(campusId);
+  const campus = await dataLayer.marketplace.getMarketplaceCampusById(campusId);
   if (!campus || !campus.active || campus.country_code !== MARKETPLACE_DEFAULT_COUNTRY) {
     throw new MarketplaceCampusMetadataError('Invalid or inactive Nigerian campus or city');
   }

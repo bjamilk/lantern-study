@@ -90,15 +90,13 @@ import { authMiddleware } from '../middleware/auth';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { handleValidationErrors, validateGroupId, validateSendMessage, validateMessageId, validatePinMessage, validatePagination } from '../middleware/validation';
 import type { DataLayer } from '../services/data';
-// Type only (erased at compile time): the three result shapes are re-exported
-// by the facade for this file, and the five `services/*` collaborators below
-// still take the `SupabaseService` facade, so a flipped route hands them
-// `dataLayer.legacyService`.
+// Type only (erased at compile time): the three result shapes are still
+// re-exported by `services/supabase.ts` for this file. Every collaborator
+// below takes the data layer now.
 import type {
   BoardRepostResult,
   ChatMessageMutationResult,
   MessagePinResult,
-  SupabaseService,
 } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import {
@@ -196,14 +194,6 @@ const sendChatMutationResult = (
 let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-// TRANSITIONAL (M2c): one collaborator in `services/` still takes the whole
-// `SupabaseService` facade — `messageReactions`. `communityModeration`,
-// `learningEvents`, `activityFeed` and `learningConnections` were flipped in
-// M3 Phase B and are handed `dataLayer` itself.
-// Read through a function, not captured at init, so an overridden
-// `legacyService` on the injected layer is honoured. Seven call sites; they go
-// away with the facade.
-const legacyService = () => dataLayer.legacyService as SupabaseService;
 
 // Initialize function to be called from main server
 export const initializeMessageRoutes = (layer: DataLayer, cache: CacheService) => {

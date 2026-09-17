@@ -12,7 +12,7 @@
  * `allowDevAuthBypass` / `assertProductionAuthStrict` pair that keeps the dev
  * bypass out of production.
  *
- * Each predicate delegates the actual lookup to `SupabaseService`
+ * Each predicate delegates the actual lookup to the data layer
  * (`getGroupById`, `verifyDeckAccess`, `resolveNoteAccess`, `canEditNote`,
  * `isNoteOwner`, `getTestById`), which is what reads `study_groups`,
  * `flashcard_decks`, `notes` / note collaborators and `tests`. These run on the
@@ -29,22 +29,22 @@
  */
 import { Response, NextFunction } from 'express';
 import { asyncHandler } from './errorHandler';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { AuthenticatedRequest } from '../types';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
 
-let supabaseService: SupabaseService | null = null;
+let dataLayer: DataLayer | null = null;
 
-export function initializeAuthorizeResource(supabase: SupabaseService): void {
-  supabaseService = supabase;
+export function initializeAuthorizeResource(layer: DataLayer): void {
+  dataLayer = layer;
 }
 
-function requireService(): SupabaseService {
-  if (!supabaseService) {
+function requireLayer(): DataLayer {
+  if (!dataLayer) {
     throw new Error('AuthorizeResource middleware not initialized');
   }
-  return supabaseService;
+  return dataLayer;
 }
 
 function denyAccess(res: Response, message = 'Access denied'): void {
@@ -60,7 +60,7 @@ export function requireGroupMember(groupIdParam = 'groupId') {
       denyAccess(res);
       return;
     }
-    const group = await requireService().getGroupById(groupId, userId);
+    const group = await requireLayer().groups.getGroupById(groupId, userId);
     if (!group) {
       denyAccess(res, 'Group not found or access denied');
       return;
@@ -74,7 +74,7 @@ export function requireGroupAdmin(groupIdParam = 'groupId') {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const groupId = req.params[groupIdParam];
-    const group = await requireService().getGroupById(groupId, userId);
+    const group = await requireLayer().groups.getGroupById(groupId, userId);
     if (!group) {
       denyAccess(res, 'Group not found or access denied');
       return;
@@ -105,7 +105,7 @@ export function requireDeckAccess(
       denyAccess(res);
       return;
     }
-    const allowed = await requireService().verifyDeckAccess(userId, deckId, level);
+    const allowed = await requireLayer().offlineBundles.verifyDeckAccess(userId, deckId, level);
     const liveAdmin = await isLivePlatformAdmin(userId);
     if (!allowed && !liveAdmin) {
       denyAccess(res, 'Deck not found or access denied');
@@ -125,7 +125,7 @@ export function requireNoteAccess(noteIdParam = 'noteId') {
       return;
     }
     try {
-      const access = await requireService().resolveNoteAccess(noteId, userId);
+      const access = await requireLayer().notes.resolveNoteAccess(noteId, userId);
       const liveAdmin = await isLivePlatformAdmin(userId);
       if (!access && !liveAdmin) {
         denyAccess(res, 'Note not found or access denied');
@@ -157,7 +157,7 @@ export function requireNoteEdit(noteIdParam = 'noteId') {
       next();
       return;
     }
-    const canEdit = await requireService().canEditNote(userId, noteId);
+    const canEdit = await requireLayer().notes.canEditNote(userId, noteId);
     if (!canEdit) {
       denyAccess(res, 'You do not have permission to edit this note');
       return;
@@ -181,7 +181,7 @@ export function requireNoteOwner(noteIdParam = 'noteId') {
       next();
       return;
     }
-    const isOwner = await requireService().isNoteOwner(userId, noteId);
+    const isOwner = await requireLayer().notes.isNoteOwner(userId, noteId);
     if (!isOwner) {
       denyAccess(res, 'Only the note owner can perform this action');
       return;
@@ -199,7 +199,7 @@ export function requireTestOwner(testIdParam = 'testId') {
       denyAccess(res);
       return;
     }
-    const test = await requireService().getTestById(testId, userId);
+    const test = await requireLayer().tests.getTestById(testId, userId);
     const liveAdmin = await isLivePlatformAdmin(userId);
     if (!test && !liveAdmin) {
       res.status(404).json({ success: false, error: 'Test not found or access denied' });

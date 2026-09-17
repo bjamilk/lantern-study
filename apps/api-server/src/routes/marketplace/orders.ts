@@ -22,7 +22,7 @@ import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempotency';
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
-import { FULFILLMENT_MODES, cacheService, dataLayer, requestContentHash, supabaseService } from './context';
+import { FULFILLMENT_MODES, cacheService, dataLayer, requestContentHash } from './context';
 import { respondMarketplaceClientError, respondMarketplaceError } from './errors';
 const router = Router();
 

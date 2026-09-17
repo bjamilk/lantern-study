@@ -220,7 +220,6 @@ export async function purgeScheduledAccountDeletions(
       // than a bare boolean. A partial run still counts — the account is gone —
       // but it is logged at error level with the failing buckets so support can
       // finish the storage cleanup by hand.
-      // TRANSITIONAL (M2d): `deleteUserAccountFully` still takes the `SupabaseService` facade whole.
       const result = await deleteUserAccountFully(layer, row.id);
       if (result.found) count += 1;
       if (result.found && !result.ok) {

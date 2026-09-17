@@ -63,7 +63,6 @@ import { mergeUserSettings, isPushEnabledInSettings } from '../utils/sanitizeSet
 import { parseUserSettings } from '../utils/userSettingsPolicy';
 import { canViewStudyActivity, getPrivacySafeProfileFields, resolvePublicOnlineStatus } from '@lantern/shared/settings';
 import { handleValidationErrors, validateUserId, validateCreateUser, validateUpdateUser, validatePagination, validateAccountPasswordBody, validateAccountImportBody } from '../middleware/validation';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -196,13 +195,6 @@ async function withInstitution<T extends { institutionId?: string | null }>(user
 // Initialize services (will be injected in main server)
 let dataLayer: DataLayer;
 
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `data.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
 // Initialize function to be called from main server

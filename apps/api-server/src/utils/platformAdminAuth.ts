@@ -1,16 +1,27 @@
 import { Response } from 'express';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import type { AuthenticatedRequest } from '../types';
 
-let supabaseService: SupabaseService | null = null;
+/**
+ * All this needs is the privilege check itself.
+ *
+ * FLIPPED (monolith lane M3, Phase B): it held the whole `SupabaseService` for
+ * one call. The BODY is unchanged — `client.isPlatformAdmin` is the same
+ * `platform_admins` lookup the facade delegated to, still LIVE on every call,
+ * still never the JWT claim, and still uncached. That is the point of the word
+ * "live" in these names: a revoked admin loses access on the next request.
+ */
+type PlatformAdminHost = Pick<DataLayer, 'client'>;
 
-export function initializePlatformAdminAuth(supabase: SupabaseService): void {
-  supabaseService = supabase;
+let dataLayer: PlatformAdminHost | null = null;
+
+export function initializePlatformAdminAuth(layer: PlatformAdminHost): void {
+  dataLayer = layer;
 }
 
 export async function isLivePlatformAdmin(userId: string): Promise<boolean> {
-  if (!supabaseService) return false;
-  return supabaseService.isPlatformAdmin(userId);
+  if (!dataLayer) return false;
+  return dataLayer.client.isPlatformAdmin(userId);
 }
 
 /** Returns false after sending 403/401 — use for admin-only mutations. */

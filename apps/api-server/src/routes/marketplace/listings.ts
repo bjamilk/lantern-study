@@ -35,7 +35,7 @@ import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempot
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
 import { isLivePlatformAdmin } from '../../utils/platformAdminAuth';
 import { MARKETPLACE_DEFAULT_CURRENCY, isMarketplaceListingModerated, marketplaceListingModerationNotice, isAllowedListingCategory, computeMarketplaceReviewSummary } from '@lantern/shared/marketplace';
-import { MarketplaceCampusMetadataError, cacheService, dataLayer, requestContentHash, resolveRequiredMarketplaceCampus, supabaseService } from './context';
+import { MarketplaceCampusMetadataError, cacheService, dataLayer, requestContentHash, resolveRequiredMarketplaceCampus } from './context';
 import { respondMarketplaceClientError } from './errors';
 const router = Router();
 // ============================================================

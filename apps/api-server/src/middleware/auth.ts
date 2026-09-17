@@ -35,7 +35,6 @@ import { Request, Response, NextFunction } from 'express';
 import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import { apiKeyService } from '../services/apiKey';
-import { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { getUserBlockState } from '../services/adminAudit';
 import { suspensionMessage } from '@lantern/shared/moderation';
@@ -54,12 +53,16 @@ import { authenticatedRateLimit, apiKeyAuthRateLimit } from './rateLimit';
 import { createRequestContext, type RequestContext } from '../services/dataLoaders';
 import { AuthenticatedRequest } from '../types';
 
-let supabaseService: SupabaseService | null = null;
 /**
- * `server.ts` hands the middleware the layer it built, because the deactivated-
- * account check reads through `services/accountLifecycle`, which is flipped.
- * It stays optional so the three suites that inject a bare token-verifier stub
- * keep working: none of them reaches a layer read.
+ * The one handle this middleware holds, injected once by `server.ts`.
+ *
+ * FLIPPED (monolith lane M3, Phase B): it used to be TWO — the facade for
+ * token verification and the ban lookup, plus the layer for the
+ * deactivated-account read. Both reads are on the layer, so there is one
+ * handle and one `null` check. It stays nullable because the middleware must
+ * FAIL CLOSED before bootstrap has run: every gate below returns false (i.e.
+ * "cannot confirm", never "allowed") while it is null, and the three suites
+ * that inject a bare verifier stub rely on the same shape.
  */
 let dataLayer: DataLayer | null = null;
 
@@ -122,7 +125,7 @@ async function rejectIfDeactivated(
   req: AuthenticatedRequest,
   res: Response
 ): Promise<boolean> {
-  if (!supabaseService) return false;
+  if (!dataLayer) return false;
   if (await isLivePlatformAdmin(userId)) return false;
 
   // Always allow sign-out so pause/delete flows can finish after deactivation.
@@ -202,8 +205,8 @@ function enforceApiKeyMutationPolicy(req: AuthenticatedRequest, res: Response): 
  * Exported for tests only.
  */
 export async function rejectIfBanned(userId: string, res: Response): Promise<boolean> {
-  if (!supabaseService) return false;
-  const state = await getUserBlockState(supabaseService, userId);
+  if (!dataLayer) return false;
+  const state = await getUserBlockState(dataLayer, userId);
   if (state.banned) {
     res.status(403).json({
       error: 'Forbidden',
@@ -239,8 +242,8 @@ export async function rejectIfBanned(userId: string, res: Response): Promise<boo
  * with the date on every route while the session lives on.
  */
 export async function rejectIfBannedOnly(userId: string, res: Response): Promise<boolean> {
-  if (!supabaseService) return false;
-  const state = await getUserBlockState(supabaseService, userId);
+  if (!dataLayer) return false;
+  const state = await getUserBlockState(dataLayer, userId);
   if (!state.banned) return false;
   res.status(403).json({
     error: 'Forbidden',
@@ -252,14 +255,10 @@ export async function rejectIfBannedOnly(userId: string, res: Response): Promise
 
 // ============ Wiring and cache control ============
 
-/** Injects the Supabase service; called once from server bootstrap. Until it
+/** Injects the data layer; called once from server bootstrap. Until it
  * runs, the lifecycle and ban gates no-op (they return false). */
-export const initializeAuthMiddleware = (
-  supabase: SupabaseService,
-  layer?: DataLayer,
-) => {
-  supabaseService = supabase;
-  dataLayer = layer ?? null;
+export const initializeAuthMiddleware = (layer: DataLayer) => {
+  dataLayer = layer;
 };
 
 export function evictAuthTokenCache(token: string): void {
@@ -352,8 +351,8 @@ export const jwtOnlyAuthMiddleware = async (
     return;
   }
 
-  if (supabaseService) {
-    const supabaseResult = await supabaseService.verifySupabaseToken(credential);
+  if (dataLayer) {
+    const supabaseResult = await dataLayer.client.verifySupabaseToken(credential);
     if (supabaseResult.isValid && supabaseResult.user) {
       if (await rejectIfSessionCutoff(credential, supabaseResult.user.id, res)) return;
       if (await rejectIfBanned(supabaseResult.user.id, res)) return;
@@ -439,8 +438,8 @@ export const authMiddleware = async (
       return;
     }
 
-    if (supabaseService) {
-      const supabaseResult = await supabaseService.verifySupabaseToken(credential);
+    if (dataLayer) {
+      const supabaseResult = await dataLayer.client.verifySupabaseToken(credential);
       if (supabaseResult.isValid && supabaseResult.user) {
         if (await rejectIfSessionCutoff(credential, supabaseResult.user.id, res)) return;
         if (await rejectIfBanned(supabaseResult.user.id, res)) return;
@@ -557,8 +556,8 @@ export const optionalAuthMiddleware = async (
       return;
     }
 
-    if (supabaseService) {
-      const supabaseResult = await supabaseService.verifySupabaseTokenDetailed(credential);
+    if (dataLayer) {
+      const supabaseResult = await dataLayer.client.verifySupabaseTokenDetailed(credential);
       // FIXED (F10): a verification that failed because Supabase was
       // unreachable is NOT an anonymous visitor. Continuing as anonymous here
       // is what made a signed-in buyer lose their own marketplace during a

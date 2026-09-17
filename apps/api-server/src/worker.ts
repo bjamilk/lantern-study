@@ -1,7 +1,7 @@
 import { config } from 'dotenv';
 config();
 
-import { SupabaseService } from './services/supabase';
+import { createRuntimeDataLayer } from './services/data/bootstrap';
 import { initializeWorkerServices, scheduleRepeatableCronJobs, startWorkers } from './queue/processors';
 import { isBullMqEnabled } from './queue/connection';
 import { closeQueues } from './queue/queues';
@@ -13,12 +13,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const supabaseService = new SupabaseService({
+  // The same factory call `server.ts` makes: one wiring, two processes.
+  const { dataLayer } = createRuntimeDataLayer({
     url: process.env.SUPABASE_URL || '',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
   });
 
-  initializeWorkerServices(supabaseService);
+  initializeWorkerServices(dataLayer);
   const workers = startWorkers();
   await scheduleRepeatableCronJobs();
 

@@ -90,3 +90,27 @@ the same exported `*Deps` types, so a missing or mistyped dep in either is a com
 error. Namespaces are added domain by domain as lanes need them (this PR binds the five
 `routes/groups.ts` uses), COMPLETELY — every exported function of the module — so the next
 lane adds callers, never wiring.
+
+
+## Update (lane M3, Phase B, PR 2): the seam is gone
+
+Every route family, both route context modules, the security middleware
+(`auth`, `authorizeResource`, `platformAdminAuth`), the queue processors,
+`server.ts` and `worker.ts` now hold a `DataLayer` and nothing else. There are
+no `TRANSITIONAL` markers left in `apps/api-server/src`, and no
+`legacyService()` helper: the seam existed to reach services that took the
+facade whole, and PR 1 flipped the last of them.
+
+Two things changed shape rather than just losing a handle:
+
+- `services/data/bootstrap.ts` is the ONE composition root. `server.ts` and the
+  BullMQ worker call `createRuntimeDataLayer(config)`; they used to write the
+  same four-line wiring twice, and had already drifted on `supabaseUrl`.
+- `middleware/auth.ts` holds one handle instead of two, and still fails CLOSED
+  before bootstrap: every gate answers false, meaning "cannot confirm", never
+  "allowed".
+
+What is left of the facade in production code is its own construction
+(`bootstrap.ts`), the one-entry bridge (`dataLayerHost.ts`) and the
+`legacyService` field on the layer that nothing reads. All three go when the
+class does.

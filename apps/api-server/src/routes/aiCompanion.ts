@@ -86,7 +86,6 @@ import {
 import { aiPostBurstRateLimit, uploadBurstRateLimit } from '../middleware/rateLimit';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import { companionChat, summarizeGroupChat, CompanionContext } from '../services/aiService';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { logAIInference } from '../services/aiInferenceLog';
 import { clientErrorMessage } from '../utils/safeError';
@@ -117,13 +116,6 @@ import {
 
 let dataLayer: DataLayer;
 
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 
 export function initializeAICompanionRoutes(layer: DataLayer) {
   dataLayer = layer;

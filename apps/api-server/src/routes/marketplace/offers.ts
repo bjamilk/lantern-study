@@ -17,7 +17,7 @@ import { invalidateSellerAnalyticsCache } from '../../services/marketplaceOrders
 import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempotency';
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
 import { isDigitalListingKind } from '@lantern/shared/marketplace';
-import { dataLayer, supabaseService } from './context';
+import { dataLayer } from './context';
 import { respondMarketplaceError } from './errors';
 const router = Router();
 

@@ -53,8 +53,9 @@
  * so a sibling call would step around the stub. The facade builds the `deps`
  * literal INLINE at each call site as arrows over `this`.
  *
- * `deps.service` is the instance itself, which `recordTestSessionAnswers`
- * takes whole. It is a type-only import, so there is no runtime cycle.
+ * `deps.recordTestSessionAnswers` is the learning-events writer, narrowed
+ * (monolith lane M3, Phase B) from the whole `SupabaseService` it used to be
+ * handed: this module names no facade now.
  */
 import { logger } from "../../utils/logger";
 import type { LearningSurface } from "@lantern/shared/learning";
@@ -74,7 +75,6 @@ import {
 } from "../academicCourses";
 import { cacheService } from "../cache";
 import { recordTestSessionAnswers } from "../learningEvents";
-import type { SupabaseService } from "../supabase";
 
 import {
   resolveCourseIdFromConfigLike,
@@ -119,8 +119,10 @@ function resolveTopicIdFromConfigLike(
  * bypasses every `jest.spyOn`.
  */
 export type TestDeps = {
-  /** The `SupabaseService` instance itself, for `recordTestSessionAnswers`. */
-  service: SupabaseService;
+  /** The learning-events writer for a submitted session; never throws. */
+  recordTestSessionAnswers: (
+    params: Parameters<typeof recordTestSessionAnswers>[1],
+  ) => Promise<{ inserted: number; skipped: boolean }>;
   getTestById: (testId: string, userId?: string) => Promise<any | null>;
   getUserTests: (userId: string, options?: any) => Promise<any>;
   attachSourceNoteTitles: <
@@ -1052,7 +1054,7 @@ export async function completeTestDraft(
     await cacheService.deletePattern(`tests:${userId}:*`);
     // learning_events: study sessions never reach createTestResult, so emit
     // their question_answered rows here (same once-per-session guard).
-    await recordTestSessionAnswers(deps.service, {
+    await deps.recordTestSessionAnswers({
       session: data,
       userId,
       surface: options?.surface ?? "api",
@@ -1287,7 +1289,7 @@ export async function createTestResult(
   // (user_id, session_id) so a session never emits twice. Never throws.
   const eventUserId = userId || (test?.user_id as string | undefined);
   if (test && eventUserId) {
-    await recordTestSessionAnswers(deps.service, {
+    await deps.recordTestSessionAnswers({
       session: test,
       userId: eventUserId,
       surface: options.surface ?? "api",

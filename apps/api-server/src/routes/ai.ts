@@ -15,7 +15,6 @@ import { aiPostBurstRateLimit } from '../middleware/rateLimit';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { logAIInference } from '../services/aiInferenceLog';
 import { runSyncOrEnqueue } from '../queue/enqueue';
@@ -48,13 +47,6 @@ import { isFlashcardTypeMix } from '@lantern/shared/flashcards';
 const router = Router();
 let dataLayer: DataLayer;
 
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 
 export function initializeAIRoutes(layer: DataLayer): void {
   dataLayer = layer;
@@ -70,7 +62,7 @@ async function recordInference(
   }
 ): Promise<void> {
   const userId = req.user?.id;
-  if (!userId || !legacyService()) return;
+  if (!userId || !dataLayer) return;
   await logAIInference(dataLayer.getClient(), {
     userId,
     feature,
@@ -150,7 +142,7 @@ router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), 
       async () => {
         const generated = await generateQuestionsFromNotes(notes, { count, difficulty, questionTypes, subject });
         await recordInference(req, 'generate-questions', generated);
-        if (userId && legacyService()) {
+        if (userId && dataLayer) {
           await recordLearningEvent(dataLayer, {
             userId,
             eventType: 'question_generated',
@@ -328,7 +320,7 @@ router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards')
           difficulty,
         });
         await recordInference(req, 'generate-flashcards', generated);
-        if (userId && legacyService()) {
+        if (userId && dataLayer) {
           await recordLearningEvent(dataLayer, {
             userId,
             eventType: 'card_generated',

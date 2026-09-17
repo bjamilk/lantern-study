@@ -52,7 +52,7 @@ import * as adminData from '../../services/adminData';
 import { AUTH_BAN_DURATION } from '../../services/adminData';
 import { logger } from '../../utils/logger';
 import { MAX_SUSPENSION_DAYS, isSuspensionActive } from '@lantern/shared/moderation';
-import { cacheService, dataLayer, supabaseService } from './context';
+import { cacheService, dataLayer } from './context';
 import {
   daysAgoIso,
   escapePostgrestSearch,
