@@ -79,7 +79,7 @@ import {
   COVER_IMAGE_MIGRATION,
   CoverColumnMissingError,
   CoverStorageUnavailableError,
-} from '../services/supabase';
+} from '../services/data/coverImages';
 
 const router = Router();
 const DEFAULT_DECK_PAGE_SIZE = 20;

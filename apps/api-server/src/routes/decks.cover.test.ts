@@ -28,7 +28,7 @@ import {
   CoverColumnMissingError,
   CoverStorageUnavailableError,
   COVER_IMAGE_MIGRATION,
-} from '../services/supabase';
+} from '../services/data/coverImages';
 import { setIdempotencyClient } from '../middleware/idempotency';
 import router, { initializeDeckRoutes } from './decks';
 import { stubDataLayer } from '../services/data/testStub';

@@ -6,7 +6,7 @@
  *   optional course and folder, a tile (hue + glyph), a cover image, an exam
  *   date, a study plan and its topic statuses. This router is thin — the work
  *   lives in `services/studySets.ts` and the cover half in
- *   `services/supabase.ts`.
+ *   `services/data/coverImages.ts`.
  *
  * Exports
  * - Default router, `initializeStudySetRoutes(supabase)`, the three validator
@@ -70,7 +70,7 @@ import {
   COVER_IMAGE_MIGRATION,
   CoverColumnMissingError,
   CoverStorageUnavailableError,
-} from '../services/supabase';
+} from '../services/data/coverImages';
 import type { DataLayer } from '../services/data';
 import {
   SET_TILE_MIGRATION,
