@@ -63,7 +63,8 @@ import { mergeUserSettings, isPushEnabledInSettings } from '../utils/sanitizeSet
 import { parseUserSettings } from '../utils/userSettingsPolicy';
 import { canViewStudyActivity, getPrivacySafeProfileFields, resolvePublicOnlineStatus } from '@lantern/shared/settings';
 import { handleValidationErrors, validateUserId, validateCreateUser, validateUpdateUser, validatePagination, validateAccountPasswordBody, validateAccountImportBody } from '../middleware/validation';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
@@ -131,7 +132,7 @@ async function applySettingsSideEffects(
   const wasPushEnabled = isPushEnabledInSettings(previousSettings);
   const isPushEnabled = isPushEnabledInSettings(mergedSettings);
   if (wasPushEnabled && !isPushEnabled) {
-    await supabaseService.clearExpoPushToken(userId);
+    await dataLayer.users.clearExpoPushToken(userId);
   }
 }
 
@@ -186,19 +187,27 @@ async function withInstitution<T extends { institutionId?: string | null }>(user
   const cacheKey = `institution:${institutionId}`;
   let institution = (await cacheService.get(cacheKey)) as { id: string; name: string; slug: string } | null;
   if (!institution) {
-    institution = await getAcademicCoursesService(supabaseService).resolveInstitution(institutionId);
+    institution = await getAcademicCoursesService(legacyService()).resolveInstitution(institutionId);
     if (institution) await cacheService.set(cacheKey, institution, 600);
   }
   return { ...user, institution: institution ?? null };
 }
 
 // Initialize services (will be injected in main server)
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `data.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
 // Initialize function to be called from main server
-export const initializeUserRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeUserRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -231,7 +240,7 @@ router.get(
     let users = await cacheService.get(cacheKey) as User[] | null;
 
     if (!users) {
-      users = await supabaseService.getUsers({
+      users = await dataLayer.users.getUsers({
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         search: search as string | undefined,
@@ -278,7 +287,7 @@ router.get(
 
     try {
       // Use the search_users database function
-      const { data, error } = await supabaseService.getClient()
+      const { data, error } = await dataLayer.getClient()
         .rpc('search_users', {
           search_query: searchQuery,
           exclude_user_id: currentUserId || null,
@@ -335,7 +344,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const user = await supabaseService.getUserById(userId);
+    const user = await dataLayer.users.getUserById(userId);
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -349,10 +358,9 @@ router.get(
     if (!(await cacheService.get(verificationCacheKey))) {
       try {
         const { getCreatorsService } = await import('../services/creators');
-        const { data: authUser } = await supabaseService
-          .getClient()
+        const { data: authUser } = await dataLayer.getClient()
           .auth.admin.getUserById(userId);
-        await getCreatorsService(supabaseService).syncVerificationLevel(
+        await getCreatorsService(legacyService()).syncVerificationLevel(
           userId,
           (authUser?.user as { email_confirmed_at?: string | null } | undefined)?.email_confirmed_at ?? null
         );
@@ -372,7 +380,7 @@ router.get(
     if (!(await cacheService.get(referralCacheKey))) {
       await cacheService.set(referralCacheKey, '1', 3600);
       void import('../services/referrals')
-        .then(({ getReferralsService }) => getReferralsService(supabaseService).checkActivation(userId))
+        .then(({ getReferralsService }) => getReferralsService(legacyService()).checkActivation(userId))
         .catch(() => {});
     }
 
@@ -396,7 +404,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { getStudySetsService } = await import('../services/studySets');
-    const data = await getStudySetsService(supabaseService).resume(userId);
+    const data = await getStudySetsService(legacyService()).resume(userId);
     res.json({ success: true, data });
   })
 );
@@ -411,7 +419,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { getModerationService } = await import('../services/moderation');
-    const state = await getModerationService(supabaseService).getModerationState(userId);
+    const state = await getModerationService(legacyService()).getModerationState(userId);
     res.json({ success: true, data: state });
   })
 );
@@ -431,7 +439,7 @@ router.get(
     const isAdmin = await isLivePlatformAdmin(requestingUserId);
 
     if (!isOwner && !isAdmin) {
-      const visible = await supabaseService.isProfileVisibleToViewer(requestingUserId, userId);
+      const visible = await dataLayer.users.isProfileVisibleToViewer(requestingUserId, userId);
       if (!visible) {
         return res.status(404).json({
           success: false,
@@ -446,7 +454,7 @@ router.get(
     let user = await cacheService.get(cacheKey) as User | null;
 
     if (!user) {
-      user = await supabaseService.getUserById(userId);
+      user = await dataLayer.users.getUserById(userId);
 
       if (!user) {
         return res.status(404).json({
@@ -492,7 +500,7 @@ router.post(
       });
     }
 
-    const existingById = userData.id ? await supabaseService.getUserById(userData.id) : null;
+    const existingById = userData.id ? await dataLayer.users.getUserById(userData.id) : null;
 
     const profilePayload = {
       id: userData.id || requestingUserId,
@@ -508,8 +516,8 @@ router.post(
 
     if (existingById) {
       const updated = userData.email
-        ? await supabaseService.createUser(profilePayload)
-        : await supabaseService.createUserProfile(profilePayload);
+        ? await dataLayer.users.createUser(profilePayload)
+        : await dataLayer.users.createUserProfile(profilePayload);
       await cacheService.deletePattern('users:list:*');
       return res.status(200).json({
         success: true,
@@ -518,7 +526,7 @@ router.post(
     }
 
     if (userData.email) {
-      const existingUser = await supabaseService.getUserByEmail(userData.email);
+      const existingUser = await dataLayer.users.getUserByEmail(userData.email);
       if (existingUser) {
         return res.status(409).json({
           success: false,
@@ -528,8 +536,8 @@ router.post(
     }
 
     const newUser = userData.email
-      ? await supabaseService.createUser(profilePayload)
-      : await supabaseService.createUserProfile(profilePayload);
+      ? await dataLayer.users.createUser(profilePayload)
+      : await dataLayer.users.createUserProfile(profilePayload);
 
     // Invalidate users list cache
     await cacheService.deletePattern('users:list:*');
@@ -576,7 +584,7 @@ router.put(
       });
     }
 
-    const existingUser = await supabaseService.getUserById(userId);
+    const existingUser = await dataLayer.users.getUserById(userId);
     if (!existingUser) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -593,7 +601,7 @@ router.put(
 
     let updatedUser;
     try {
-      updatedUser = await supabaseService.updateUser(
+      updatedUser = await dataLayer.users.updateUser(
         userId,
         { settings: mergedSettings },
         {
@@ -702,14 +710,14 @@ router.post(
       return res.status(400).json({ success: false, error: 'Avatar exceeds 2 MB limit' });
     }
 
-    const uploaded = await supabaseService.uploadProfileAvatar({
+    const uploaded = await dataLayer.uploads.uploadProfileAvatar({
       fileName,
       base64Data,
       contentType,
       userId,
     });
 
-    const updatedUser = await supabaseService.updateUser(userId, { avatarUrl: uploaded.avatarUrl });
+    const updatedUser = await dataLayer.users.updateUser(userId, { avatarUrl: uploaded.avatarUrl });
     await cacheService.delete(`user:${userId}`);
     await cacheService.deletePattern('users:list:*');
 
@@ -802,7 +810,7 @@ router.put(
       } else {
         try {
           selectedInstitutionId = (
-            await getAcademicCoursesService(supabaseService).assertSelectableInstitution(
+            await getAcademicCoursesService(legacyService()).assertSelectableInstitution(
               String(updateData.institutionId)
             )
           ).id;
@@ -842,7 +850,7 @@ router.put(
     if (updateData.bio !== undefined) {
       const { getCreatorsService } = await import('../services/creators');
       try {
-        updateData.bio = getCreatorsService(supabaseService).normalizeBio(updateData.bio);
+        updateData.bio = getCreatorsService(legacyService()).normalizeBio(updateData.bio);
       } catch (error) {
         if (error instanceof PublicError) {
           return res.status(400).json({ success: false, error: error.message });
@@ -855,7 +863,7 @@ router.put(
 
     let updatedUser;
     try {
-      updatedUser = await supabaseService.updateUser(userId, updateData);
+      updatedUser = await dataLayer.users.updateUser(userId, updateData);
     } catch (error: any) {
       if (error?.code === 'version_conflict' || error?.status === 409) {
         return res.status(409).json({
@@ -881,7 +889,7 @@ router.put(
     // Best-effort inside the service; a stale membership must not fail a save.
     if (ACADEMIC_PROFILE_FIELDS.some((field) => updateData[field] !== undefined)) {
       const { getCommunitiesService } = await import('../services/communities');
-      await getCommunitiesService(supabaseService).refreshAutoMemberships(userId);
+      await getCommunitiesService(legacyService()).refreshAutoMemberships(userId);
     }
 
     // Write-through: a chosen institution also seeds the marketplace campus
@@ -896,7 +904,7 @@ router.put(
           const mergedSettings = mergeUserSettings(currentSettings, {
             marketplace: { campus_id: selectedInstitutionId },
           });
-          const settingsUser = await supabaseService.updateUser(
+          const settingsUser = await dataLayer.users.updateUser(
             userId,
             { settings: mergedSettings },
             { expectedSettingsVersion: (updatedUser as { settingsVersion?: number }).settingsVersion }
@@ -965,7 +973,7 @@ router.get(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const row = await getAccountLifecycle(supabaseService, userId);
+    const row = await getAccountLifecycle(legacyService(), userId);
     if (!row) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1005,7 +1013,7 @@ router.post(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const row = await getAccountLifecycle(supabaseService, userId);
+    const row = await getAccountLifecycle(legacyService(), userId);
     if (!row) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1013,7 +1021,7 @@ router.post(
       return res.status(409).json({ success: false, error: 'Account is already paused.' });
     }
 
-    const scheduled = await scheduleAccountDeletion(supabaseService, userId);
+    const scheduled = await scheduleAccountDeletion(legacyService(), userId);
     res.json({
       success: true,
       data: {
@@ -1040,7 +1048,7 @@ router.post(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const ok = await reactivateAccount(supabaseService, userId);
+    const ok = await reactivateAccount(legacyService(), userId);
     if (!ok) {
       return res.status(409).json({ success: false, error: 'Account is not paused.' });
     }
@@ -1070,7 +1078,7 @@ router.post(
 
     const { password } = req.body as { password?: string };
     if (requestingUserId === userId) {
-      const row = await getAccountLifecycle(supabaseService, userId);
+      const row = await getAccountLifecycle(legacyService(), userId);
       const email = row?.email;
       if (!email) {
         return res.status(400).json({ success: false, error: 'Unable to verify password for this account.' });
@@ -1086,7 +1094,7 @@ router.post(
     // `cover-images`, so an uploaded CV outlived the account — and the route
     // reported success anyway. The purge is now a paginated recursive walk, and
     // `deleteUserAccountFully` returns what it actually managed to erase.
-    const result = await deleteUserAccountFully(supabaseService, userId);
+    const result = await deleteUserAccountFully(legacyService(), userId);
     if (!result.found) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1137,7 +1145,7 @@ router.post(
       confirmEmailMismatch?: boolean;
     };
 
-    const row = await getAccountLifecycle(supabaseService, userId);
+    const row = await getAccountLifecycle(legacyService(), userId);
     if (!row?.email) {
       return res.status(400).json({ success: false, error: 'Unable to verify password for this account.' });
     }
@@ -1149,7 +1157,7 @@ router.post(
 
     try {
       const result = await importAccountArchive(
-        supabaseService,
+        legacyService(),
         userId,
         exportPayload as {
           format: string;
@@ -1197,7 +1205,7 @@ router.delete(
     // paginated, covering `job-resumes`, `cover-images` and solely-owned
     // `job-company-logos`, and reporting what it could not remove instead of
     // returning a bare success.
-    const result = await deleteUserAccountFully(supabaseService, userId);
+    const result = await deleteUserAccountFully(legacyService(), userId);
     const deleted = result.found;
 
     if (!deleted) {
@@ -1208,7 +1216,7 @@ router.delete(
     }
 
     if (requestingUserId !== userId && (await isLivePlatformAdmin(requestingUserId))) {
-      await logAdminAction(supabaseService, {
+      await logAdminAction(legacyService(), {
         actorId: requestingUserId,
         action: 'user_delete',
         targetType: 'user',
@@ -1268,7 +1276,7 @@ router.get(
       'export.userData',
       { userId },
       requestingUserId,
-      async () => supabaseService.exportUserData(userId)
+      async () => dataLayer.users.exportUserData(userId)
     );
 
     if (outcome.mode === 'async') {
@@ -1313,7 +1321,7 @@ router.get(
     let stats = await cacheService.get(cacheKey);
 
     if (!stats) {
-      stats = await supabaseService.getUserStats(userId);
+      stats = await dataLayer.users.getUserStats(userId);
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, stats, 300);
@@ -1354,7 +1362,7 @@ router.get(
     let groups = await cacheService.get(cacheKey) as Group[] | null;
 
     if (!groups) {
-      groups = await supabaseService.getUserGroups(userId, {
+      groups = await dataLayer.users.getUserGroups(userId, {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
       });
@@ -1417,7 +1425,7 @@ router.get(
       });
     }
 
-    const user = await supabaseService.getUserById(userId);
+    const user = await dataLayer.users.getUserById(userId);
 
     if (!user) {
       return res.status(404).json({
@@ -1476,7 +1484,7 @@ router.put(
       });
     }
 
-    const existingUser = await supabaseService.getUserById(userId);
+    const existingUser = await dataLayer.users.getUserById(userId);
     if (!existingUser) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1493,7 +1501,7 @@ router.put(
 
     let updatedUser;
     try {
-      updatedUser = await supabaseService.updateUser(
+      updatedUser = await dataLayer.users.updateUser(
         userId,
         { settings: mergedSettings },
         {
@@ -1597,7 +1605,7 @@ router.get(
 
     try {
       // Use the is_username_available database function
-      const { data, error } = await supabaseService.getClient()
+      const { data, error } = await dataLayer.getClient()
         .rpc('is_username_available', {
           check_username: normalizedUsername,
         });
@@ -1668,7 +1676,7 @@ router.put(
 
     try {
       // Check availability first
-      const { data: isAvailable, error: checkError } = await supabaseService.getClient()
+      const { data: isAvailable, error: checkError } = await dataLayer.getClient()
         .rpc('is_username_available', {
           check_username: normalizedUsername,
         });
@@ -1682,7 +1690,7 @@ router.put(
       }
 
       // Check if the current user already has this username (allow keeping same username)
-      const currentUser = await supabaseService.getUserById(userId);
+      const currentUser = await dataLayer.users.getUserById(userId);
       const isSameUsername = currentUser?.username === normalizedUsername;
 
       if (!isAvailable && !isSameUsername) {
@@ -1711,7 +1719,7 @@ router.put(
         updateData.name = `${newFirstName} ${newLastName}`.trim();
       }
 
-      const { data, error } = await supabaseService.getClient()
+      const { data, error } = await dataLayer.getClient()
         .from('profiles')
         .update(updateData)
         .eq('id', userId)
@@ -1831,7 +1839,7 @@ router.post(
       return res.status(400).json({ success: false, error: 'Valid push token required' });
     }
 
-    const user = await supabaseService.getUserById(userId);
+    const user = await dataLayer.users.getUserById(userId);
     if (!user || !isPushEnabledInSettings(user.settings as Record<string, unknown>)) {
       return res.status(403).json({
         success: false,
@@ -1839,7 +1847,7 @@ router.post(
       });
     }
 
-    await supabaseService.updateExpoPushToken(userId, token.trim());
+    await dataLayer.users.updateExpoPushToken(userId, token.trim());
     await rememberPushTokenRegistration(userId);
     res.json({ success: true, message: 'Push token registered' });
   })
@@ -1873,8 +1881,7 @@ router.get(
     // mapped User shape drops `expo_push_token` entirely (it would have made
     // this endpoint answer "no token" for every account), and a diagnostic
     // should not be served from a ten-minute cache.
-    const { data, error } = await supabaseService
-      .getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('profiles')
       .select('expo_push_token, settings')
       .eq('id', userId)
@@ -1910,7 +1917,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    await supabaseService.clearExpoPushToken(userId);
+    await dataLayer.users.clearExpoPushToken(userId);
     await forgetPushTokenRegistration(userId);
     res.json({ success: true, message: 'Push token cleared' });
   })
@@ -1947,7 +1954,7 @@ router.post(
     // bounded, and answered with a status (504) that keeps it out of Sentry and
     // tells the client "later", not "you are signed out".
     const touched = await withUpstreamTimeout(
-      supabaseService.touchLastSeen(userId),
+      dataLayer.gamification.touchLastSeen(userId),
       PRESENCE_UPSTREAM_TIMEOUT_MS
     );
     if (!touched.ok) {
@@ -1973,7 +1980,7 @@ router.post(
       // rejection but nothing handled a hang, so a stalled study-presence write
       // held the whole beat open until the client's fetch timeout.
       const study = await withUpstreamTimeout(
-        getStudyPresenceService(supabaseService).heartbeat(userId, {
+        getStudyPresenceService(legacyService()).heartbeat(userId, {
           context: typeof body.context === 'string' ? body.context : undefined,
           courseId: typeof body.courseId === 'string' ? body.courseId : null,
           topic: typeof body.topic === 'string' ? body.topic : null,
@@ -2001,7 +2008,7 @@ router.delete(
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    await getStudyPresenceService(supabaseService).clear(userId);
+    await getStudyPresenceService(legacyService()).clear(userId);
     res.json({ success: true });
   })
 );
@@ -2029,7 +2036,7 @@ router.get(
     if (authUserId !== userId) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
-    const blockedUserIds = await supabaseService.listBlockedUserIds(userId);
+    const blockedUserIds = await dataLayer.directMessages.listBlockedUserIds(userId);
     res.json({ success: true, data: { blockedUserIds } });
   })
 );
@@ -2051,8 +2058,8 @@ router.get(
       return res.status(400).json({ success: false, error: 'otherUserId is required' });
     }
     const [blocked, iBlockedThem] = await Promise.all([
-      supabaseService.isDmBlockedBetween(userId, otherUserId),
-      supabaseService.didUserBlock(userId, otherUserId),
+      dataLayer.directMessages.isDmBlockedBetween(userId, otherUserId),
+      dataLayer.directMessages.didUserBlock(userId, otherUserId),
     ]);
     res.json({
       success: true,
@@ -2083,7 +2090,7 @@ router.post(
       return res.status(400).json({ success: false, error: 'Cannot block yourself' });
     }
     try {
-      await supabaseService.blockUser(userId, blockedUserId);
+      await dataLayer.directMessages.blockUser(userId, blockedUserId);
       res.status(201).json({ success: true, data: { blockedUserId } });
     } catch (error: any) {
       logger.error('Failed to block user', { error: error?.message, userId, blockedUserId });
@@ -2111,7 +2118,7 @@ router.delete(
     if (!blockedUserId) {
       return res.status(400).json({ success: false, error: 'blockedUserId is required' });
     }
-    await supabaseService.unblockUser(userId, blockedUserId);
+    await dataLayer.directMessages.unblockUser(userId, blockedUserId);
     res.json({ success: true, data: { blockedUserId } });
   })
 );
@@ -2157,7 +2164,7 @@ router.get(
     }
     const monthYear = requested || currentMonthYear();
 
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('user_budgets')
       .select('monthly_limit, month_year')
       .eq('user_id', userId)
@@ -2206,7 +2213,7 @@ router.put(
 
     logger.debug('Saving user budget', { userId, monthYear, requestingUserId });
 
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('user_budgets')
       .upsert(
         {
@@ -2247,7 +2254,7 @@ router.post(
     if (!userId) return;
     const { getCreatorsService } = await import('../services/creators');
     try {
-      const data = await getCreatorsService(supabaseService).follow(userId, req.params.userId);
+      const data = await getCreatorsService(legacyService()).follow(userId, req.params.userId);
       res.json({ success: true, data });
     } catch (err: any) {
       // Only user-facing PublicErrors become 4xx; DB/internal errors must keep
@@ -2272,7 +2279,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { getCreatorsService } = await import('../services/creators');
-    const data = await getCreatorsService(supabaseService).unfollow(userId, req.params.userId);
+    const data = await getCreatorsService(legacyService()).unfollow(userId, req.params.userId);
     res.json({ success: true, data });
   })
 );
@@ -2288,7 +2295,7 @@ router.get(
     if (!viewerId) return;
     const { getCreatorsService } = await import('../services/creators');
     const page = req.query?.page ? Number(req.query.page) : 1;
-    const data = await getCreatorsService(supabaseService).listFollowers(
+    const data = await getCreatorsService(legacyService()).listFollowers(
       req.params.userId,
       page,
       30,
@@ -2309,7 +2316,7 @@ router.get(
     if (!viewerId) return;
     const { getCreatorsService } = await import('../services/creators');
     const page = req.query?.page ? Number(req.query.page) : 1;
-    const data = await getCreatorsService(supabaseService).listFollowing(
+    const data = await getCreatorsService(legacyService()).listFollowing(
       req.params.userId,
       page,
       30,

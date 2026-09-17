@@ -74,7 +74,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, evictAuthTokenCache, optionalAuthMiddleware, rejectIfBannedOnly } from '../middleware/auth';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { denylistAccessToken, setUserSessionCutoff, isTokenIssuedBeforeUserCutoff } from '../services/tokenDenylist';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import {
@@ -88,11 +88,11 @@ import type { AuthenticatedRequest } from '../types';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-export function initializeAuthRoutes(supabase: SupabaseService, cache: CacheService): void {
-  supabaseService = supabase;
+export function initializeAuthRoutes(layer: DataLayer, cache: CacheService): void {
+  dataLayer = layer;
   cacheService = cache;
 }
 
@@ -299,7 +299,7 @@ router.post(
     // client's SIGNED_IN handler used to do exactly that after every cookie
     // restore. Treat it as "cookies already correct": succeed without writing.
     if (refresh_token === 'cookie-managed') {
-      const verified = await supabaseService.verifySupabaseToken(access_token);
+      const verified = await dataLayer.client.verifySupabaseToken(access_token);
       if (!verified.isValid || !verified.user || verified.user.id !== user.id) {
         return res.status(401).json({ success: false, error: 'Invalid access token' });
       }
@@ -316,7 +316,7 @@ router.post(
       });
     }
 
-    const verified = await supabaseService.verifySupabaseToken(access_token);
+    const verified = await dataLayer.client.verifySupabaseToken(access_token);
     if (!verified.isValid || !verified.user || verified.user.id !== user.id) {
       return res.status(401).json({ success: false, error: 'Invalid access token' });
     }
@@ -442,7 +442,7 @@ router.get(
       return res.json({ success: true, data: { session, user: data.user } });
     }
 
-    const verified = await supabaseService.verifySupabaseToken(accessToken);
+    const verified = await dataLayer.client.verifySupabaseToken(accessToken);
     if (!verified.isValid || !verified.user) {
       // An invalid access token is routine — it expires hourly. Fall through
       // to the refresh cookie before giving up. The old code cleared BOTH
@@ -517,7 +517,7 @@ router.post(
     await setUserSessionCutoff(userId);
 
     try {
-      await supabaseService.getClient().auth.admin.signOut(userId, 'global');
+      await dataLayer.getClient().auth.admin.signOut(userId, 'global');
     } catch (err) {
       logger.warn('Supabase global signOut failed', { userId, err });
     }
@@ -549,7 +549,7 @@ router.post(
     await setUserSessionCutoff(userId);
 
     try {
-      await supabaseService.getClient().auth.admin.signOut(userId, 'global');
+      await dataLayer.getClient().auth.admin.signOut(userId, 'global');
     } catch (err) {
       logger.warn('Supabase global signOut failed on session revoke', { userId, err });
     }

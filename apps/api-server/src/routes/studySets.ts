@@ -70,8 +70,9 @@ import {
   COVER_IMAGE_MIGRATION,
   CoverColumnMissingError,
   CoverStorageUnavailableError,
-  SupabaseService,
 } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import {
   SET_TILE_MIGRATION,
   SetTileColumnMissingError,
@@ -81,10 +82,18 @@ import { logger } from '../utils/logger';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export const initializeStudySetRoutes = (supabase: SupabaseService) => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `data.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
+
+export const initializeStudySetRoutes = (layer: DataLayer) => {
+  dataLayer = layer;
 };
 
 const handlePublicError = (err: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }): boolean => {
@@ -147,7 +156,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getStudySetsService(supabaseService).list(userId);
+    const data = await getStudySetsService(legacyService()).list(userId);
     res.json({ success: true, data });
   })
 );
@@ -158,7 +167,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getStudySetsService(supabaseService).resume(userId);
+    const data = await getStudySetsService(legacyService()).resume(userId);
     res.json({ success: true, data });
   })
 );
@@ -169,7 +178,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getStudySetsService(supabaseService).listFolders(userId);
+    const data = await getStudySetsService(legacyService()).listFolders(userId);
     res.json({ success: true, data });
   })
 );
@@ -183,7 +192,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(supabaseService).createFolder(userId, req.body || {});
+      const data = await getStudySetsService(legacyService()).createFolder(userId, req.body || {});
       res.status(201).json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -201,7 +210,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      await getStudySetsService(supabaseService).removeFolder(userId, String(req.params.folderId));
+      await getStudySetsService(legacyService()).removeFolder(userId, String(req.params.folderId));
       res.json({ success: true });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -219,7 +228,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(supabaseService).create(userId, req.body || {});
+      const data = await getStudySetsService(legacyService()).create(userId, req.body || {});
       res.status(201).json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -237,7 +246,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(supabaseService).get(userId, String(req.params.setId));
+      const data = await getStudySetsService(legacyService()).get(userId, String(req.params.setId));
       res.json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -262,10 +271,10 @@ router.patch(
     // a storage object belonging to someone else.
     const { coverPath, ...patch } = body;
     try {
-      const data = await getStudySetsService(supabaseService).update(userId, setId, patch);
+      const data = await getStudySetsService(legacyService()).update(userId, setId, patch);
       if (coverPath === null) {
-        const { previousPath } = await supabaseService.setStudySetCoverPath(setId, userId, null);
-        await supabaseService.deleteCoverObject(previousPath);
+        const { previousPath } = await dataLayer.uploads.setStudySetCoverPath(setId, userId, null);
+        await dataLayer.uploads.deleteCoverObject(previousPath);
         (data as { coverPath?: string | null }).coverPath = null;
       }
       res.json({ success: true, data });
@@ -345,11 +354,11 @@ router.post(
     try {
       // Throws a PublicError ("Study set not found") for a set this account
       // does not own — answered below before a byte is stored.
-      await getStudySetsService(supabaseService).get(userId, setId);
+      await getStudySetsService(legacyService()).get(userId, setId);
       // Probe the COLUMN before storing bytes: on a database without the
       // migration this answers 503 without ever leaving an orphan object.
-      await supabaseService.assertCoverColumn?.('study-set');
-      uploaded = await supabaseService.uploadCoverImage({
+      await legacyService().assertCoverColumn?.('study-set');
+      uploaded = await dataLayer.uploads.uploadCoverImage({
         userId,
         kind: 'study-set',
         id: setId,
@@ -357,18 +366,18 @@ router.post(
         base64Data,
         contentType: normalizedType,
       });
-      const { previousPath } = await supabaseService.setStudySetCoverPath(
+      const { previousPath } = await dataLayer.uploads.setStudySetCoverPath(
         setId,
         userId,
         uploaded.path
       );
-      await supabaseService.deleteCoverObject(previousPath);
+      await dataLayer.uploads.deleteCoverObject(previousPath);
       res.status(201).json({
         success: true,
         data: { coverPath: uploaded.path, coverUrl: uploaded.url, coverThumbUrl: uploaded.thumbUrl },
       });
     } catch (error: unknown) {
-      if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
+      if (uploaded) await dataLayer.uploads.deleteCoverObject(uploaded.path);
       if (error instanceof CoverColumnMissingError) {
         logger.error('[cover] set cover refused: column missing', {
           kind: 'study-set', setId, userId, migration: COVER_IMAGE_MIGRATION,
@@ -403,8 +412,8 @@ router.delete(
 
     const setId = String(req.params.setId);
     try {
-      const { previousPath } = await supabaseService.setStudySetCoverPath(setId, userId, null);
-      await supabaseService.deleteCoverObject(previousPath);
+      const { previousPath } = await dataLayer.uploads.setStudySetCoverPath(setId, userId, null);
+      await dataLayer.uploads.deleteCoverObject(previousPath);
       res.json({ success: true, data: { coverPath: null } });
     } catch (error: unknown) {
       if (error instanceof CoverColumnMissingError) {
@@ -438,7 +447,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(supabaseService).touchStudied(userId, String(req.params.setId));
+      const data = await getStudySetsService(legacyService()).touchStudied(userId, String(req.params.setId));
       res.json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -456,7 +465,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(supabaseService).getPlan(userId, String(req.params.setId));
+      const data = await getStudySetsService(legacyService()).getPlan(userId, String(req.params.setId));
       res.json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -474,7 +483,7 @@ router.put(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(supabaseService).replacePlan(
+      const data = await getStudySetsService(legacyService()).replacePlan(
         userId,
         String(req.params.setId),
         req.body || {}
@@ -498,7 +507,7 @@ router.patch(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(supabaseService).updateTopicStatus(
+      const data = await getStudySetsService(legacyService()).updateTopicStatus(
         userId,
         String(req.params.setId),
         String(req.params.topicId),
@@ -521,7 +530,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      await getStudySetsService(supabaseService).remove(userId, String(req.params.setId));
+      await getStudySetsService(legacyService()).remove(userId, String(req.params.setId));
       res.json({ success: true });
     } catch (err) {
       if (handlePublicError(err, res)) return;

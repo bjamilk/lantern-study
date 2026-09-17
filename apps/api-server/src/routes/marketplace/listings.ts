@@ -35,7 +35,7 @@ import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempot
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
 import { isLivePlatformAdmin } from '../../utils/platformAdminAuth';
 import { MARKETPLACE_DEFAULT_CURRENCY, isMarketplaceListingModerated, marketplaceListingModerationNotice, isAllowedListingCategory, computeMarketplaceReviewSummary } from '@lantern/shared/marketplace';
-import { supabaseService, cacheService, requestContentHash, MarketplaceCampusMetadataError, resolveRequiredMarketplaceCampus } from './context';
+import { MarketplaceCampusMetadataError, cacheService, dataLayer, requestContentHash, resolveRequiredMarketplaceCampus, supabaseService } from './context';
 import { respondMarketplaceClientError } from './errors';
 const router = Router();
 // ============================================================
@@ -96,7 +96,7 @@ router.get(
     const cacheKey = `marketplace:campuses:${country}`;
     let campuses = await cacheService.get(cacheKey);
     if (!campuses) {
-      campuses = await supabaseService.getMarketplaceCampuses(country);
+      campuses = await dataLayer.marketplace.getMarketplaceCampuses(country);
       await cacheService.set(cacheKey, campuses, 3600);
     }
     res.json({ success: true, data: campuses });
@@ -161,7 +161,7 @@ router.get(
     let result = await cacheService.get<{ data: any[]; total: number }>(cacheKey);
 
     if (!result) {
-      result = await supabaseService.getMarketplaceListings({
+      result = await dataLayer.marketplace.getMarketplaceListings({
         page: parseInt(page),
         limit: parseInt(limit),
         category,
@@ -237,7 +237,7 @@ router.get(
     const cacheKey = `marketplace:listings:batch:${[...ids].sort().join(',')}`;
     let listings = await cacheService.get<any[]>(cacheKey);
     if (!listings) {
-      listings = await supabaseService.getMarketplaceListingsByIds(ids);
+      listings = await dataLayer.marketplace.getMarketplaceListingsByIds(ids);
       await cacheService.set(cacheKey, listings, 300);
     }
 
@@ -255,7 +255,7 @@ router.get(
       return res.json({ success: true, data: cached });
     }
 
-    const analytics = await supabaseService.getMarketplaceCategoryAnalytics();
+    const analytics = await dataLayer.marketplace.getMarketplaceCategoryAnalytics();
     await cacheService.set(cacheKey, analytics, 120);
     res.json({ success: true, data: analytics });
   })
@@ -349,7 +349,7 @@ router.get(
     }
 
     if (!listing) {
-      listing = await supabaseService.getMarketplaceListingForViewer(id, viewerId);
+      listing = await dataLayer.marketplace.getMarketplaceListingForViewer(id, viewerId);
 
       if (!listing) {
         return res.status(404).json({
@@ -363,7 +363,7 @@ router.get(
       }
     }
 
-    const counted = await supabaseService.incrementListingViews(id, viewerId);
+    const counted = await dataLayer.marketplace.incrementListingViews(id, viewerId);
     if (counted) {
       listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
     }
@@ -425,7 +425,7 @@ router.post(
     }
 
     try {
-      const result = await supabaseService.uploadMarketplaceImage({
+      const result = await dataLayer.uploads.uploadMarketplaceImage({
         fileName,
         base64Data,
         contentType: normalizedType || 'image/jpeg',
@@ -522,7 +522,7 @@ router.post(
       const listing = await req.runIdempotent!(async () => {
         // courseId/topicId ride on listingData — createMarketplaceListing
         // resolves the topic against the course before the insert.
-        const created = await supabaseService.createMarketplaceListing(listingData, userId);
+        const created = await dataLayer.marketplace.createMarketplaceListing(listingData, userId);
 
         if (contentFlags.length > 0 && (created as { id?: string })?.id) {
           await getModerationService(supabaseService).recordListingFlags(
@@ -534,8 +534,8 @@ router.post(
 
         if (listingData.category?.startsWith('custom:')) {
           const categoryName = listingData.category.replace('custom:', '');
-          await supabaseService.createCustomCategory(categoryName, userId).catch(() => {});
-          await supabaseService.incrementCategoryUsage(categoryName).catch(() => {});
+          await dataLayer.categories.createCustomCategory(categoryName, userId).catch(() => {});
+          await dataLayer.categories.incrementCategoryUsage(categoryName).catch(() => {});
           cacheService.deletePattern('marketplace:custom_categories');
         }
 
@@ -552,7 +552,7 @@ router.post(
 
       const createdListing = listing.listing as { id?: string; title?: string };
       try {
-        await supabaseService.createNotification(userId, {
+        await dataLayer.notifications.createNotification(userId, {
           type: 'marketplace_order_update',
           message: `Your listing "${createdListing.title || listingData.title}" is now live.`,
           link: createdListing.id ? `marketplace:listing:${createdListing.id}` : undefined,
@@ -607,7 +607,7 @@ router.put(
 
     logger.debug('Updating marketplace listing', { id, userId });
 
-    const listing = await supabaseService.getMarketplaceListingById(id);
+    const listing = await dataLayer.marketplace.getMarketplaceListingById(id);
     if (!listing) {
       return res.status(404).json({
         success: false,
@@ -673,7 +673,7 @@ router.put(
     delete updates.topic_id;
     let nextTopicId: string | null | undefined;
     try {
-      nextTopicId = await supabaseService.resolveArtefactTopic({
+      nextTopicId = await dataLayer.academic.resolveArtefactTopic({
         topicId: rawTopicId,
         courseId: courseWasProvided ? nextCourseId : undefined,
         currentCourseId: listing.course_id ?? null,
@@ -719,7 +719,7 @@ router.put(
       throw error;
     }
 
-    let updatedListing = await supabaseService.updateMarketplaceListing(id, updates, {
+    let updatedListing = await dataLayer.marketplace.updateMarketplaceListing(id, updates, {
       actorIsAdmin: liveAdmin,
     });
 
@@ -792,7 +792,7 @@ router.delete(
 
     logger.debug('Deleting marketplace listing', { id, userId });
 
-    const listing = await supabaseService.getMarketplaceListingById(id);
+    const listing = await dataLayer.marketplace.getMarketplaceListingById(id);
     if (!listing) {
       return res.status(404).json({
         success: false,
@@ -822,7 +822,7 @@ router.delete(
     // archive when terminal orders exist, and refuse while orders are still open.
     let outcome: 'deleted' | 'archived';
     try {
-      ({ outcome } = await supabaseService.deleteMarketplaceListingSafely(id));
+      ({ outcome } = await dataLayer.marketplace.deleteMarketplaceListingSafely(id));
     } catch (err: any) {
       if (err?.statusCode === 409) {
         return res.status(409).json({ success: false, error: err.message });
@@ -859,7 +859,7 @@ router.get(
     const listingCacheKey = viewerId ? null : `marketplace:listing:public:${id}`;
     let listing = listingCacheKey ? await cacheService.get<any>(listingCacheKey) : null;
     if (!listing) {
-      listing = await supabaseService.getMarketplaceListingForViewer(id, viewerId);
+      listing = await dataLayer.marketplace.getMarketplaceListingForViewer(id, viewerId);
       if (!listing) {
         return res.status(404).json({ success: false, error: 'Listing not found' });
       }
@@ -868,7 +868,7 @@ router.get(
       }
     }
 
-    const counted = await supabaseService.incrementListingViews(id, viewerId);
+    const counted = await dataLayer.marketplace.incrementListingViews(id, viewerId);
     if (counted) {
       listing = { ...listing, views_count: (listing.views_count || 0) + 1 };
     }
@@ -877,18 +877,18 @@ router.get(
     const similarCacheKey = `marketplace:similar:v3:${id}`;
     let similarListings = await cacheService.get<any[]>(similarCacheKey);
     if (!similarListings) {
-      similarListings = await supabaseService.getRelatedMarketplaceListings(listing, 6);
+      similarListings = await dataLayer.marketplace.getRelatedMarketplaceListings(listing, 6);
       await cacheService.set(similarCacheKey, similarListings, 300);
     }
 
     // --- 3. isFavorited (session user only — never trust query userId) ---
     let isFavorited = false;
     if (viewerId) {
-      isFavorited = await supabaseService.isListingFavorited(viewerId, id);
+      isFavorited = await dataLayer.marketplace.isListingFavorited(viewerId, id);
     }
 
     // --- 4. Reviews with reviewer display names + read-time signals ---
-    const reviews = await supabaseService.getMarketplaceReviews(id, viewerId);
+    const reviews = await dataLayer.marketplace.getMarketplaceReviews(id, viewerId);
     listing = { ...listing, reviews };
     const reviewSummary = computeMarketplaceReviewSummary(reviews);
 
@@ -896,7 +896,7 @@ router.get(
     let canReview = false;
     if (viewerId) {
       try {
-        canReview = (await supabaseService.canUserReviewListing(id, viewerId)).eligible;
+        canReview = (await dataLayer.marketplace.canUserReviewListing(id, viewerId)).eligible;
       } catch {
         canReview = false; // never block the listing over an eligibility lookup
       }
@@ -906,7 +906,7 @@ router.get(
     let questionBank: { questionCount: number; version: number; owned: boolean } | null = null;
     if (listing.listing_kind === 'question_bank') {
       try {
-        const { data: bank } = await supabaseService.getClient()
+        const { data: bank } = await dataLayer.getClient()
           .from('marketplace_question_banks')
           .select('question_count, version')
           .eq('listing_id', id)
@@ -914,7 +914,7 @@ router.get(
         if (bank) {
           let owned = false;
           if (viewerId) {
-            const { data: entitlement } = await supabaseService.getClient()
+            const { data: entitlement } = await dataLayer.getClient()
               .from('marketplace_question_bank_entitlements')
               .select('id')
               .eq('listing_id', id)
@@ -937,7 +937,7 @@ router.get(
     let studyPack: { counts: unknown; version: number; owned: boolean } | null = null;
     if (listing.listing_kind === 'study_pack') {
       try {
-        const { data: pack } = await supabaseService.getClient()
+        const { data: pack } = await dataLayer.getClient()
           .from('marketplace_study_packs')
           .select('counts, version')
           .eq('listing_id', id)
@@ -945,7 +945,7 @@ router.get(
         if (pack) {
           let owned = false;
           if (viewerId) {
-            const { data: entitlement } = await supabaseService.getClient()
+            const { data: entitlement } = await dataLayer.getClient()
               .from('marketplace_question_bank_entitlements')
               .select('id')
               .eq('listing_id', id)
@@ -1005,11 +1005,11 @@ router.post(
 
     try {
       const listing = await withIdempotency(
-        supabaseService.getClient(),
+        dataLayer.getClient(),
         userId,
         'marketplace_boost',
         idempotencyKey,
-        async () => supabaseService.boostMarketplaceListing(id, userId, durationHours)
+        async () => dataLayer.marketplace.boostMarketplaceListing(id, userId, durationHours)
       );
 
       await invalidateListingCaches(cacheService, id);

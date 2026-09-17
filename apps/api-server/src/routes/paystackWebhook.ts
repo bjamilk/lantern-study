@@ -57,15 +57,21 @@
  */
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { logger } from '../utils/logger';
 
 const router = Router();
 
-let supabaseService: SupabaseService | null = null;
+let dataLayer: DataLayer | null = null;
 
-export function initializePaystackWebhookRoutes(supabase: SupabaseService): void {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): `getMarketplacePaymentsService` still takes the
+// `SupabaseService` facade whole, so this route hands it
+// `dataLayer.legacyService`. The seam disappears when the `services/`
+// importers are flipped.
+const legacyService = () => dataLayer?.legacyService ?? null;
+
+export function initializePaystackWebhookRoutes(layer: DataLayer): void {
+  dataLayer = layer;
 }
 
 /**
@@ -75,7 +81,7 @@ export function initializePaystackWebhookRoutes(supabase: SupabaseService): void
 router.post(
   '/',
   asyncHandler(async (req: any, res: any) => {
-    if (!supabaseService) {
+    if (!legacyService()) {
       return res.status(503).json({ success: false, error: 'Service unavailable' });
     }
 
@@ -97,7 +103,7 @@ router.post(
 
     try {
       const { getMarketplacePaymentsService } = await import('../services/marketplacePayments');
-      const result = await getMarketplacePaymentsService(supabaseService).handleWebhook(
+      const result = await getMarketplacePaymentsService(legacyService()!).handleWebhook(
         rawBody,
         signature
       );

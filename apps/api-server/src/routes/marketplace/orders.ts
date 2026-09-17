@@ -22,7 +22,7 @@ import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempotency';
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
-import { supabaseService, cacheService, requestContentHash, FULFILLMENT_MODES } from './context';
+import { FULFILLMENT_MODES, cacheService, dataLayer, requestContentHash, supabaseService } from './context';
 import { respondMarketplaceClientError, respondMarketplaceError } from './errors';
 const router = Router();
 
@@ -73,7 +73,7 @@ router.post(
 
     try {
       const result = await withIdempotency(
-        supabaseService.getClient(),
+        dataLayer.getClient(),
         buyerId,
         'marketplace_buy_now',
         idempotencyKey,
@@ -81,7 +81,7 @@ router.post(
           if (marketplacePaystackEnabled()) {
             const email =
               (typeof req.user?.email === 'string' && req.user.email) ||
-              (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user
+              (await dataLayer.getClient().auth.admin.getUserById(buyerId)).data.user
                 ?.email ||
               '';
             if (!email) {
@@ -96,7 +96,7 @@ router.post(
               quantity,
             });
           }
-          return supabaseService.buyMarketplaceListingNow(
+          return dataLayer.marketplace.buyMarketplaceListingNow(
             id,
             buyerId,
             req.body?.couponCode,
@@ -320,7 +320,7 @@ router.patch(
             // hands out (server.ts:211).
             (req as IdempotentRequest).runIdempotent!(work)
           : withIdempotency(
-              supabaseService.getClient(),
+              dataLayer.getClient(),
               req.user.id,
               ORDER_ACTION_OPERATION,
               derivedKey,
@@ -329,7 +329,7 @@ router.patch(
       const replayed = await claim(async () => {
         ran = true;
         if (Object.keys(fieldUpdates).length > 0) {
-          const scoped = supabaseService.getClient()
+          const scoped = dataLayer.getClient()
             .from('marketplace_orders')
             .update(fieldUpdates)
             .eq('id', req.params.id);

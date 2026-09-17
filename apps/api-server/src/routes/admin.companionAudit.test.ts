@@ -86,7 +86,15 @@ async function call(limit?: string) {
 }
 
 beforeAll(() => {
-  initializeAdminRoutes({ getClient: () => ({ from: () => fakeQuery() }) } as any, {} as any);
+  // The admin family is injected with the DATA LAYER now. `legacyService` is
+  // the facade handle its `adminData` helpers still take whole.
+  initializeAdminRoutes(
+    {
+      getClient: () => ({ from: () => fakeQuery() }),
+      legacyService: { getClient: () => ({ from: () => fakeQuery() }) },
+    } as any,
+    {} as any,
+  );
 });
 
 beforeEach(() => {

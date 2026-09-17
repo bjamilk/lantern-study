@@ -44,6 +44,7 @@ jest.mock('../middleware/rateLimit', () => ({
 import { companionChat } from '../services/aiService';
 import { buildTrustedCompanionContext } from '../services/companionContext';
 import router, { initializeAICompanionRoutes } from './aiCompanion';
+import { stubDataLayer } from '../services/data/testStub';
 
 const chatMock = companionChat as jest.MockedFunction<any>;
 const trustedMock = buildTrustedCompanionContext as jest.MockedFunction<any>;
@@ -155,7 +156,7 @@ describe('POST /ai/companion/message/stream with an attached photo', () => {
       provider: 'groq',
       citations: null,
     });
-    initializeAICompanionRoutes(makeService());
+    initializeAICompanionRoutes(stubDataLayer(makeService()) as any);
   });
 
   it('puts the transcript of an attached photo in front of the model', async () => {

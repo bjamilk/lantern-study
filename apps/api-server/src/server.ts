@@ -70,6 +70,8 @@ initSentry();
 import { CacheService, cacheService as sharedCacheService } from './services/cache';
 import { ApiKeyService } from './services/apiKey';
 import { SupabaseService } from './services/supabase';
+import { createDataLayer, type DataLayer } from './services/data';
+import { createDataLayerHost } from './services/dataLayerHost';
 
 // Import middleware
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores, isWebhookRateLimitExempt } from './middleware/rateLimit';
@@ -176,6 +178,7 @@ if (process.env.NODE_ENV === 'production') {
 let cacheService: CacheService;
 let apiKeyService: ApiKeyService;
 let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
 async function initializeServices() {
   try {
@@ -207,6 +210,19 @@ async function initializeServices() {
       serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     };
     supabaseService = new SupabaseService(dbConfig);
+
+    // The data layer (`services/data/index.ts`): the same domain functions the
+    // facade delegates to, bound ONCE to the client and to their `deps`. Route
+    // families flipped off `SupabaseService` are injected with this instead.
+    // `host` carries the three deps that still need the facade instance and
+    // shrinks to nothing as the remaining importers are flipped — see
+    // `docs/data-layer-wiring.md`.
+    dataLayer = createDataLayer({
+      client: supabaseService.getClient(),
+      supabaseUrl: dbConfig.url,
+      host: createDataLayerHost(supabaseService),
+    });
+
     const { setIdempotencyClient } = await import('./middleware/idempotency');
     setIdempotencyClient(() => supabaseService.getClient());
 
@@ -243,47 +259,47 @@ async function initializeServices() {
     const { initializeMarketplaceRoutes } = await import('./routes/marketplace');
     const { initializeSitemapRoutes } = await import('./routes/sitemap');
 
-    initializeUserRoutes(supabaseService, cacheService);
-    initializeGroupRoutes(supabaseService, cacheService);
+    initializeUserRoutes(dataLayer, cacheService);
+    initializeGroupRoutes(dataLayer, cacheService);
     initializeMessageRoutes(supabaseService, cacheService);
-    initializeNotificationRoutes(supabaseService, cacheService);
-    initializeTestRoutes(supabaseService, cacheService);
-    initializeGamificationRoutes(supabaseService, cacheService);
-    initializeDeckRoutes(supabaseService, cacheService);
-    initializeFlashcardRoutes(supabaseService, cacheService);
-    initializeUserStatsRoutes(supabaseService, cacheService);
-    initializeDashboardRoutes(supabaseService, cacheService);
-    initializePreferencesRoutes(supabaseService, cacheService);
-    initializeMarketplaceRoutes(supabaseService, cacheService);
-    initializePaystackWebhookRoutes(supabaseService);
-    initializeJobsBoardRoutes(supabaseService, cacheService);
-    initializeSitemapRoutes(supabaseService, cacheService);
-    initializeOfflineBundlesRoutes(supabaseService, cacheService);
-    initializeAdminRoutes(supabaseService, cacheService);
-    initializeAICompanionRoutes(supabaseService);
-    initializeAIRoutes(supabaseService);
+    initializeNotificationRoutes(dataLayer, cacheService);
+    initializeTestRoutes(dataLayer, cacheService);
+    initializeGamificationRoutes(dataLayer, cacheService);
+    initializeDeckRoutes(dataLayer, cacheService);
+    initializeFlashcardRoutes(dataLayer, cacheService);
+    initializeUserStatsRoutes(dataLayer, cacheService);
+    initializeDashboardRoutes(dataLayer, cacheService);
+    initializePreferencesRoutes(dataLayer, cacheService);
+    initializeMarketplaceRoutes(dataLayer, cacheService);
+    initializePaystackWebhookRoutes(dataLayer);
+    initializeJobsBoardRoutes(dataLayer, cacheService);
+    initializeSitemapRoutes(dataLayer, cacheService);
+    initializeOfflineBundlesRoutes(dataLayer, cacheService);
+    initializeAdminRoutes(dataLayer, cacheService);
+    initializeAICompanionRoutes(dataLayer);
+    initializeAIRoutes(dataLayer);
     initializeAiBonusUses(supabaseService);
     initializeNotesRoutes(supabaseService, cacheService);
-    initializeChallengeRoutes(supabaseService, cacheService);
-    initializeAuthRoutes(supabaseService, cacheService);
-    initializeStorageRoutes(supabaseService);
-    initializeAnalyticsRoutes(supabaseService);
-    initializeCourseRoutes(supabaseService, cacheService);
-    initializeUserCourseRoutes(supabaseService, cacheService);
-    initializeStudySetRoutes(supabaseService);
-    initializeConceptRoutes(supabaseService, cacheService);
-    initializeLibraryRoutes(supabaseService, cacheService);
-    initializeCreatorRoutes(supabaseService);
-    initializeReportRoutes(supabaseService, cacheService);
-    initializeCommunityRoutes(supabaseService);
-    initializeFeedRoutes(supabaseService);
-    initializeReferralRoutes(supabaseService);
-    initializeCampusRoutes(supabaseService, cacheService);
-    initializeCourseTopicRoutes(supabaseService);
-    initializeStudyRoomRoutes(supabaseService);
-    initializeClassRoutes(supabaseService);
-    initializeInstitutionStaffRoutes(supabaseService);
-    initializeSchoolRoutes(supabaseService);
+    initializeChallengeRoutes(dataLayer, cacheService);
+    initializeAuthRoutes(dataLayer, cacheService);
+    initializeStorageRoutes(dataLayer);
+    initializeAnalyticsRoutes(dataLayer);
+    initializeCourseRoutes(dataLayer, cacheService);
+    initializeUserCourseRoutes(dataLayer, cacheService);
+    initializeStudySetRoutes(dataLayer);
+    initializeConceptRoutes(dataLayer, cacheService);
+    initializeLibraryRoutes(dataLayer, cacheService);
+    initializeCreatorRoutes(dataLayer);
+    initializeReportRoutes(dataLayer, cacheService);
+    initializeCommunityRoutes(dataLayer);
+    initializeFeedRoutes(dataLayer);
+    initializeReferralRoutes(dataLayer);
+    initializeCampusRoutes(dataLayer, cacheService);
+    initializeCourseTopicRoutes(dataLayer);
+    initializeStudyRoomRoutes(dataLayer);
+    initializeClassRoutes(dataLayer);
+    initializeInstitutionStaffRoutes(dataLayer);
+    initializeSchoolRoutes(dataLayer);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -292,7 +308,7 @@ async function initializeServices() {
     initializeRecurringBudgetService(supabaseService);
 
     const { initializeBudgetRoutes } = await import('./routes/budget');
-    initializeBudgetRoutes(supabaseService, cacheService);
+    initializeBudgetRoutes(dataLayer, cacheService);
 
     // Background cron: run in-process only when BullMQ is off. With BullMQ
     // enabled the dedicated worker owns these, and starting them here too would

@@ -46,6 +46,7 @@ import router, {
   initializeTestRoutes,
   normalizePersonalTestQuestions,
 } from './tests';
+import { stubDataLayer } from '../services/data/testStub';
 
 // The stubbed withIdempotency above never touches it, but the middleware
 // resolves the client before calling through.
@@ -107,7 +108,7 @@ function initWith(createPersonalTest: jest.Mock) {
     mapTestSessionRowToClient: (row: any) => ({ id: row.id, title: row.title, status: row.status }),
   };
   const cache: any = { get: async () => null, set: async () => {}, delete: async () => {}, deletePattern: async () => {} };
-  initializeTestRoutes(supabase, cache);
+  initializeTestRoutes(stubDataLayer(supabase) as any, cache);
   return supabase;
 }
 

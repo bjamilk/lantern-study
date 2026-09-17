@@ -4,7 +4,7 @@ import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validatePagination, validateFlashcardCreate, validateFlashcardReview } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
@@ -20,12 +20,12 @@ const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
   profile === 'compact' ? 'compact' : 'full';
 
 // Initialize services (will be injected in main server)
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
 // Initialize function to be called from main server
-export const initializeFlashcardRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeFlashcardRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -79,7 +79,7 @@ router.get(
     let flashcards = await cacheService.get(cacheKey) as any[];
 
     if (!flashcards) {
-      flashcards = await supabaseService.getFlashcards(userId, deckId as string, {
+      flashcards = await dataLayer.offlineBundles.getFlashcards(userId, deckId as string, {
         page: parsedPage,
         limit: parsedLimit,
         responseProfile: profile,
@@ -118,7 +118,7 @@ router.get(
     let flashcard = await cacheService.get(cacheKey);
 
     if (!flashcard) {
-      flashcard = await supabaseService.getFlashcardForUser(flashcardId, userId);
+      flashcard = await dataLayer.offlineBundles.getFlashcardForUser(flashcardId, userId);
 
       if (!flashcard) {
         return res.status(404).json({
@@ -150,12 +150,12 @@ router.get(
 
     logger.debug('Fetching flashcard comments', { flashcardId, userId });
 
-    const flashcard = await supabaseService.getFlashcardForUser(flashcardId, userId);
+    const flashcard = await dataLayer.offlineBundles.getFlashcardForUser(flashcardId, userId);
     if (!flashcard) {
       return res.status(404).json({ success: false, error: 'Flashcard not found or access denied' });
     }
 
-    const comments = await supabaseService.getFlashcardComments(flashcardId);
+    const comments = await dataLayer.offlineBundles.getFlashcardComments(flashcardId);
 
     res.json({
       success: true,
@@ -181,12 +181,12 @@ router.post(
       return res.status(400).json({ success: false, error: 'Comment text is required' });
     }
 
-    const flashcard = await supabaseService.getFlashcardForUser(flashcardId, userId);
+    const flashcard = await dataLayer.offlineBundles.getFlashcardForUser(flashcardId, userId);
     if (!flashcard) {
       return res.status(404).json({ success: false, error: 'Flashcard not found or access denied' });
     }
 
-    const newComment = await supabaseService.addFlashcardComment(flashcardId, userId, comment.trim());
+    const newComment = await dataLayer.offlineBundles.addFlashcardComment(flashcardId, userId, comment.trim());
 
     res.status(201).json({
       success: true,
@@ -211,7 +211,7 @@ router.post(
 
     let flashcard;
     try {
-      flashcard = await supabaseService.createFlashcard({
+      flashcard = await dataLayer.decks.createFlashcard({
         deckId,
         type: type || 'BASIC',
         front,
@@ -276,7 +276,7 @@ router.post(
     }
 
     try {
-      const result = await supabaseService.uploadFlashcardImage({
+      const result = await dataLayer.uploads.uploadFlashcardImage({
         fileName,
         base64Data,
         contentType,
@@ -310,7 +310,7 @@ router.post(
     };
 
     try {
-      const updatedFlashcard = await supabaseService.reviewFlashcard(flashcardId, userId, rating, {
+      const updatedFlashcard = await dataLayer.offlineBundles.reviewFlashcard(flashcardId, userId, rating, {
         expectedVersion:
           expectedVersion != null && Number.isFinite(Number(expectedVersion))
             ? Number(expectedVersion)
@@ -370,7 +370,7 @@ router.put(
     // clients showed the edit as saved while the server discarded it. Refuse
     // loudly instead; identical values pass through as no-ops.
     if (type !== undefined || deckId !== undefined) {
-      const existing = await supabaseService.getFlashcardForUser(flashcardId, userId);
+      const existing = await dataLayer.offlineBundles.getFlashcardForUser(flashcardId, userId);
       if (!existing) {
         return res.status(404).json({
           success: false,
@@ -394,7 +394,7 @@ router.put(
     logger.debug('Updating flashcard', { flashcardId, front: front?.substring(0, 50), imageUrl, userId });
 
     try {
-      const updatedFlashcard = await supabaseService.updateFlashcard(
+      const updatedFlashcard = await dataLayer.offlineBundles.updateFlashcard(
         flashcardId,
         {
           front,
@@ -453,7 +453,7 @@ router.delete(
 
     logger.debug('Deleting flashcard', { flashcardId, userId });
 
-    const deleted = await supabaseService.deleteFlashcard(flashcardId, userId);
+    const deleted = await dataLayer.offlineBundles.deleteFlashcard(flashcardId, userId);
 
     if (!deleted) {
       return res.status(404).json({

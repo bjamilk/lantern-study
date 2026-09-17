@@ -10,7 +10,8 @@ import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import {
   DEFAULT_COURSE_SEARCH_LIMIT,
@@ -21,11 +22,19 @@ import { getClassSectionsService } from '../services/classSections';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
-export const initializeCourseRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeCourseRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -70,7 +79,7 @@ router.get(
     const cacheKey = `${COURSE_SEARCH_CACHE_PREFIX}${institutionId || 'all'}:${q.toLowerCase()}:${limit}`;
     const courses = await cacheService.cached(
       cacheKey,
-      () => getAcademicCoursesService(supabaseService).searchCourses({ institutionId, q, limit }),
+      () => getAcademicCoursesService(legacyService()).searchCourses({ institutionId, q, limit }),
       { ttl: COURSE_SEARCH_CACHE_TTL_SECONDS }
     );
 
@@ -89,7 +98,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const { course, created } = await getAcademicCoursesService(supabaseService).findOrCreateCourse(userId, {
+      const { course, created } = await getAcademicCoursesService(legacyService()).findOrCreateCourse(userId, {
         institutionId: req.body?.institutionId ?? null,
         code: req.body?.code,
         title: req.body?.title,
@@ -119,7 +128,7 @@ router.patch(
     if (!userId) return;
     try {
       const isCanonical = Boolean(req.body?.isCanonical);
-      const course = await getClassSectionsService(supabaseService).setCourseCanonical(
+      const course = await getClassSectionsService(legacyService()).setCourseCanonical(
         userId,
         String(req.params.courseId),
         isCanonical,

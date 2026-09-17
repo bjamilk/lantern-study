@@ -18,7 +18,6 @@ jest.mock('../middleware/auth', () => ({
     next();
   },
 }));
-jest.mock('../services/supabase', () => ({ SupabaseService: class {} }));
 jest.mock('../services/cache', () => ({
   CacheService: class {},
   cacheService: {
@@ -67,11 +66,16 @@ describe('POST /groups/:groupId/members/batch', () => {
     const mod = require('./groups');
     mod.initializeGroupRoutes(
       {
-        getGroupById,
-        addGroupMembersBatch,
-        getUserById: jest.fn(async () => ({ id: USER, name: 'Ada', username: 'ada' })),
-        createNotification: jest.fn(async () => undefined),
+        // The route family is injected with the DATA LAYER now, not the
+        // `SupabaseService` facade: the same stubs, regrouped under the domain
+        // namespace that owns each one (`docs/data-layer-wiring.md`).
+        groups: { getGroupById, addGroupMembersBatch },
+        users: {
+          getUserById: jest.fn(async () => ({ id: USER, name: 'Ada', username: 'ada' })),
+        },
+        notifications: { createNotification: jest.fn(async () => undefined) },
         getClient: () => ({}),
+        legacyService: {},
       } as any,
       {
         get: async () => null,

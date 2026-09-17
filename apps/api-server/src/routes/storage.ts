@@ -31,7 +31,7 @@
  *   from becoming a sustained signing loop.
  *
  * Ownership predicate
- * - Delegated, one object at a time, to `supabaseService.canAccessStorageObject`
+ * - Delegated, one object at a time, to `legacyService().canAccessStorageObject`
  *   in `services/supabase.ts`. That function is the bucket ACL: it denies by
  *   default for any bucket not on the private allowlist, rejects traversal in
  *   the path, treats the first path segment as the owner id, and then applies
@@ -57,13 +57,22 @@ import { requireAuthUserId } from '../utils/requestAuth';
 import { clampSignedUrlTtl } from '../utils/fileValidation';
 import type { AuthenticatedRequest } from '../types';
 import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export function initializeStorageRoutes(supabase: SupabaseService): void {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
+
+export function initializeStorageRoutes(layer: DataLayer): void {
+  dataLayer = layer;
 }
 
 const storageRateLimits: import('express').RequestHandler[] = [
@@ -95,7 +104,7 @@ router.post(
     }
 
     // ACL always checked against the original object path.
-    const allowed = await supabaseService.canAccessStorageObject(userId, bucket, path);
+    const allowed = await dataLayer.storageAcl.canAccessStorageObject(userId, bucket, path);
     if (!allowed) {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
@@ -110,7 +119,7 @@ router.post(
       bucket
     );
     const displayVariant = parseStorageVariant(variant);
-    const signedUrl = await supabaseService.createSignedStorageUrlWithVariant(
+    const signedUrl = await dataLayer.storageAcl.createSignedStorageUrlWithVariant(
       bucket,
       path,
       ttl,
@@ -149,16 +158,16 @@ router.post(
     // bucket and path before the ACL sees it.
     const signed = await Promise.all(
       items.map(async (item: { bucket?: string; path?: string; url?: string; variant?: string }) => {
-        const resolved = supabaseService.resolveStorageReference(item.bucket, item.path, item.url);
+        const resolved = dataLayer.storageAcl.resolveStorageReference(item.bucket, item.path, item.url);
         if (!resolved) {
           return { bucket: item.bucket, path: item.path, url: item.url, signedUrl: item.url ?? null, error: 'invalid_reference' };
         }
-        const allowed = await supabaseService.canAccessStorageObject(userId, resolved.bucket, resolved.path);
+        const allowed = await dataLayer.storageAcl.canAccessStorageObject(userId, resolved.bucket, resolved.path);
         if (!allowed) {
           return { ...resolved, signedUrl: null, error: 'access_denied' };
         }
         const itemVariant = parseStorageVariant(item.variant ?? displayVariant);
-        const signedUrl = await supabaseService.createSignedStorageUrlWithVariant(
+        const signedUrl = await dataLayer.storageAcl.createSignedStorageUrlWithVariant(
           resolved.bucket,
           resolved.path,
           clampSignedUrlTtl(requestedTtl, resolved.bucket),

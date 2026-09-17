@@ -7,7 +7,8 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { authMiddleware, optionalAuthMiddleware } from "../middleware/auth";
 import { requireAuthUserId } from "../utils/requestAuth";
 import { isLivePlatformAdmin } from "../utils/platformAdminAuth";
-import { SupabaseService } from "../services/supabase";
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from "../services/cache";
 import {
   applicationStatusUpdateError,
@@ -22,19 +23,27 @@ import {
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
 export const initializeJobsBoardRoutes = (
-  supabase: SupabaseService,
+  layer: DataLayer,
   cache: CacheService,
 ) => {
-  supabaseService = supabase;
+  dataLayer = layer;
   cacheService = cache;
 };
 
 function jobs() {
-  return getJobsBoardService(supabaseService);
+  return getJobsBoardService(legacyService());
 }
 
 /**
@@ -1038,7 +1047,7 @@ router.post(
       "../services/moderation"
     );
     try {
-      const data = await getModerationService(supabaseService).createReport({
+      const data = await getModerationService(legacyService()).createReport({
         reporterId: userId,
         targetType: "job_posting",
         targetId: req.params.id,

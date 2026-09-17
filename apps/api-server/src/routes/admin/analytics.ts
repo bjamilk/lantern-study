@@ -23,7 +23,7 @@ import { Router } from 'express';
 import { probeProvider, getProviderStatus } from '../../services/aiService';
 import { aggregateAiTokenRows, aggregateProductEventRows } from '../../services/adminAggregations';
 import * as adminData from '../../services/adminData';
-import { supabaseService } from './context';
+import { dataLayer, supabaseService } from './context';
 import {
   AI_EVENT_ESTIMATED_COST_USD,
   daysAgoIso,
@@ -168,7 +168,7 @@ router.get('/learning-connections', adminRoute(async (req: any, res: any) => {
 router.get('/analytics', adminRoute(async (req: any, res: any) => {
   const rawDays = parseInt(req.query.days as string, 10);
   const days = [7, 30, 90].includes(rawDays) ? rawDays : 30;
-  const data = await supabaseService.getAdminAnalytics(days);
+  const data = await dataLayer.adminAnalytics.getAdminAnalytics(days);
   res.json({ success: true, data });
 }));
 

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { MARKETPLACE_DEFAULT_COUNTRY } from '@lantern/shared/marketplace';
 import { JOBS_DEFAULT_COUNTRY } from '@lantern/shared/jobs';
@@ -14,11 +14,11 @@ const router = Router();
  * these routes published the section landing page and nothing else.
  */
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-export const initializeSitemapRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeSitemapRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -39,7 +39,7 @@ router.get(
 
     // Phase 4 R. Active, non-'other' campuses only — the same visibility rule
     // the summary endpoint hand-writes, because the API bypasses RLS.
-    const client = supabaseService.getClient();
+    const client = dataLayer.getClient();
     const { data, error } = await client
       .from('marketplace_campuses')
       .select('slug')
@@ -81,7 +81,7 @@ router.get(
       return sitemapXmlResponse(res, cached);
     }
 
-    const client = supabaseService.getClient();
+    const client = dataLayer.getClient();
     const { data, error } = await client
       .from('marketplace_listings')
       .select('id, updated_at')
@@ -134,7 +134,7 @@ router.get(
       return sitemapXmlResponse(res, cached);
     }
 
-    const client = supabaseService.getClient();
+    const client = dataLayer.getClient();
     const [postings, companies] = await Promise.all([
       client
         .from('job_postings')

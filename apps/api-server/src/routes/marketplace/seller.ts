@@ -18,7 +18,7 @@ import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../../services/cachePolicy';
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
 import { MARKETPLACE_DEFAULT_CURRENCY } from '@lantern/shared/marketplace';
-import { supabaseService, cacheService, MarketplaceCampusMetadataError, resolveRequiredMarketplaceCampus } from './context';
+import { MarketplaceCampusMetadataError, cacheService, dataLayer, resolveRequiredMarketplaceCampus, supabaseService } from './context';
 import { respondMarketplaceClientError } from './errors';
 const router = Router();
 // ============================================================
@@ -45,7 +45,7 @@ router.get(
 
     logger.debug('Fetching seller listings', { userId, status });
 
-    const listings = await supabaseService.getListingsBySeller(userId, status as string | undefined);
+    const listings = await dataLayer.marketplace.getListingsBySeller(userId, status as string | undefined);
 
     res.json({
       success: true,
@@ -66,9 +66,9 @@ router.get(
     }
     const { computeShopSummary } = await import('../../services/marketplaceSummary');
     const data = await computeShopSummary(
-      supabaseService.getClient(),
+      dataLayer.getClient(),
       userId,
-      (id) => supabaseService.getAllDMUnreadCounts(id),
+      (id) => dataLayer.readState.getAllDMUnreadCounts(id),
     );
     res.json({ success: true, data });
   })
@@ -87,7 +87,7 @@ router.get(
 
     logger.debug('Fetching seller stats', { userId });
 
-    const stats = await supabaseService.getSellerStats(userId);
+    const stats = await dataLayer.marketplace.getSellerStats(userId);
 
     res.json({
       success: true,
@@ -115,7 +115,7 @@ router.put(
     logger.debug('Updating listing status', { id, userId, status });
 
     try {
-      const listing = await supabaseService.updateListingStatus(id, status, userId);
+      const listing = await dataLayer.marketplace.updateListingStatus(id, status, userId);
 
       // Invalidate caches
       await invalidateListingCaches(cacheService, id);
@@ -160,7 +160,7 @@ router.get(
     }
 
     // Get profile
-    const { data: profile, error: profileErr } = await supabaseService.getClient()
+    const { data: profile, error: profileErr } = await dataLayer.getClient()
       .from('profiles')
       .select('id, name, avatar_url, created_at')
       .eq('id', userId)
@@ -171,7 +171,7 @@ router.get(
     }
 
     // Get all listings
-    const { data: allListings } = await supabaseService.getClient()
+    const { data: allListings } = await dataLayer.getClient()
       .from('marketplace_listings')
       .select('id, title, price, images, category, location, status, views_count, created_at')
       .eq('user_id', userId)
@@ -191,7 +191,7 @@ router.get(
       : activeListings.map((l) => l.id);
     let allReviews: any[] = [];
     if (reviewListingIds.length > 0) {
-      const { data: reviews } = await supabaseService.getClient()
+      const { data: reviews } = await dataLayer.getClient()
         .from('marketplace_reviews')
         .select('id, listing_id, reviewer_id, rating, comment, created_at, reviewer:profiles!marketplace_reviews_reviewer_id_fkey(id, name, avatar_url)')
         .in('listing_id', reviewListingIds)
@@ -230,11 +230,11 @@ router.get(
       const ownerListingIds = listings.map((l) => l.id);
       if (ownerListingIds.length > 0) {
         const [{ count: favCount }, { count: inquiryCount }] = await Promise.all([
-          supabaseService.getClient()
+          dataLayer.getClient()
             .from('marketplace_favorites')
             .select('id', { count: 'exact', head: true })
             .in('listing_id', ownerListingIds),
-          supabaseService.getClient()
+          dataLayer.getClient()
             .from('marketplace_inquiries')
             .select('id', { count: 'exact', head: true })
             .in('listing_id', ownerListingIds),
@@ -404,7 +404,7 @@ router.post(
     if (!code || !listingId) {
       return res.status(400).json({ success: false, error: 'code and listingId are required' });
     }
-    const listing = await supabaseService.getMarketplaceListingById(listingId);
+    const listing = await dataLayer.marketplace.getMarketplaceListingById(listingId);
     if (!listing) {
       return res.status(404).json({ success: false, error: 'Listing not found' });
     }

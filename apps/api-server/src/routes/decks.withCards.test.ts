@@ -32,6 +32,7 @@ jest.mock('../services/idempotency', () => ({
 import { DeckWithCardsError } from '../services/deckWithCards';
 import { setIdempotencyClient } from '../middleware/idempotency';
 import router, { initializeDeckRoutes } from './decks';
+import { stubDataLayer } from '../services/data/testStub';
 
 // The stubbed withIdempotency above never touches it, but the middleware
 // resolves the client before calling through.
@@ -97,7 +98,7 @@ function initWith(createDeckWithCards: jest.Mock, addCardsToExistingDeck?: jest.
     deletePattern: async () => {},
   };
   initializeDeckRoutes(
-    { createDeckWithCards, addCardsToExistingDeck } as any,
+    stubDataLayer({ createDeckWithCards, addCardsToExistingDeck }) as any,
     cache as any,
   );
 }

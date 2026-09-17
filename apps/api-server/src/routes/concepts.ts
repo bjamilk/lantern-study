@@ -11,7 +11,8 @@ import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import {
   DEFAULT_CONCEPT_SEARCH_LIMIT,
@@ -23,11 +24,19 @@ import { CONCEPT_NAME_MAX_LENGTH } from '@lantern/shared/learning';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
-export const initializeConceptRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeConceptRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -78,7 +87,7 @@ router.get(
     const cacheKey = `${CONCEPT_SEARCH_CACHE_PREFIX}${courseId || 'all'}:${q.toLowerCase()}:${limit}`;
     const concepts = await cacheService.cached(
       cacheKey,
-      () => getConceptsService(supabaseService).searchConcepts({ q, courseId, limit }),
+      () => getConceptsService(legacyService()).searchConcepts({ q, courseId, limit }),
       { ttl: CONCEPT_SEARCH_CACHE_TTL_SECONDS }
     );
 
@@ -97,7 +106,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const { concept, created } = await getConceptsService(supabaseService).findOrCreateConcept(userId, {
+      const { concept, created } = await getConceptsService(legacyService()).findOrCreateConcept(userId, {
         name: req.body?.name,
         courseId: req.body?.courseId ?? null,
         parentId: req.body?.parentId ?? null,
@@ -127,7 +136,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const link = await getConceptsService(supabaseService).linkConcept(userId, req.params.conceptId, {
+      const link = await getConceptsService(legacyService()).linkConcept(userId, req.params.conceptId, {
         targetType: req.body?.targetType,
         targetId: req.body?.targetId,
         confidence: req.body?.confidence ?? null,

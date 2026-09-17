@@ -14,6 +14,7 @@ import router, {
   normalizePersonalTestQuestions,
   readPersonalTestSource,
 } from './tests';
+import { stubDataLayer } from '../services/data/testStub';
 
 jest.mock('../middleware/authorizeResource', () => ({
   requireTestOwner: () => (_req: any, _res: any, next: any) => next(),
@@ -107,11 +108,16 @@ const completedRow = {
 
 /**
  * The real mapper is what every client reads, so the fake service delegates to
- * it rather than inventing a shape the server does not actually send. It reads
- * only its argument, so the prototype method stands alone.
+ * it rather than inventing a shape the server does not actually send.
+ *
+ * It used to be borrowed off `SupabaseService.prototype`. Now that the route is
+ * injected with the data layer, it comes from the module that owns it — and
+ * `data/tests.ts` takes the client first, which this row mapper never touches
+ * (it reads only `session`), so the stand-in binds it away.
  */
-const { SupabaseService } = jest.requireActual('../services/supabase');
-const mapTestSessionRowToClient = SupabaseService.prototype.mapTestSessionRowToClient;
+const testsData = jest.requireActual('../services/data/tests');
+const mapTestSessionRowToClient = (session: unknown) =>
+  testsData.mapTestSessionRowToClient(undefined as never, session);
 
 function initWith(resolve: jest.Mock, extra: Record<string, unknown> = {}) {
   const supabase: any = {
@@ -127,7 +133,7 @@ function initWith(resolve: jest.Mock, extra: Record<string, unknown> = {}) {
     delete: async () => {},
     deletePattern: async () => {},
   };
-  initializeTestRoutes(supabase, cache);
+  initializeTestRoutes(stubDataLayer(supabase) as any, cache);
   return supabase;
 }
 

@@ -17,7 +17,7 @@ import { invalidateSellerAnalyticsCache } from '../../services/marketplaceOrders
 import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempotency';
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
 import { isDigitalListingKind } from '@lantern/shared/marketplace';
-import { supabaseService } from './context';
+import { dataLayer, supabaseService } from './context';
 import { respondMarketplaceError } from './errors';
 const router = Router();
 
@@ -94,7 +94,7 @@ export function offerExpiryConflict(
  */
 async function markOfferExpired(offerId: string): Promise<void> {
   try {
-    const { error } = await supabaseService.getClient()
+    const { error } = await dataLayer.getClient()
       .from('marketplace_offers')
       .update({ status: 'expired' })
       .eq('id', offerId)
@@ -131,7 +131,7 @@ export async function attachOrdersToOffers<T extends Record<string, any>>(
   const byOfferId = new Map<string, OfferOrderSummary>();
   if (offerIds.length > 0) {
     try {
-      const { data, error } = await supabaseService.getClient()
+      const { data, error } = await dataLayer.getClient()
         .from('marketplace_orders')
         .select('id, status, payment_id, offer_id, buyer_id, seller_id')
         .in('offer_id', offerIds);
@@ -186,7 +186,7 @@ router.post(
 
     logger.info('Creating marketplace offer', { userId, listingId, amount });
 
-    const listing = await supabaseService.getMarketplaceListingById(listingId);
+    const listing = await dataLayer.marketplace.getMarketplaceListingById(listingId);
     if (!listing) {
       return res.status(404).json({ success: false, error: 'Listing not found' });
     }
@@ -206,7 +206,7 @@ router.post(
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
     const result = await req.runIdempotent!(async () => {
-      const { data, error } = await supabaseService.getClient()
+      const { data, error } = await dataLayer.getClient()
         .from('marketplace_offers')
         .insert({
           listing_id: listingId,
@@ -223,7 +223,7 @@ router.post(
 
       if (error) {
         if (error.code === '23505') {
-          const { data: existing, error: existingError } = await supabaseService.getClient()
+          const { data: existing, error: existingError } = await dataLayer.getClient()
             .from('marketplace_offers')
             .select('*')
             .eq('listing_id', listingId)
@@ -238,7 +238,7 @@ router.post(
             // blocked from re-offering. Expire it and let them insert fresh.
             if (expiredPendingOfferDate(existing) !== null) {
               await markOfferExpired(String(existing.id));
-              const retry = await supabaseService.getClient()
+              const retry = await dataLayer.getClient()
                 .from('marketplace_offers')
                 .insert({
                   listing_id: listingId,
@@ -262,7 +262,7 @@ router.post(
       }
 
       try {
-        await supabaseService.createNotification(listing.user_id, {
+        await dataLayer.notifications.createNotification(listing.user_id, {
           type: 'marketplace_order_update',
           message: `New offer of ₦${Number(amount).toLocaleString()} on "${listing.title}"`,
           link: `marketplace:offer:${data.id}`,
@@ -293,7 +293,7 @@ router.get(
 
     const column = role === 'seller' ? 'seller_id' : 'buyer_id';
 
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('marketplace_offers')
       .select('*, listing:marketplace_listings(id, title, price, images, status, category), buyer:profiles!marketplace_offers_buyer_id_fkey(id, name, avatar_url), seller:profiles!marketplace_offers_seller_id_fkey(id, name, avatar_url)')
       .eq(column, userId)
@@ -319,7 +319,7 @@ router.put(
     }
 
     // Fetch the offer
-    const { data: offer, error: fetchErr } = await supabaseService.getClient()
+    const { data: offer, error: fetchErr } = await dataLayer.getClient()
       .from('marketplace_offers')
       .select('*, listing:marketplace_listings(id, title, price)')
       .eq('id', id)
@@ -385,7 +385,7 @@ router.put(
       }
 
       // Atomic parent→countered + child insert (single RPC transaction).
-      const { data: rpcRows, error: counterRpcErr } = await supabaseService.getClient().rpc(
+      const { data: rpcRows, error: counterRpcErr } = await dataLayer.getClient().rpc(
         'marketplace_counter_offer',
         {
           p_offer_id: id,
@@ -417,8 +417,7 @@ router.put(
         return res.status(500).json({ success: false, error: 'Failed to create counter offer' });
       }
 
-      const { data: counterOffer, error: counterFetchErr } = await supabaseService
-        .getClient()
+      const { data: counterOffer, error: counterFetchErr } = await dataLayer.getClient()
         .from('marketplace_offers')
         .select('*')
         .eq('id', counterOfferId)
@@ -429,7 +428,7 @@ router.put(
       const notifyUserId = actorIsBuyer ? offer.seller_id : offer.buyer_id;
       const counterLabel = actorRole === 'buyer' ? 'Buyer' : 'Seller';
       try {
-        await supabaseService.createNotification(notifyUserId, {
+        await dataLayer.notifications.createNotification(notifyUserId, {
           type: 'marketplace_order_update',
           message: `${counterLabel} countered with ₦${Number(counterAmount).toLocaleString()} on "${offer.listing?.title || 'listing'}"`,
           link: `marketplace:offer:${counterOffer.id}`,
@@ -446,14 +445,13 @@ router.put(
 
       try {
         const result = await withIdempotency(
-          supabaseService.getClient(),
+          dataLayer.getClient(),
           userId,
           'marketplace_offer_accept',
           idempotencyKey,
           async () => {
-            const finalized = await supabaseService.finalizeOfferAcceptSale(id, userId);
-            const { data: acceptedOffer, error: acceptedErr } = await supabaseService
-              .getClient()
+            const finalized = await dataLayer.marketplace.finalizeOfferAcceptSale(id, userId);
+            const { data: acceptedOffer, error: acceptedErr } = await dataLayer.getClient()
               .from('marketplace_offers')
               .select('*')
               .eq('id', id)
@@ -473,7 +471,7 @@ router.put(
               try {
                 const buyerId = String(acceptedOffer.buyer_id);
                 const email =
-                  (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user
+                  (await dataLayer.getClient().auth.admin.getUserById(buyerId)).data.user
                     ?.email || '';
                 if (email) {
                   checkout = (await getMarketplacePaymentsService(
@@ -542,7 +540,7 @@ router.put(
     } else {
       // decline or withdraw — conditional update prevents double-action races
       const nextStatus = action === 'decline' ? 'declined' : 'withdrawn';
-      const { data, error: updateErr } = await supabaseService.getClient()
+      const { data, error: updateErr } = await dataLayer.getClient()
         .from('marketplace_offers')
         .update({ status: nextStatus })
         .eq('id', id)
@@ -562,7 +560,7 @@ router.put(
       const notifyUserId = actorIsBuyer ? offer.seller_id : offer.buyer_id;
       const actionText = action === 'decline' ? 'declined' : 'withdrawn';
       try {
-        await supabaseService.createNotification(notifyUserId, {
+        await dataLayer.notifications.createNotification(notifyUserId, {
           type: 'marketplace_order_update',
           message: `Offer of ₦${Number(offer.amount).toLocaleString()} on "${offer.listing?.title || 'listing'}" was ${actionText}`,
           link: `marketplace:offer:${id}`,
@@ -587,12 +585,12 @@ router.get(
     const { id } = req.params;
 
     // Verify user is the listing owner
-    const listing = await supabaseService.getMarketplaceListingById(id);
+    const listing = await dataLayer.marketplace.getMarketplaceListingById(id);
     if (!listing || listing.user_id !== userId) {
       return res.status(403).json({ success: false, error: 'Only the listing owner can view offers' });
     }
 
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('marketplace_offers')
       .select('*, buyer:profiles!marketplace_offers_buyer_id_fkey(id, name, avatar_url)')
       .eq('listing_id', id)
@@ -608,11 +606,11 @@ router.get(
   '/listings/:id/offers-history',
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
-    const listing = await supabaseService.getMarketplaceListingById(req.params.id);
+    const listing = await dataLayer.marketplace.getMarketplaceListingById(req.params.id);
     if (!listing || listing.user_id !== req.user.id) {
       return res.status(403).json({ success: false, error: 'Only the listing owner can view offer history' });
     }
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('marketplace_offers')
       .select('*, buyer:profiles!marketplace_offers_buyer_id_fkey(id, name, avatar_url)')
       .eq('listing_id', req.params.id)

@@ -61,6 +61,7 @@ jest.mock('../services/tokenDenylist', () => ({
 }));
 
 import router, { initializeAuthRoutes } from './auth';
+import { stubDataLayer } from '../services/data/testStub';
 
 function routeHandler(path: string, method: 'get' | 'post') {
   const layer: any = router.stack.find(
@@ -197,7 +198,7 @@ describe('GET /auth/session refresh fallbacks are gated too', () => {
     // Only the expired-access-token path consults Supabase; treat the presented
     // token as expired so that path falls through to the refresh cookie.
     initializeAuthRoutes(
-      { verifySupabaseToken: jest.fn(async () => ({ isValid: false, user: null })) } as any,
+      stubDataLayer({ verifySupabaseToken: jest.fn(async () => ({ isValid: false, user: null })) }) as any,
       { invalidateUserCache: jest.fn() } as any
     );
   });
@@ -286,7 +287,7 @@ describe('a SUSPENDED account keeps its session', () => {
     isTokenIssuedBeforeUserCutoff.mockReset().mockResolvedValue(false);
     setBlockState('suspended');
     initializeAuthRoutes(
-      { verifySupabaseToken: jest.fn(async () => ({ isValid: false, user: null })) } as any,
+      stubDataLayer({ verifySupabaseToken: jest.fn(async () => ({ isValid: false, user: null })) }) as any,
       { invalidateUserCache: jest.fn() } as any
     );
   });

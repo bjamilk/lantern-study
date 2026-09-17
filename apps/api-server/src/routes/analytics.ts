@@ -8,15 +8,15 @@ import {
   type ProductEventSurface,
 } from '@lantern/shared/analytics';
 import type { AuthenticatedRequest } from '../types';
-import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { logger } from '../utils/logger';
 
 const MAX_BATCH = 25;
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export function initializeAnalyticsRoutes(service: SupabaseService): void {
-  supabaseService = service;
+export function initializeAnalyticsRoutes(layer: DataLayer): void {
+  dataLayer = layer;
 }
 
 const router = Router();
@@ -92,7 +92,7 @@ router.post(
       return res.status(400).json({ success: false, error: 'No valid events in batch.' });
     }
 
-    const { error } = await supabaseService.getClient().from('product_events').insert(rows);
+    const { error } = await dataLayer.getClient().from('product_events').insert(rows);
     if (error) {
       logger.warn('product_events insert failed', { error: error.message, count: rows.length });
       return res.status(500).json({ success: false, error: 'Failed to record events.' });

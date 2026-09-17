@@ -7,16 +7,25 @@
  */
 import { Router, Request, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { getCampusSummaryService } from '../services/campusSummary';
 
 const router = Router();
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
-export const initializeCampusRoutes = (supabase: SupabaseService, cache: CacheService): void => {
-  supabaseService = supabase;
+export const initializeCampusRoutes = (layer: DataLayer, cache: CacheService): void => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -33,7 +42,7 @@ router.get(
       return res.json({ success: true, data: cached });
     }
 
-    const data = await getCampusSummaryService(supabaseService).getBySlug(req.params.slug, programme);
+    const data = await getCampusSummaryService(legacyService()).getBySlug(req.params.slug, programme);
     if (!data) {
       return res.status(404).json({ success: false, error: 'Campus not found' });
     }
@@ -55,7 +64,7 @@ router.get(
       res.set('Cache-Control', 'public, max-age=3600');
       return res.json({ success: true, data: cached });
     }
-    const data = await getCampusSummaryService(supabaseService).listSlugs();
+    const data = await getCampusSummaryService(legacyService()).listSlugs();
     await cacheService.set(cacheKey, data, 3600);
     res.set('Cache-Control', 'public, max-age=3600');
     res.json({ success: true, data });

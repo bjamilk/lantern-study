@@ -23,16 +23,26 @@
  * `authMeta:<id>` — the same key `invalidateBanCache` clears, so a ban or a
  * role change is not hidden behind the TTL.
  */
-import { SupabaseService } from '../../services/supabase';
+import type { SupabaseService } from '../../services/supabase';
+import type { DataLayer } from '../../services/data';
 import { CacheService } from '../../services/cache';
 import * as adminData from '../../services/adminData';
 
 // Initialized from the main server; every sub-router imports these bindings.
+export let dataLayer: DataLayer;
+/**
+ * TRANSITIONAL (M2a): the sub-routers below still hand the `SupabaseService`
+ * facade whole to `services/adminData.ts` and to the `services/` singletons
+ * that take it. It is the SAME instance the data layer is built from
+ * (`dataLayer.legacyService`), and this binding disappears when those callees
+ * are flipped.
+ */
 export let supabaseService: SupabaseService;
 export let cacheService: CacheService;
 
-export const initializeAdminContext = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeAdminContext = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
+  supabaseService = layer.legacyService;
   cacheService = cache;
 };
 

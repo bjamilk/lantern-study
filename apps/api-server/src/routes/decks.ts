@@ -64,7 +64,8 @@ import { requireDeckAccess } from '../middleware/authorizeResource';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
 import { DeckWithCardsError, validateDeckCards } from '../services/deckWithCards';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import {
@@ -106,11 +107,19 @@ const respondPublicError = (err: unknown, res: any): boolean => {
   return true;
 };
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `data.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
-export const initializeDeckRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeDeckRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -153,7 +162,7 @@ router.get(
     let decks = await cacheService.get(cacheKey) as any[];
 
     if (!decks) {
-      decks = await supabaseService.getDecks(userId, includeSharedFlag, {
+      decks = await dataLayer.decks.getDecks(userId, includeSharedFlag, {
         page: parsedPage,
         limit: parsedLimit,
         responseProfile: profile,
@@ -183,7 +192,7 @@ router.get(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const deck = await supabaseService.getDeckForUser(deckId, userId);
+    const deck = await dataLayer.offlineBundles.getDeckForUser(deckId, userId);
 
     if (!deck) {
       return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
@@ -205,7 +214,7 @@ router.post(
     const { name, description, isShared, courseId, studySetId, topicId } = req.body;
     let deck;
     try {
-      deck = await supabaseService.createDeck({ name, description, isShared, courseId, studySetId, topicId }, userId);
+      deck = await dataLayer.decks.createDeck({ name, description, isShared, courseId, studySetId, topicId }, userId);
     } catch (err) {
       if (respondPublicError(err, res)) return;
       throw err;
@@ -286,8 +295,8 @@ router.post(
     try {
       payload = await run(async () => {
         const result = targetDeckId
-          ? await supabaseService.addCardsToExistingDeck(targetDeckId, validation.cards, userId)
-          : await supabaseService.createDeckWithCards(
+          ? await dataLayer.decks.addCardsToExistingDeck(targetDeckId, validation.cards, userId)
+          : await dataLayer.decks.createDeckWithCards(
               { name, description, isShared, courseId, studySetId, topicId },
               validation.cards,
               userId,
@@ -347,13 +356,13 @@ router.put(
     const { name, description, isShared, courseId, studySetId, topicId, coverPath } = req.body;
     let updatedDeck;
     try {
-      updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared, courseId, studySetId, topicId }, userId);
+      updatedDeck = await dataLayer.decks.updateDeck(deckId, { name, description, isShared, courseId, studySetId, topicId }, userId);
       // Only CLEARING is accepted through the generic update — a cover is set by
       // POST /:deckId/cover, so no client can aim the column at an arbitrary
       // storage object it does not own.
       if (coverPath === null) {
-        const { previousPath } = await supabaseService.setDeckCoverPath(deckId, userId, null);
-        await supabaseService.deleteCoverObject(previousPath);
+        const { previousPath } = await dataLayer.uploads.setDeckCoverPath(deckId, userId, null);
+        await dataLayer.uploads.deleteCoverObject(previousPath);
         if (updatedDeck) (updatedDeck as any).coverPath = null;
       }
     } catch (err) {
@@ -418,8 +427,8 @@ router.post(
     try {
       // Probe the COLUMN before storing bytes: on a database without the
       // migration this answers 503 without ever leaving an orphan object.
-      await supabaseService.assertCoverColumn?.('deck');
-      uploaded = await supabaseService.uploadCoverImage({
+      await legacyService().assertCoverColumn?.('deck');
+      uploaded = await dataLayer.uploads.uploadCoverImage({
         userId,
         kind: 'deck',
         id: deckId,
@@ -427,14 +436,14 @@ router.post(
         base64Data,
         contentType: normalizedType,
       });
-      const { previousPath } = await supabaseService.setDeckCoverPath(deckId, userId, uploaded.path);
-      await supabaseService.deleteCoverObject(previousPath);
+      const { previousPath } = await dataLayer.uploads.setDeckCoverPath(deckId, userId, uploaded.path);
+      await dataLayer.uploads.deleteCoverObject(previousPath);
       return res.status(201).json({
         success: true,
         data: { coverPath: uploaded.path, coverUrl: uploaded.url, coverThumbUrl: uploaded.thumbUrl },
       });
     } catch (error: any) {
-      if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
+      if (uploaded) await dataLayer.uploads.deleteCoverObject(uploaded.path);
       if (error instanceof CoverColumnMissingError) {
         logger.error('[cover] set cover refused: column missing', {
           kind: 'deck', deckId, userId, migration: COVER_IMAGE_MIGRATION,
@@ -465,8 +474,8 @@ router.delete(
 
     const { deckId } = req.params;
     try {
-      const { previousPath } = await supabaseService.setDeckCoverPath(deckId, userId, null);
-      await supabaseService.deleteCoverObject(previousPath);
+      const { previousPath } = await dataLayer.uploads.setDeckCoverPath(deckId, userId, null);
+      await dataLayer.uploads.deleteCoverObject(previousPath);
       return res.json({ success: true, data: { coverPath: null } });
     } catch (error: any) {
       if (error instanceof CoverColumnMissingError) {
@@ -492,7 +501,7 @@ router.delete(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const deleted = await supabaseService.deleteDeck(deckId, userId);
+    const deleted = await dataLayer.decks.deleteDeck(deckId, userId);
 
     if (!deleted) {
       return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
@@ -511,7 +520,7 @@ router.delete(
 // Collaborators and stats
 // ---------------------------------------------------------------------------
 // Defence in depth on the add path: the route gate asks only for `edit`, but
-// `supabaseService.addDeckCollaborator` re-checks `verifyDeckAccess(..., 'owner')`
+// `legacyService().addDeckCollaborator` re-checks `verifyDeckAccess(..., 'owner')`
 // and throws `'Access denied'` — so an editor who reaches the handler still
 // cannot grant a third party access to someone else's deck. The 403 below is
 // that service-level refusal surfacing, not a redundant branch.
@@ -525,7 +534,7 @@ router.get(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const collaborators = await supabaseService.getDeckCollaborators(deckId, userId);
+    const collaborators = await dataLayer.decks.getDeckCollaborators(deckId, userId);
     res.json({ success: true, data: collaborators });
   })
 );
@@ -546,13 +555,13 @@ router.post(
     }
 
     try {
-      const collaborator = await supabaseService.addDeckCollaborator(deckId, collaboratorId, role, userId);
+      const collaborator = await dataLayer.decks.addDeckCollaborator(deckId, collaboratorId, role, userId);
 
       // Phase 3 M: added_deck_collaborator had no writer. Addressed to the
       // owner's followers — "X is collaborating on Y" is their news, and the
       // collaborator themselves already knows.
       const { getActivityFeedService } = await import('../services/activityFeed');
-      await getActivityFeedService(supabaseService).record({
+      await getActivityFeedService(legacyService()).record({
         actorId: userId,
         verb: 'added_deck_collaborator',
         objectType: 'deck',
@@ -580,7 +589,7 @@ router.delete(
 
     const { deckId, userId } = req.params;
     try {
-      await supabaseService.removeDeckCollaborator(deckId, userId, authUserId);
+      await dataLayer.decks.removeDeckCollaborator(deckId, userId, authUserId);
       res.json({ success: true, message: 'Collaborator removed' });
     } catch (error: any) {
       if (error.message === 'Access denied') {
@@ -601,7 +610,7 @@ router.post(
 
     const { deckId } = req.params;
     try {
-      const result = await supabaseService.resetDeckStatistics(deckId, userId);
+      const result = await dataLayer.offlineBundles.resetDeckStatistics(deckId, userId);
       await cacheService.deletePattern(`deck:${deckId}:user:*`);
       res.json({ success: true, data: result });
     } catch (error: any) {
@@ -630,7 +639,7 @@ router.get(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const exportedData = await supabaseService.exportDeck(deckId, userId);
+    const exportedData = await dataLayer.decks.exportDeck(deckId, userId);
     if (!exportedData) {
       return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
     }
@@ -658,7 +667,7 @@ router.post(
 
     const { csvToImportData } = await import('../utils/deckFormats');
     const importData = csvToImportData(csv, deckName || 'Imported Deck');
-    const importedDeck = await supabaseService.importDeck(importData, userId);
+    const importedDeck = await dataLayer.decks.importDeck(importData, userId);
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);
@@ -689,7 +698,7 @@ router.post(
       async () => {
         const { parseApkgBuffer } = await import('../services/apkgImport');
         const importData = await parseApkgBuffer(buffer);
-        return supabaseService.importDeck(importData, userId);
+        return dataLayer.decks.importDeck(importData, userId);
       }
     );
 
@@ -717,7 +726,7 @@ router.get(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const exportedData = await supabaseService.exportDeck(deckId, userId);
+    const exportedData = await dataLayer.decks.exportDeck(deckId, userId);
     if (!exportedData) {
       return res.status(404).json({ success: false, error: 'Deck not found or access denied' });
     }
@@ -747,7 +756,7 @@ router.post(
       });
     }
 
-    const importedDeck = await supabaseService.importDeck(importData, userId);
+    const importedDeck = await dataLayer.decks.importDeck(importData, userId);
 
     await cacheService.delete(`decks:user:${userId}`);
     await cacheService.deletePattern(`decks:user:${userId}*`);

@@ -16,17 +16,17 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { resolveAllowedActivityDate } from '../utils/activityDate';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-export const initializeDashboardRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeDashboardRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -53,7 +53,7 @@ async function getCompletedTests(userId: string) {
   let page = 1;
   let hasMore = true;
   while (hasMore && page <= TESTS_MAX_PAGES) {
-    const result = await supabaseService.getUserTests(userId, {
+    const result = await dataLayer.tests.getUserTests(userId, {
       page,
       limit: TESTS_PAGE_SIZE,
       status: 'completed',
@@ -86,7 +86,7 @@ async function getQuestionStats(userId: string) {
   // Distinguish cache miss (null) from a cached empty list ([]).
   if (cached !== null && cached !== undefined) return cached;
 
-  const stats = await supabaseService.getUserQuestionStats(userId);
+  const stats = await dataLayer.offlineBundles.getUserQuestionStats(userId);
   const rows = Array.isArray(stats) ? stats : [];
   await cacheService.set(cacheKey, rows, 600);
   return rows;
@@ -106,9 +106,9 @@ router.get(
     const settled = await Promise.allSettled([
       getCompletedTests(userId),
       getQuestionStats(userId),
-      supabaseService.getUserById(userId),
-      supabaseService.recomputeUserStreak(userId, activityDate),
-      supabaseService.getStudyActivity(userId, days),
+      dataLayer.users.getUserById(userId),
+      dataLayer.gamification.recomputeUserStreak(userId, activityDate),
+      dataLayer.gamification.getStudyActivity(userId, days),
     ]);
 
     const unwrap = <T,>(result: PromiseSettledResult<T>, section: string): T | null => {

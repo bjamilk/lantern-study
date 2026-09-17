@@ -128,10 +128,14 @@ const pendingOffer = (overrides: Record<string, unknown> = {}) => ({
 
 function initWith(resolve: (call: Call) => any, extra: Record<string, unknown> = {}) {
   const { client, calls } = fakeDb(resolve);
+  // The family is injected with the DATA LAYER now: the same stubs, regrouped
+  // under the domain namespace that owns each one.
   const supabase: any = {
     getClient: () => client,
-    createNotification: jest.fn(async () => ({ id: 'n1' })),
-    ...extra,
+    legacyService: {},
+    notifications: { createNotification: jest.fn(async () => ({ id: 'n1' })) },
+    // Every per-test stub in this file is a marketplace method.
+    marketplace: { ...extra },
   };
   initializeMarketplaceRoutes(supabase, { get: async () => null, set: async () => {} } as any);
   return { supabase, calls };

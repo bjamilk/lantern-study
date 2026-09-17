@@ -6,6 +6,7 @@
  * pass through as no-ops, since the web client always echoes deckId back.
  */
 import router, { initializeFlashcardRoutes } from './flashcards';
+import { stubDataLayer } from '../services/data/testStub';
 
 const CARD = {
   id: 'card-1',
@@ -59,7 +60,7 @@ function init() {
     delete: jest.fn(async () => {}),
     deletePattern: jest.fn(async () => {}),
   };
-  initializeFlashcardRoutes(supabase, cache);
+  initializeFlashcardRoutes(stubDataLayer(supabase) as any, cache);
   return { supabase, cache };
 }
 

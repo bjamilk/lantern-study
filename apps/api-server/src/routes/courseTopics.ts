@@ -8,7 +8,8 @@
 import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { getCourseTopicsService } from '../services/courseTopics';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
@@ -16,10 +17,18 @@ import { requireAuthUserId } from '../utils/requestAuth';
 
 // mergeParams so :courseId from the mount path is visible here.
 const router = Router({ mergeParams: true });
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export const initializeCourseTopicRoutes = (supabase: SupabaseService): void => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
+
+export const initializeCourseTopicRoutes = (layer: DataLayer): void => {
+  dataLayer = layer;
 };
 
 function handle(err: unknown, res: Response): void {
@@ -41,7 +50,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCourseTopicsService(supabaseService).list(String(req.params.courseId));
+      const data = await getCourseTopicsService(legacyService()).list(String(req.params.courseId));
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -57,7 +66,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCourseTopicsService(supabaseService).findOrCreate(
+      const data = await getCourseTopicsService(legacyService()).findOrCreate(
         String(req.params.courseId),
         String((req.body ?? {}).title ?? ''),
         userId
@@ -77,7 +86,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCourseTopicsService(supabaseService).seedFromTags(
+      const data = await getCourseTopicsService(legacyService()).seedFromTags(
         String(req.params.courseId),
         userId
       );
@@ -96,7 +105,7 @@ router.put(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCourseTopicsService(supabaseService).reorder(
+      const data = await getCourseTopicsService(legacyService()).reorder(
         String(req.params.courseId),
         (req.body ?? {}).topicIds
       );
@@ -117,7 +126,7 @@ router.patch(
     try {
       // Both ids travel: the service refuses a topic that is not in THIS course,
       // so a client holding another course's outline cannot rename it.
-      const data = await getCourseTopicsService(supabaseService).rename(
+      const data = await getCourseTopicsService(legacyService()).rename(
         String(req.params.courseId),
         String(req.params.topicId),
         String((req.body ?? {}).title ?? '')
@@ -139,7 +148,7 @@ router.delete(
     try {
       // Scoped by course for the same reason as PATCH: deleting a topic unfiles
       // every student's artefacts under it, so it must be a topic of THIS course.
-      await getCourseTopicsService(supabaseService).remove(
+      await getCourseTopicsService(legacyService()).remove(
         String(req.params.courseId),
         String(req.params.topicId)
       );

@@ -23,7 +23,7 @@ import { invalidateSellerAnalyticsCache } from '../../services/marketplaceOrders
 import { getMarketplaceCartService } from '../../services/marketplaceCart';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempotency';
-import { supabaseService, cacheService, requestContentHash } from './context';
+import { cacheService, dataLayer, requestContentHash, supabaseService } from './context';
 import { respondMarketplaceClientError } from './errors';
 const router = Router();
 // ============================================================
@@ -248,7 +248,7 @@ router.post(
 
     try {
     const result = await withIdempotency(
-      supabaseService.getClient(),
+      dataLayer.getClient(),
       buyerId,
       checkoutOperation,
       idempotencyKey,
@@ -260,7 +260,7 @@ router.post(
 
         const email =
           (typeof req.user?.email === 'string' && req.user.email) ||
-          (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user?.email ||
+          (await dataLayer.getClient().auth.admin.getUserById(buyerId)).data.user?.email ||
           '';
 
         const requestedGroups = Array.isArray(req.body?.groups) ? req.body.groups : [];

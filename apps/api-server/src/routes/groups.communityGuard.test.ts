@@ -17,9 +17,6 @@ jest.mock('../middleware/auth', () => ({
     next();
   },
 }));
-jest.mock('../services/supabase', () => ({
-  SupabaseService: class {},
-}));
 jest.mock('../services/cache', () => ({
   CacheService: class {},
   cacheService: {
@@ -90,14 +87,19 @@ describe('community guard on group create/update', () => {
     const mod = require('./groups');
     mod.initializeGroupRoutes(
       {
-        createGroup,
-        getGroupById,
-        updateGroup,
-        addGroupMember,
-        addGroupMembersBatch,
-        getUserById,
-        createNotification,
+        // The data layer, not the `SupabaseService` facade: the same stubs,
+        // regrouped under the domain that owns each one.
+        groups: {
+          createGroup,
+          getGroupById,
+          updateGroup,
+          addGroupMember,
+          addGroupMembersBatch,
+        },
+        users: { getUserById },
+        notifications: { createNotification },
         getClient: () => ({}),
+        legacyService: {},
       } as any,
       {
         get: async () => null,

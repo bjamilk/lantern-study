@@ -6,7 +6,8 @@
 import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { getActivityFeedService } from '../services/activityFeed';
 import { getTopicMasteryService } from '../services/topicMastery';
 import { getLearningConnectionsService } from '../services/learningConnections';
@@ -16,10 +17,18 @@ import { requireAuthUserId } from '../utils/requestAuth';
 const router = Router();
 export const masteryRouter = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export const initializeFeedRoutes = (supabase: SupabaseService): void => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
+
+export const initializeFeedRoutes = (layer: DataLayer): void => {
+  dataLayer = layer;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
@@ -31,7 +40,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getActivityFeedService(supabaseService).getFeed(userId, {
+    const data = await getActivityFeedService(legacyService()).getFeed(userId, {
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       before: str(req.query.before),
     });
@@ -46,7 +55,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getLearningConnectionsService(supabaseService).summaryForUser(userId);
+    const data = await getLearningConnectionsService(legacyService()).summaryForUser(userId);
     res.json({ success: true, data });
   })
 );
@@ -62,7 +71,7 @@ masteryRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const service = getTopicMasteryService(supabaseService);
+    const service = getTopicMasteryService(legacyService());
     const [topics, weak, strong] = await Promise.all([
       service.listForUser(userId, {
         courseId: str(req.query.courseId) ?? null,
@@ -82,8 +91,8 @@ masteryRouter.post(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    await getTopicMasteryService(supabaseService).refresh(userId, { force: true });
-    const topics = await getTopicMasteryService(supabaseService).listForUser(userId);
+    await getTopicMasteryService(legacyService()).refresh(userId, { force: true });
+    const topics = await getTopicMasteryService(legacyService()).listForUser(userId);
     res.json({ success: true, data: { topics } });
   })
 );
@@ -95,7 +104,7 @@ masteryRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getTopicMasteryService(supabaseService).examReadiness(userId);
+    const data = await getTopicMasteryService(legacyService()).examReadiness(userId);
     res.json({ success: true, data });
   })
 );
@@ -115,7 +124,7 @@ masteryRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const courseId = str(req.query.courseId) ?? null;
-    const service = getTopicMasteryService(supabaseService);
+    const service = getTopicMasteryService(legacyService());
     const courses = await service.courseReadiness(userId, { courseId });
 
     let classSignal: Record<string, unknown> | undefined;
@@ -151,7 +160,7 @@ masteryRouter.get(
       res.status(400).json({ success: false, error: 'courseId is required' });
       return;
     }
-    const data = await getTopicMasteryService(supabaseService).unmatchedTags(userId, courseId);
+    const data = await getTopicMasteryService(legacyService()).unmatchedTags(userId, courseId);
     res.json({ success: true, data });
   })
 );
@@ -168,7 +177,7 @@ masteryRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getTopicMasteryService(supabaseService).courseAggregate(req.params.courseId);
+    const data = await getTopicMasteryService(legacyService()).courseAggregate(req.params.courseId);
     res.json({ success: true, data });
   })
 );

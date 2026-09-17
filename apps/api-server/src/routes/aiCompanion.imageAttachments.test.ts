@@ -59,6 +59,7 @@ jest.mock('../middleware/rateLimit', () => ({
 }));
 
 import router, { initializeAICompanionRoutes } from './aiCompanion';
+import { stubDataLayer } from '../services/data/testStub';
 
 /** A real 1x1 PNG, so the magic-byte check sees an actual image. */
 const PNG_BASE64 =
@@ -148,7 +149,7 @@ describe('POST /ai/companion/attachments', () => {
 
   it('stores the image, reads it, and returns the attachment with a word count', async () => {
     const { service, uploads } = makeSupabase();
-    initializeAICompanionRoutes(service);
+    initializeAICompanionRoutes(stubDataLayer(service) as any);
 
     const res = await post({ base64Data: PNG_BASE64, fileName: 'page.png' });
 
@@ -165,7 +166,7 @@ describe('POST /ai/companion/attachments', () => {
 
   it('accepts a data: URL body, which is what the web file picker produces', async () => {
     const { service } = makeSupabase();
-    initializeAICompanionRoutes(service);
+    initializeAICompanionRoutes(stubDataLayer(service) as any);
 
     const res = await post({
       base64Data: `data:image/png;base64,${PNG_BASE64}`,
@@ -178,7 +179,7 @@ describe('POST /ai/companion/attachments', () => {
 
   it('charges the OCR price exactly once', async () => {
     const { service } = makeSupabase();
-    initializeAICompanionRoutes(service);
+    initializeAICompanionRoutes(stubDataLayer(service) as any);
 
     const res = await post({ base64Data: PNG_BASE64, fileName: 'page.png' });
 
@@ -189,7 +190,7 @@ describe('POST /ai/companion/attachments', () => {
 
   it('rejects a file that is not an image, and refunds what it charged', async () => {
     const { service, uploads } = makeSupabase();
-    initializeAICompanionRoutes(service);
+    initializeAICompanionRoutes(stubDataLayer(service) as any);
 
     // "%PDF-1.4" — a real file, just not an image.
     const res = await post({
@@ -204,7 +205,7 @@ describe('POST /ai/companion/attachments', () => {
 
   it('refuses an empty body before charging anything', async () => {
     const { service } = makeSupabase();
-    initializeAICompanionRoutes(service);
+    initializeAICompanionRoutes(stubDataLayer(service) as any);
 
     const res = await post({ fileName: 'page.png' });
 
@@ -234,7 +235,7 @@ describe('POST /ai/companion/attachments', () => {
       return { client: failing };
     })();
     const { service, deletes } = makeSupabase({ getClient: () => client });
-    initializeAICompanionRoutes(service);
+    initializeAICompanionRoutes(stubDataLayer(service) as any);
 
     const res = await post({ base64Data: PNG_BASE64, fileName: 'page.png' });
 
@@ -249,7 +250,7 @@ describe('POST /ai/companion/attachments', () => {
   it('still attaches an unreadable photo, with a zero word count', async () => {
     readPhotoPageText.mockResolvedValue({ text: '   ', provider: 'tesseract' });
     const { service } = makeSupabase();
-    initializeAICompanionRoutes(service);
+    initializeAICompanionRoutes(stubDataLayer(service) as any);
 
     const res = await post({ base64Data: PNG_BASE64, fileName: 'blurry.png' });
 

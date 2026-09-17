@@ -26,6 +26,7 @@ jest.mock('../services/redisStore', () => ({
 }));
 
 import router, { initializeUserRoutes } from './users';
+import { stubDataLayer } from '../services/data/testStub';
 
 type ProfileRow = { expo_push_token?: unknown; settings?: unknown } | null;
 
@@ -58,7 +59,7 @@ function initWith() {
     delete: async () => {},
     deletePattern: async () => {},
   };
-  initializeUserRoutes(supabase, cache);
+  initializeUserRoutes(stubDataLayer(supabase) as any, cache);
 }
 
 async function runRoute(method: 'get' | 'post' | 'delete', path: string, req: any) {

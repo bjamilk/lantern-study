@@ -14,6 +14,7 @@ jest.mock('../services/redisStore', () => ({
 }));
 
 import router, { initializeUserRoutes } from './users';
+import { stubDataLayer } from '../services/data/testStub';
 
 let touchBehaviour: 'ok' | 'hang' | 'throw' = 'ok';
 
@@ -31,7 +32,7 @@ function initWith() {
     delete: async () => {},
     deletePattern: async () => {},
   };
-  initializeUserRoutes(supabase, cache);
+  initializeUserRoutes(stubDataLayer(supabase) as any, cache);
 }
 
 async function runRoute(method: 'post', path: string, req: any) {

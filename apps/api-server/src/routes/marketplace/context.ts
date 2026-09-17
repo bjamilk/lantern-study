@@ -6,18 +6,28 @@
  * bindings by every sub-router — the same single-assignment shape the file had
  * before the R5a split, without threading the services through ten modules.
  */
-import { SupabaseService } from '../../services/supabase';
+import type { SupabaseService } from '../../services/supabase';
+import type { DataLayer } from '../../services/data';
 import { CacheService } from '../../services/cache';
 import { MARKETPLACE_DEFAULT_COUNTRY, OTHER_CITY_CAMPUS_SLUG } from '@lantern/shared/marketplace';
 import { PublicError } from '../../utils/safeError';
 import { createHash } from 'crypto';
 
 // Initialized from the main server; every sub-router imports these bindings.
+export let dataLayer: DataLayer;
+/**
+ * TRANSITIONAL (M2a): several sub-routers still hand the `SupabaseService`
+ * facade whole to the `services/` singletons that take it
+ * (`getMarketplaceOrdersService`, `getMarketplacePaymentsService`, …). It is
+ * the SAME instance the data layer is built from (`dataLayer.legacyService`),
+ * and this binding disappears when those callees are flipped.
+ */
 export let supabaseService: SupabaseService;
 export let cacheService: CacheService;
 
-export const initializeMarketplaceContext = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeMarketplaceContext = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
+  supabaseService = layer.legacyService;
   cacheService = cache;
 };
 
