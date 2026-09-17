@@ -61,3 +61,35 @@ export function stubDataLayer(stub: Record<string, unknown>): DataLayer {
     },
   });
 }
+
+/**
+ * Bind a whole `services/data/*` module's functions to a test client, giving a
+ * namespace shaped exactly like the one `data/index.ts` builds with `bindDb`.
+ *
+ * For suites that drive a route against a FAKE POSTGREST CLIENT rather than
+ * stubbing the data functions: the route calls `dataLayer.<ns>.<fn>(…)`, the
+ * REAL data module builds the chain, and the fake client sees it. That keeps
+ * such a suite testing the query it was written to test after lane R2 moved
+ * that query out of the route (monolith lane R2).
+ *
+ *     initializeAICompanionRoutes({
+ *       getClient: () => client,
+ *       aiCompanion: bindDataModule(aiCompanionData, client),
+ *     } as any);
+ *
+ * Non-function exports (types are erased; constants are not) are skipped.
+ */
+export function bindDataModule<M extends Record<string, unknown>>(
+  module: M,
+  client: unknown,
+): Record<string, (...args: unknown[]) => unknown> {
+  return Object.fromEntries(
+    Object.entries(module)
+      .filter(([, value]) => typeof value === "function")
+      .map(([name, fn]) => [
+        name,
+        (...args: unknown[]) =>
+          (fn as (...a: unknown[]) => unknown)(client, ...args),
+      ]),
+  );
+}

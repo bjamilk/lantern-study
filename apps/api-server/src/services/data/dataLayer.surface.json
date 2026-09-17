@@ -45,6 +45,39 @@
       ]
     },
     {
+      "namespace": "aiCompanion",
+      "functions": [
+        {
+          "name": "deleteConversation",
+          "arity": 0
+        },
+        {
+          "name": "insertConversationMessages",
+          "arity": 0
+        },
+        {
+          "name": "insertConversationMessagesReturningIds",
+          "arity": 0
+        },
+        {
+          "name": "listConversationMessages",
+          "arity": 0
+        },
+        {
+          "name": "listRecentConversationMessages",
+          "arity": 0
+        },
+        {
+          "name": "recordAnalyticsEvent",
+          "arity": 0
+        },
+        {
+          "name": "setMessageFeedback",
+          "arity": 0
+        }
+      ]
+    },
+    {
       "namespace": "boardActions",
       "functions": [
         {
@@ -475,6 +508,10 @@
           "arity": 0
         },
         {
+          "name": "getDailyQuest",
+          "arity": 0
+        },
+        {
           "name": "getGamificationStats",
           "arity": 0
         },
@@ -507,7 +544,19 @@
           "arity": 0
         },
         {
+          "name": "getUserStreakRow",
+          "arity": 0
+        },
+        {
+          "name": "grantStreakFreeze",
+          "arity": 0
+        },
+        {
           "name": "incrementUserStatsAndAwardBadges",
+          "arity": 0
+        },
+        {
+          "name": "listDailyQuests",
           "arity": 0
         },
         {
@@ -531,6 +580,14 @@
           "arity": 0
         },
         {
+          "name": "seedDailyQuests",
+          "arity": 0
+        },
+        {
+          "name": "spendStreakFreeze",
+          "arity": 0
+        },
+        {
           "name": "syncGamificationProgress",
           "arity": 0
         },
@@ -540,6 +597,10 @@
         },
         {
           "name": "touchLastSeen",
+          "arity": 0
+        },
+        {
+          "name": "updateDailyQuestProgress",
           "arity": 0
         }
       ]

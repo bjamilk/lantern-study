@@ -628,10 +628,12 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       // named binding in the same file (SECTION_SELECT, baseSelect,
       // GROUP_CHANNEL_COLUMNS, ...), and the scan reads those AT THEIR
       // DEFINITION, so no embed hides behind the parameter.
-      // aiCompanion's readHistory: one history read run twice, with and without
-      // citations, from HISTORY_COLUMNS / HISTORY_COLUMNS_WITHOUT_CITATIONS in
-      // the same file.
-      'routes/aiCompanion.ts::columns': 1,
+      // aiCompanion's history read: run twice, with and without citations, from
+      // HISTORY_COLUMNS / HISTORY_COLUMNS_WITHOUT_CITATIONS — which stay in
+      // `routes/aiCompanion.ts`, because the retry is the ROUTE's decision.
+      // The `.select(columns)` itself moved into the data layer with the query
+      // (lane R2, PR 2a); the row moved, the count did not change.
+      'services/data/aiCompanion.ts::columns': 1,
       'services/classSections.ts::select': 3,
       'services/communities.ts::cols': 1,
       'services/communities.ts::columns': 2,

@@ -1246,3 +1246,151 @@ export async function recomputeUserStreak(
   if (error) throw error;
   return data;
 }
+
+// ============ STREAK FREEZES AND DAILY QUESTS ============
+//
+// Moved VERBATIM out of `routes/gamification.ts` (monolith lane R2, PR 2a).
+// They were built inline in the handlers, which is the layering violation the
+// lane closes. The DECISIONS stay in the route: whether a caller has a freeze to
+// spend, what the new progress count is, whether the wallet debit is refunded,
+// and every status code. These own the query and nothing else, returning
+// PostgREST's `{data, error}` exactly as the inline code consumed it.
+//
+// `userId` is a REQUIRED parameter on all but one of them, and each applies the
+// predicate itself: the service role BYPASSES RLS, so it is the access control.
+// The exception is `updateDailyQuestProgress` — see its own comment.
+
+/** The caller's whole streak row, or none if they have never studied. */
+export async function getUserStreakRow(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("user_streaks")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+}
+
+/**
+ * Spend one freeze: the caller has already checked they have one, and passes
+ * the count that should remain. Returns the updated row for the response.
+ */
+export async function spendStreakFreeze(
+  supabase: DataClient,
+  userId: string,
+  remainingFreezes: number,
+  lastLoginDate: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("user_streaks")
+    .update({
+      streak_freezes: remainingFreezes,
+      last_login_date: lastLoginDate,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .select()
+    .single();
+}
+
+/**
+ * Write the caller's streak row back with one more freeze on it. An upsert
+ * rather than an update because a student can buy a freeze before they have
+ * ever had a streak row; the caller supplies the carried-over counters it read.
+ */
+export async function grantStreakFreeze(
+  supabase: DataClient,
+  userId: string,
+  carried: {
+    current_streak: number;
+    longest_streak: number;
+    last_login_date: string | null;
+    streak_freezes: number;
+  },
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("user_streaks")
+    .upsert(
+      {
+        user_id: userId,
+        ...carried,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    )
+    .select()
+    .single();
+}
+
+/**
+ * Seed one day's quests for the caller. `ignoreDuplicates` on the composite key
+ * makes it safe to call on every read; the caller ALSO tolerates a `23505` on
+ * top of that, because two tabs opening the quest rail at once is the ordinary
+ * case, not the exception. Both halves of that race handling are load-bearing.
+ */
+export async function seedDailyQuests(
+  supabase: DataClient,
+  userId: string,
+  questDate: string,
+  templates: ReadonlyArray<Record<string, unknown>>,
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from("daily_quests")
+    .upsert(
+      templates.map((t) => ({ ...t, user_id: userId, quest_date: questDate })),
+      { onConflict: "user_id,quest_date,quest_type", ignoreDuplicates: true },
+    );
+  return { error };
+}
+
+/** Every quest the caller has for one day. */
+export async function listDailyQuests(
+  supabase: DataClient,
+  userId: string,
+  questDate: string,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("daily_quests")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("quest_date", questDate);
+}
+
+/** One quest of the caller's, by day and type. */
+export async function getDailyQuest(
+  supabase: DataClient,
+  userId: string,
+  questDate: string,
+  questType: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("daily_quests")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("quest_date", questDate)
+    .eq("quest_type", questType)
+    .maybeSingle();
+}
+
+/**
+ * Advance one quest, BY ID ALONE — the only function here without an owner
+ * predicate. It is safe as the route calls it, because `questId` comes from
+ * `getDailyQuest` three lines above, which IS owner-scoped. It is kept verbatim
+ * (monolith lane R2 moves queries, it does not harden them) and named as an
+ * unscoped write in the pull request, so a future caller knows what it must
+ * guarantee: never pass an id the caller has not been proven to own.
+ */
+export async function updateDailyQuestProgress(
+  supabase: DataClient,
+  questId: string,
+  progressCount: number,
+  completed: boolean,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("daily_quests")
+    .update({ progress_count: progressCount, completed })
+    .eq("id", questId)
+    .select()
+    .single();
+}
