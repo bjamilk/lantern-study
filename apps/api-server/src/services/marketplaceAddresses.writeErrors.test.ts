@@ -117,29 +117,48 @@ describe('setting a default, with every write succeeding', () => {
   });
 });
 
-describe('TODAY: the default flip half-done', () => {
-  it('creates a SECOND default when clearing the old one fails', async () => {
+describe('the default flip half-done', () => {
+  it('does NOT create a second default: the address is not created at all', async () => {
+    // MUST SUCCEED, and the ORDER is the safety — the clear runs before the new
+    // row exists, so a failure leaves the user exactly one default: the old one.
     const { service, calls } = serviceFor('clear_defaults');
-    const created = await service.create('user_1', DRAFT);
-    expect(created).toEqual(expect.objectContaining({ id: 'addr_new' }));
-    // The insert went ahead with is_default true while the old row still has it.
-    const inserted = calls.find((call) => call.ops.some((op) => op.fn === 'insert'));
-    expect(writePayload(inserted as Call, 'insert')).toEqual(
-      expect.objectContaining({ is_default: true }),
-    );
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    await expect(service.create('user_1', DRAFT)).rejects.toThrow(/marketplace_addresses/);
+    expect(calls.some((call) => call.ops.some((op) => op.fn === 'insert'))).toBe(false);
   });
 
-  it('creates a SECOND default when clearing fails on update', async () => {
+  it('names the user and what it was clearing', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
     const { service } = serviceFor('clear_defaults');
-    await expect(service.update('user_1', 'addr_old', DRAFT)).resolves.toBeDefined();
-    expect(logger.error).not.toHaveBeenCalled();
+    const error = await service.create('user_1', DRAFT).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WriteFailedError);
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({ userId: 'user_1', reason: 'clear_previous_default' }),
+    );
   });
 
-  it('leaves ZERO defaults when the promotion after a delete fails', async () => {
+  it('does NOT mark the edited address default when clearing fails on update', async () => {
+    const { service, calls } = serviceFor('clear_defaults');
+    await expect(service.update('user_1', 'addr_old', DRAFT)).rejects.toThrow(
+      /marketplace_addresses/,
+    );
+    // Only the failed clear was attempted; the row itself was never touched.
+    expect(calls.filter((call) => writePayload(call, 'update'))).toHaveLength(1);
+  });
+
+  it('still removes the address when the promotion fails, and reports at ERROR level', async () => {
+    // The opposite class: this runs AFTER a delete that cannot be undone, so
+    // throwing would report failure for a removal that happened and a retry
+    // would 404. Zero defaults is the safe direction.
     const { service } = serviceFor('promote_next', [{ id: 'addr_other', is_default: false }]);
     await expect(service.remove('user_1', 'addr_old')).resolves.toEqual({ removed: true });
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({
+        table: 'marketplace_addresses',
+        addressId: 'addr_other',
+        reason: 'promote_default_after_delete',
+      }),
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });
