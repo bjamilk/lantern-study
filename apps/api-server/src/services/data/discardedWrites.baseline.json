@@ -9,8 +9,6 @@
   "services/data/directMessages.ts": 1,
   "services/data/marketplace.ts": 1,
   "services/data/readState.ts": 1,
-  "services/jobAlerts.ts": 1,
-  "services/jobsBoard.ts": 8,
   "services/marketplaceAlerts.ts": 2,
   "services/marketplaceFavoriteMilestones.ts": 1,
   "services/marketplaceSellerTools.ts": 1,
