@@ -52,7 +52,7 @@ import * as adminData from '../../services/adminData';
 import { AUTH_BAN_DURATION } from '../../services/adminData';
 import { logger } from '../../utils/logger';
 import { MAX_SUSPENSION_DAYS, isSuspensionActive } from '@lantern/shared/moderation';
-import { cacheService, supabaseService } from './context';
+import { cacheService, dataLayer, supabaseService } from './context';
 import {
   daysAgoIso,
   escapePostgrestSearch,
@@ -517,7 +517,7 @@ router.post('/notifications', validateAdminNotification, handleValidationErrors,
   if (!userId || !message) {
     return res.status(400).json({ success: false, error: 'userId and message are required' });
   }
-  const notification = await supabaseService.createNotification(userId, { message, link, type, force: true });
+  const notification = await dataLayer.notifications.createNotification(userId, { message, link, type, force: true });
   await cacheService.deletePattern(`notifications:${userId}:*`);
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
@@ -533,7 +533,7 @@ router.post('/notifications', validateAdminNotification, handleValidationErrors,
 router.post('/notifications/bulk', validateAdminBulkNotification, handleValidationErrors, adminRoute(async (req: any, res: any) => {
   const { userIds, message, link, type = 'info' } = req.body;
   const notifications = userIds.map((uid: string) => ({ userId: uid, message, link, type }));
-  const created = await supabaseService.createBulkNotifications(notifications);
+  const created = await dataLayer.notifications.createBulkNotifications(notifications);
   for (const uid of userIds) {
     await cacheService.deletePattern(`notifications:${uid}:*`);
   }
@@ -553,7 +553,7 @@ router.post('/users/:id/points', validateAdminPointsAdjust, handleValidationErro
   if (typeof points !== 'number' || !Number.isFinite(points)) {
     return res.status(400).json({ success: false, error: 'points must be a number' });
   }
-  const result = await supabaseService.awardPoints(id, points, reason || 'Admin adjustment', source);
+  const result = await dataLayer.gamification.awardPoints(id, points, reason || 'Admin adjustment', source);
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
     action: 'points_award',
@@ -569,7 +569,7 @@ router.post('/users/:id/badge', mappedRoute(respondBadgeError, async (req: any, 
   const { id } = req.params;
   const { badgeId } = req.body;
   if (!badgeId) return res.status(400).json({ success: false, error: 'badgeId is required' });
-  const result = await supabaseService.awardBadge(id, badgeId, req.user.id);
+  const result = await dataLayer.gamification.awardBadge(id, badgeId, req.user.id);
   await cacheService.deletePattern(`gamification:user:badges:${id}:*`);
   await logAdminAction(supabaseService, {
     actorId: req.user.id,

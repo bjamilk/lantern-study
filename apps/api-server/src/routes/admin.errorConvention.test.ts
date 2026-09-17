@@ -168,6 +168,10 @@ beforeAll(() => {
     {
       get: (_t, prop) => {
         if (prop === 'then') return undefined;
+        // The admin family is injected with the DATA LAYER now, and the
+        // context reads `legacyService` off it at initialization — answer that
+        // with the same exploding stand-in rather than throwing during setup.
+        if (prop === 'legacyService') return service;
         return explode;
       },
     }

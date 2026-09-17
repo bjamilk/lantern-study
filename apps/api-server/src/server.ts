@@ -275,7 +275,7 @@ async function initializeServices() {
     initializeJobsBoardRoutes(supabaseService, cacheService);
     initializeSitemapRoutes(dataLayer, cacheService);
     initializeOfflineBundlesRoutes(dataLayer, cacheService);
-    initializeAdminRoutes(supabaseService, cacheService);
+    initializeAdminRoutes(dataLayer, cacheService);
     initializeAICompanionRoutes(supabaseService);
     initializeAIRoutes(supabaseService);
     initializeAiBonusUses(supabaseService);

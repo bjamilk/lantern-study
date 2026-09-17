@@ -92,7 +92,7 @@
  * so it sees failures from every sub-router.
  */
 import { Router } from 'express';
-import { SupabaseService } from '../../services/supabase';
+import type { DataLayer } from '../../services/data';
 import { CacheService } from '../../services/cache';
 import { initializeAdminContext } from './context';
 import { adminErrorHandler } from './errors';
@@ -117,8 +117,8 @@ router.use(contentRoutes);
 router.use(adminErrorHandler);
 
 // Initialize function to be called from main server.
-export function initializeAdminRoutes(supabase: SupabaseService, cache: CacheService) {
-  initializeAdminContext(supabase, cache);
+export function initializeAdminRoutes(layer: DataLayer, cache: CacheService) {
+  initializeAdminContext(layer, cache);
 }
 
 export { adminErrorHandler } from './errors';
