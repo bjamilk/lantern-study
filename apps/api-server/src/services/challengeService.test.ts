@@ -244,3 +244,87 @@ describe('ChallengeService.createChallenge delivery integrity', () => {
     expect(notifications).toHaveLength(1);
   });
 });
+
+// Regression net for the hotfix after #92. `resolveQuestions` is the one path
+// that turns stored question ids back into playable questions, and nothing drove
+// it: a cast to `any` let it call a member the injected `DataLayer` does not
+// have, so every challenge with questions threw at runtime while tsc and the
+// suite stayed green. The stand-in below is shaped like the real layer on
+// purpose — `getClient` and the `mappers` namespace, nothing else at the root —
+// so a call to any member that only the old facade had fails here the way it
+// failed in production.
+describe('ChallengeService.resolveQuestions', () => {
+  const questionRow = {
+    id: 'q-1',
+    group_id: 'group-1',
+    sender_id: 'author-1',
+    type: 'QUESTION',
+    text: null,
+    question_data: {
+      questionType: 'MULTIPLE_CHOICE_SINGLE',
+      questionStatus: 'VERIFIED',
+      questionStem: 'Which organelle makes ATP?',
+      options: [
+        { id: 'a', text: 'Mitochondrion' },
+        { id: 'b', text: 'Ribosome' },
+      ],
+      correctAnswerIds: ['a'],
+    },
+    timestamp: '2026-09-01T00:00:00.000Z',
+    upvotes: 3,
+    downvotes: 0,
+    is_archived: false,
+    image_url: null,
+    profiles: { id: 'author-1', name: 'Author', avatar_url: null },
+  };
+
+  // The REAL parser, not a stub: `resolveQuestions` reaches it through the
+  // layer (`data.mappers.parseMessageContent`) since lane M3 moved it out of
+  // the facade, and a fake here would let the mapping rot unnoticed — which is
+  // the failure this suite exists for.
+  const { parseMessageContent } = jest.requireActual('./data/mappers');
+
+  function layerReturning(rows: unknown[]) {
+    const inFilter = jest.fn().mockResolvedValue({ data: rows, error: null });
+    const db = { from: jest.fn(() => ({ select: jest.fn(() => ({ in: inFilter })) })) };
+    return {
+      layer: { getClient: () => db, mappers: { parseMessageContent } } as any,
+      inFilter,
+    };
+  }
+
+  it('maps a stored QUESTION row into a playable question without touching the facade', async () => {
+    const { layer, inFilter } = layerReturning([questionRow]);
+    const service = new ChallengeService(layer);
+
+    const questions = await (service as any).resolveQuestions(['q-1']);
+
+    expect(inFilter).toHaveBeenCalledWith('id', ['q-1']);
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toMatchObject({
+      id: 'q-1',
+      groupId: 'group-1',
+      type: 'QUESTION',
+      questionType: 'MULTIPLE_CHOICE_SINGLE',
+      questionStem: 'Which organelle makes ATP?',
+      correctAnswerIds: ['a'],
+      questionNumber: 1,
+      sender: { id: 'author-1', name: 'Author' },
+    });
+  });
+
+  it('keeps the requested order and drops a row that is not testable', async () => {
+    const unverified = {
+      ...questionRow,
+      id: 'q-2',
+      question_data: { ...questionRow.question_data, questionStatus: 'UNVERIFIED' },
+    };
+    const { layer } = layerReturning([unverified, questionRow]);
+    const service = new ChallengeService(layer);
+
+    const questions = await (service as any).resolveQuestions(['q-2', 'q-1']);
+
+    expect(questions.map((q: any) => q.id)).toEqual(['q-1']);
+    expect(questions[0].questionNumber).toBe(2);
+  });
+});

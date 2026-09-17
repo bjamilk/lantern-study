@@ -147,15 +147,15 @@ export class ChallengeService {
 
     const byId = new Map<string, any>();
     for (const msg of data || []) {
-      // KNOWN ISSUE (tracked, found during M3): `this.data` is a `DataLayer`,
-      // which has no flat `parseMessageContent` — the M2d flip (#92) rewrote
-      // `this.svc.parseMessageContent` to `(this.data as any)` and the cast hid
-      // it, so this line throws a TypeError on every challenge question
-      // resolution. The layer publishes the body as
-      // `this.data.mappers.parseMessageContent(msg)` since lane M3 A1; the fix
-      // is that one line, left out of this lane because it is a behaviour
-      // change, not a move. No test covers this path.
-      const parsed = (this.data as any).parseMessageContent(msg);
+      // FIXED (hotfix after #92, retargeted in lane M3): this read
+      // `(this.data as any).parseMessageContent`. `this.data` became a
+      // `DataLayer` in #92, which had no such member — it was a PRIVATE method
+      // of the `SupabaseService` facade, reached through an `any` cast, so tsc
+      // could not see the break and every challenge question resolution threw
+      // `parseMessageContent is not a function`. The body now lives on the
+      // layer (`data/mappers.ts`, moved out of the facade in M3), so this call
+      // is typed: delete the cast, not the compiler's ability to check it.
+      const parsed = this.data.mappers.parseMessageContent(msg);
       const mapped = {
         id: msg.id,
         groupId: msg.group_id,
