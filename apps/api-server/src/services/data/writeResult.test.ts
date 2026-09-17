@@ -116,6 +116,35 @@ describe('bestEffortWrite', () => {
     expect(bestEffortWrite(null, CTX)).toBe(true);
     expect(bestEffortWrite(undefined, CTX)).toBe(true);
   });
+
+  it('reports to Sentry under a stable fingerprint when one is given', () => {
+    // For a lost row somebody has to act on even though no money moved and the
+    // request must still succeed: an audit row, a wedged idempotency key, a
+    // purchasable listing with no content behind it.
+    bestEffortWrite({ error: { message: 'boom', code: '23505' } }, CTX, 'error', 'audit-log-write-failed');
+    expect(mockCapture).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ fingerprint: ['audit-log-write-failed'] }),
+    );
+  });
+
+  it('reports nothing to Sentry at warn level, even with a fingerprint', () => {
+    // A fingerprint is not a licence to page: warn-level sites are the ones
+    // nobody needs to act on.
+    bestEffortWrite({ error: { message: 'boom' } }, CTX, 'warn', 'audit-log-write-failed');
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+
+  it('reports nothing to Sentry without a fingerprint', () => {
+    bestEffortWrite({ error: { message: 'boom' } }, CTX, 'error');
+    expect(mockCapture).not.toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalled();
+  });
+
+  it('never reports a success', () => {
+    expect(bestEffortWrite({ error: null }, CTX, 'error', 'audit-log-write-failed')).toBe(true);
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
 });
 
 describe('reconcileLaterWrite', () => {
