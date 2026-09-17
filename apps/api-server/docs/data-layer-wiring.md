@@ -55,6 +55,21 @@ arrows, which read through the layer AT CALL TIME
 (`(id, uid) => layer.groups.isGroupMember(id, uid)`), so an overridden
 `layer.groups.isGroupMember` is honoured by siblings, as with the facade's `this.` arrows.
 
+### Update (lane M3, Phase A)
+
+The `host` seam below is down from fifteen deps to seven, and the layer now
+owns the bodies it used to borrow: `mappers.normalizeMessageRecord` /
+`parseMessageContent`, `marketplace.normalizeListingRecord(Async)` /
+`normalizeOfferRecord` / `signSimilarListingCards` /
+`createInquiryNotification` / `createPurchaseNotification`, and
+`tests.generateTestQuestions` / `calculateTestScore`. The rating-column
+circuit breaker is held per LAYER (`createRatingColumnCircuitBreaker`).
+
+`services/data/dataLayer.surface.test.ts` freezes that surface and asserts that
+every name in `supabase.surface.json` is reachable as exactly one
+`data.<ns>.<fn>` or is allowlisted with a reason. It is the net that replaces
+`supabase.surface.test.ts` when the class is deleted.
+
 ### The `host` seam, and why the facade survives this PR
 
 Three deps cannot be wired from the data layer alone:
