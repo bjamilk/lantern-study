@@ -72,13 +72,7 @@ capped per class (default 25, settlement 10, clamped to 100) and ordered oldest-
 Paystack calls are issued sequentially, so one run's worst case is a bounded, serial burst. A run
 that hits a cap sets `truncated`, so a short list is never mistaken for a healthy platform.
 
-**Step 2 (Phase B, proposed).** A repeatable BullMQ cron on the `marketplace-alerts` queue
-(concurrency 1, `attempts: 1`, like every other `cron.*`), every 15 minutes, running the same
-planner and then applying repairs **per class** behind an env flag. The queue's concurrency-1
-repeatable registration is the lock: two runs cannot overlap. Each class gets its own flag
-(`MARKETPLACE_RECONCILE_REPAIR_<CLASS>=on`), default off, and the admin endpoint gains a POST
-that applies ONE named finding — so the first repairs are made by a person, one row at a time,
-and only a class that has been watched in the report is ever promoted to the cron.
+**Step 2 (Phase B).** Manual repairs only — see the decisions below. No cron.
 
 **Failure handling.** Paystack unreachable → the candidate is reported as `paystack-unreachable`
 and skipped; nothing is guessed and nothing is written. A failed candidate query is reported in
@@ -101,3 +95,49 @@ exactly as `writeResult.ts` requires. The planner's own output is pinned to that
   already identifies it without a migration.
 - It never guesses which order of a cart a refund belonged to.
 - It does not page, and it does not change the #108 throw/report classification.
+
+## Decisions (2026-09-17)
+
+Founder decisions on Phase A. Phase A (the report-only planner and the admin findings
+endpoint) is approved as built; these settle what Phase B is.
+
+**1. Phase B is MANUAL REPAIRS FIRST. There is no cron in it.** A repeatable job is a later,
+separate PR per class, once manual repairs have run cleanly on that class. Phase B is:
+
+- a repair per safe class, each behind its own env flag `MARKETPLACE_RECONCILE_REPAIR_<CLASS>`,
+  **defaulting OFF**;
+- `POST /api/v1/admin/marketplace/reconcile/apply`, which applies exactly ONE named finding.
+  The client sends only the finding's IDENTITY — the class and the order or payment id — and
+  never a finding payload: the endpoint **re-plans that finding at apply time**, re-reading our
+  rows and re-asking Paystack, and refuses if the finding no longer holds, if its class flag is
+  off, or if Paystack cannot be read. It takes the typed-confirmation the role-change route
+  requires;
+- the write goes through `mustWrite` with the ORIGINAL CAS filters, so a second apply of the
+  same finding is a no-op, and the response says so rather than reporting a repair that did not
+  happen;
+- every apply writes an `admin_audit_log` row (`marketplace_reconcile_repair`, actor = the
+  admin, not the job) carrying the before and after values and the Paystack reference. Ids,
+  state names and kobo amounts only.
+
+**2. Cart refunds are ALWAYS `needs-human` in the first repairing version.** Class 2 gets NO
+repair, the "≥2 siblings still open" case included. Repairs exist for classes **1, 3, 4, 5, 6,
+7, 8, 9, 10**; classes **2, 11, 12, 13, 14** stay report-only. Wherever one payment row can
+cover several orders, the repair is restricted to SINGLE-ORDER, and this is how each class
+tells them apart:
+
+| class | the rows it writes | single-order test |
+|---|---|---|
+| 1, 3 | the payment row | `marketplace_payments.checkout_id IS NULL`. A cart charge is one row over many orders, so a refund on it cannot be attributed. |
+| 4, 5 | the order's own `payout_status` | the order's payment: `payments.checkout_id IS NULL`, read through `orders.payment_id`. The order row is per-order, but the REFUND that decides the direction lives on the shared charge. |
+| 6, 7 | the order's own `payout_status` | none needed, and none is applied. These are the unified-checkout per-order payout claims: each order holds its OWN claim and its own deterministic transfer reference, so nothing is shared and nothing is ambiguous. The roll-up to the shared payment row is deliberately excluded from both repairs — a later run's class 10 settles it. |
+| 8, 9, 10 | the payment row's payout state | `marketplace_payments.checkout_id IS NULL`. The payment-row payout claim exists only for the single-order shape; a cart's payout state lives on the orders. Class 10 can also settle a cart parent row, and is restricted for that reason. |
+
+Class 5's cart case (no refund accepted for the WHOLE charge, so no order was refunded) is
+unambiguous and may be worth promoting later. It is NOT in this version; it needs its own
+decision.
+
+**3. The claim-release rule.** A claim is released only on a POSITIVE Paystack answer — a 404
+for the transfer reference, or no accepted refund for the charge — AND only while the row still
+holds its claim: the `claim:<reference>` marker on a payment, or no `payout_transfer_code` on an
+order. A 5xx, a timeout, an unreachable host, or a real transfer code already stamped never
+releases anything.
