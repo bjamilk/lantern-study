@@ -65,6 +65,19 @@ const build = () =>
 describe('createDataLayer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // The breaker factory is mocked away with the rest of `./marketplace`;
+    // every layer still needs the pair it returns.
+    (
+      marketplaceData.createRatingColumnCircuitBreaker as jest.Mock
+    ).mockImplementation(() => {
+      let brokenUntil = 0;
+      return {
+        ratingColumnsAvailable: () => Date.now() >= brokenUntil,
+        noteRatingColumnsMissing: () => {
+          brokenUntil = Date.now() + 10 * 60 * 1000;
+        },
+      };
+    });
   });
 
   it('binds the client first and leaves the caller arguments alone', async () => {
@@ -168,11 +181,26 @@ describe('createDataLayer', () => {
     const deps = (marketplaceData.getMarketplaceListingById as jest.Mock).mock
       .calls[0][1];
 
-    deps.normalizeListingRecord({ id: 'listing-1' });
-    expect(host.normalizeListingRecord).toHaveBeenCalledWith({ id: 'listing-1' });
-    // The per-instance rating-column circuit breaker stays on the instance.
-    deps.ratingColumnsAvailable();
-    expect(host.ratingColumnsAvailable).toHaveBeenCalled();
+    // `marketplaceOrders` takes the whole facade, so this one is still the
+    // bridge's. The five bodies that used to be here moved into the data
+    // modules in lane M3 and are read through `layer` like any sibling.
+    await deps.createOrderFromBuyNow('listing-1', 'buyer-1');
+    expect(host.createOrderFromBuyNow).toHaveBeenCalledWith(
+      'listing-1',
+      'buyer-1',
+    );
+  });
+
+  it('holds the rating-column circuit breaker PER LAYER', async () => {
+    const first = build();
+    const second = build();
+
+    expect(first.marketplace.ratingColumnsAvailable()).toBe(true);
+    first.marketplace.noteRatingColumnsMissing();
+
+    // The layer that saw the 42703 stops asking; a second layer is untouched.
+    expect(first.marketplace.ratingColumnsAvailable()).toBe(false);
+    expect(second.marketplace.ratingColumnsAvailable()).toBe(true);
   });
 
   it('hands out the client and the legacy facade handle unchanged', () => {

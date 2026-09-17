@@ -38,17 +38,18 @@
  *    directly. `supabase.listingMassAssignment.test.ts` and
  *    `supabase.listingModerationLock.test.ts` are the proof.
  *
- * 2. THE RATING-COLUMN CIRCUIT BREAKER IS INSTANCE STATE AND STAYED BEHIND.
- *    The rating aggregate columns + votes table ship in migration
+ * 2. THE RATING-COLUMN CIRCUIT BREAKER IS PER-INSTANCE STATE, NOW HELD BY THE
+ *    LAYER. The rating aggregate columns + votes table ship in migration
  *    20260828160000, applied by hand like every migration here; until it runs,
  *    any explicit reference to the columns fails with 42703, and after one such
- *    failure the service stops asking for ten minutes. That timestamp
- *    (`ratingColumnsBrokenUntil`) is a FIELD on `SupabaseService`, and
- *    `supabase.reviewSignals.test.ts` asserts it per-instance
- *    (`expect(self.ratingColumnsAvailable()).toBe(false)`), so
- *    `ratingColumnsAvailable` / `noteRatingColumnsMissing` are injected here
- *    rather than moved. Only the pure predicate `isMissingRatingColumn` lives
- *    in this module.
+ *    failure the caller stops asking for ten minutes. That timestamp was a
+ *    FIELD on `SupabaseService` until monolith lane M3; it now lives in the
+ *    closure `createRatingColumnCircuitBreaker` returns, which
+ *    `createDataLayer` calls ONCE per layer. Same property, no class:
+ *    `supabase.reviewSignals.test.ts` still asserts it per instance, now as
+ *    `expect(layer.marketplace.ratingColumnsAvailable()).toBe(false)`. The
+ *    accessors reach the bodies below through `deps`, never directly, so a
+ *    harness can still stub them.
  *
  * 3. LISTING READS COME IN SEVERAL SHAPES ON PURPOSE.
  *    `toListingCardRecords` / `pickCompactListingFields` serve browse cards,
@@ -330,11 +331,16 @@ export type MarketplaceDeps = {
   toListingCardRecords: (listings: any[]) => Promise<any[]>;
 
   /**
-   * The rating-column circuit breaker, which is INSTANCE state on
-   * `SupabaseService` and stayed there — see gotcha 2 in the banner.
+   * The rating-column circuit breaker. Still per-instance state, now held by
+   * the LAYER (`createRatingColumnCircuitBreaker` below) rather than by
+   * `SupabaseService` — see gotcha 2 in the banner. Injected, not called
+   * directly, so a test can drive it.
    */
   noteRatingColumnsMissing: () => void;
   ratingColumnsAvailable: () => boolean;
+
+  /** The notifications domain, for the two marketplace notification bodies. */
+  createNotification: (userId: string, notification: any) => Promise<any>;
 
   /** Still in the monolith, or in a section another lane owns. */
   getClient: () => any;
@@ -349,6 +355,11 @@ export type MarketplaceDeps = {
     currentCourseId?: string | null;
   }) => Promise<string | null | undefined>;
   signSimilarListingCards: (listings: any[]) => Promise<any[]>;
+  signStorageDisplayUrl: (
+    url: string,
+    expiresInSeconds?: number,
+    variant?: "thumb" | "original",
+  ) => Promise<string>;
   signStorageDisplayUrls: (
     refs: Array<{ bucket: string; path: string; index: number }>,
     options?: { expiresInSeconds?: number; variant?: "thumb" | "original" },
@@ -688,6 +699,104 @@ export function isMissingRatingColumn(error: any): boolean {
     typeof error?.message === "string" &&
     error.message.includes("rating_")
   );
+}
+
+/**
+ * The circuit breaker `isMissingRatingColumn` feeds, MOVED here (monolith lane
+ * M3) from the `ratingColumnsBrokenUntil` field on `SupabaseService`.
+ *
+ * It is still PER-INSTANCE state — one breaker per `createDataLayer` call,
+ * held in this closure rather than on a class — which is the property
+ * `supabase.reviewSignals.test.ts` asserts: after a 42703 the layer that saw
+ * it stops asking for ten minutes, and a second layer is unaffected.
+ *
+ * Keep it a factory. A module-level `let` would make the ten-minute window
+ * global to the process, so one test would poison the next and one tenant's
+ * failure would silence another's query.
+ */
+export function createRatingColumnCircuitBreaker(): {
+  ratingColumnsAvailable: () => boolean;
+  noteRatingColumnsMissing: () => void;
+} {
+  let ratingColumnsBrokenUntil = 0;
+  return {
+    ratingColumnsAvailable: () => Date.now() >= ratingColumnsBrokenUntil,
+    noteRatingColumnsMissing: () => {
+      ratingColumnsBrokenUntil = Date.now() + 10 * 60 * 1000;
+    },
+  };
+}
+
+/**
+ * MOVED (monolith lane M3) from `SupabaseService.normalizeListingRecord`,
+ * verbatim, with `this.normalizeStorageUrl` now a `deps` arrow.
+ *
+ * A listing's price is not what the column says: a sale price that has not
+ * expired wins, and `effective_price` / `is_on_sale` are what every client
+ * renders. Storage refs in `images` are rewritten to absolute URLs here; they
+ * are SIGNED separately, in the async variant below.
+ */
+export function normalizeListingRecord(
+  deps: Pick<MarketplaceDeps, "normalizeStorageUrl">,
+  listing: any,
+): any {
+  if (!listing) return listing;
+  const salePrice =
+    listing.sale_price != null ? Number(listing.sale_price) : null;
+  const onSale =
+    salePrice != null &&
+    !!listing.sale_ends_at &&
+    new Date(listing.sale_ends_at) > new Date();
+  const base = !Array.isArray(listing.images)
+    ? listing
+    : {
+        ...listing,
+        images: listing.images.map((url: string) =>
+          deps.normalizeStorageUrl(url),
+        ),
+      };
+  return {
+    ...base,
+    effective_price: onSale ? salePrice : Number(listing.price) || 0,
+    is_on_sale: onSale,
+  };
+}
+
+/**
+ * MOVED (monolith lane M3) from `SupabaseService.normalizeListingRecordAsync`,
+ * verbatim. The same record, with every image signed for display — the bucket
+ * is private, so an unsigned URL renders as a broken image.
+ */
+export async function normalizeListingRecordAsync(
+  deps: Pick<
+    MarketplaceDeps,
+    "normalizeListingRecord" | "signStorageDisplayUrl"
+  >,
+  listing: any,
+): Promise<any> {
+  const base = deps.normalizeListingRecord(listing);
+  if (!base || !Array.isArray(base.images)) return base;
+  return {
+    ...base,
+    images: await Promise.all(
+      base.images.map((imageUrl: string) =>
+        deps.signStorageDisplayUrl(imageUrl),
+      ),
+    ),
+  };
+}
+
+/**
+ * Sign similar-listing rails with thumb-or-original for the first image.
+ *
+ * MOVED (monolith lane M3) from `SupabaseService.signSimilarListingCards`,
+ * verbatim: it is the card builder under a name the rails call it by.
+ */
+export async function signSimilarListingCards(
+  deps: Pick<MarketplaceDeps, "toListingCardRecords">,
+  listings: any[],
+): Promise<any[]> {
+  return deps.toListingCardRecords(listings || []);
 }
 
 
@@ -2326,6 +2435,27 @@ export function normalizeFavoriteRecord(
   };
 }
 
+/**
+ * MOVED (monolith lane M3) from `SupabaseService.normalizeOfferRecord`,
+ * verbatim. The offers section itself lives in `routes/marketplace/offers.ts`
+ * and runs its own queries, so nothing calls this today; it moves rather than
+ * dies because deleting a body is not this lane's job.
+ *
+ * @internal no caller.
+ */
+export function normalizeOfferRecord(
+  deps: Pick<MarketplaceDeps, "normalizeListingRecord">,
+  offer: any,
+): any {
+  if (!offer) return offer;
+  return {
+    ...offer,
+    listing: offer.listing
+      ? deps.normalizeListingRecord(offer.listing)
+      : offer.listing,
+  };
+}
+
 // Get listings by seller (for seller dashboard)
 export async function getListingsBySeller(
   db: DataClient,
@@ -2857,4 +2987,55 @@ export async function getInquiryByThread(
 
   if (error && error.code !== "PGRST116") throw error;
   return data ? deps.normalizeInquiryRecord(data) : data;
+}
+
+// ============ MARKETPLACE NOTIFICATIONS ============
+//
+// MOVED (monolith lane M3) from the facade's own MARKETPLACE NOTIFICATIONS
+// block, verbatim. Two one-liners over `createNotification` that had no home
+// in any data module because they belong to no table: they compose a
+// notification payload and hand it to the notifications domain, which is why
+// `createNotification` arrives through `deps` like every other cross-domain
+// reach here.
+
+/** Create notification for new inquiry */
+export async function createInquiryNotification(
+  deps: Pick<MarketplaceDeps, "createNotification">,
+  sellerId: string,
+  buyerName: string,
+  listingTitle: string,
+  inquiryId: string,
+  extras?: { threadId?: string; buyerId?: string },
+): Promise<void> {
+  await deps.createNotification(sellerId, {
+    type: "marketplace_inquiry",
+    message: `${buyerName} is interested in your listing "${listingTitle}"`,
+    link: `/marketplace/inquiries/${inquiryId}`,
+    data: {
+      inquiryId,
+      threadId: extras?.threadId,
+      buyerId: extras?.buyerId,
+    },
+  });
+}
+
+/**
+ * Create notification for listing purchase.
+ *
+ * @internal no caller: the purchase paths notify through
+ * `services/marketplaceOrders.ts`. It moves rather than dies because deleting
+ * a body is not this lane's job.
+ */
+export async function createPurchaseNotification(
+  deps: Pick<MarketplaceDeps, "createNotification">,
+  sellerId: string,
+  buyerName: string,
+  listingTitle: string,
+  transactionId: string,
+): Promise<void> {
+  await deps.createNotification(sellerId, {
+    type: "marketplace_purchase",
+    message: `${buyerName} purchased your listing "${listingTitle}"`,
+    link: `/marketplace/transactions/${transactionId}`,
+  });
 }

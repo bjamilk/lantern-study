@@ -50,8 +50,11 @@
  * around the stub. The facade builds the `deps` literal INLINE at each call
  * site as arrows over `this`.
  *
- * `deps.service` is the instance itself, which `getActivityFeedService` takes
- * whole. It is a type-only import, so there is no runtime cycle.
+ * `deps.recordActivity` is the activity feed's `record`, narrowed (monolith
+ * lane M3) from the whole `SupabaseService` the feed service takes. The lazy
+ * `await import("../activityFeed")` that used to sit in the body below now
+ * sits in the arrow `data/index.ts` builds, so the import still happens when
+ * the dep is CALLED and the cycle stays out of the boot path.
  */
 import { logger } from "../../utils/logger";
 import { PublicError } from "../../utils/safeError";
@@ -67,7 +70,7 @@ import { computeStudyStreak } from "@lantern/shared/utils/activity";
 import { mapUserStatsFromApi } from "@lantern/shared/utils/apiMappers";
 
 import { cacheService } from "../cache";
-import type { SupabaseService } from "../supabase";
+import type { ActivityInput } from "../activityFeed";
 import { User } from "../../types";
 
 import type { DataClient } from "./client";
@@ -98,8 +101,8 @@ export type GamificationSyncResult = {
  * bypasses every `jest.spyOn`.
  */
 export type GamificationDeps = {
-  /** The `SupabaseService` instance itself, for `getActivityFeedService`. */
-  service: SupabaseService;
+  /** The activity feed's `record`; see the banner. Never throws. */
+  recordActivity: (input: ActivityInput) => Promise<void>;
   getUserById: (userId: string) => Promise<User | null>;
   updateUser: (
     userId: string,
@@ -629,8 +632,7 @@ export async function awardBadge(
   // Phase 3 M: unlocked_badge had no writer. Only the FIRST award reaches
   // here (the already-owned case returns above), so this cannot spam a feed.
   void (async () => {
-    const { getActivityFeedService } = await import("../activityFeed");
-    await getActivityFeedService(deps.service).record({
+    await deps.recordActivity({
       actorId: userId,
       verb: "unlocked_badge",
       objectType: "badge",

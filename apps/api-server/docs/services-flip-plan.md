@@ -65,3 +65,40 @@ All fifteen `dataLayerHost` deps therefore stay. The eight that delegate to a
 bodies MOVED into `services/data/*`. Both are the facade-deletion lane's work,
 not a flip, so a `() => DataLayer` thunk on `createDataLayerHost` would have had
 no caller and was taken back out.
+
+## What lane M3 Phase A changed in this picture
+
+The facade-deletion lane starts by removing the reasons the nineteen are
+frozen, not by flipping them.
+
+- The five bodies that never left the facade, plus `parseMessageContent`,
+  `normalizeOfferRecord` and the two marketplace notification composers, moved
+  into `data/mappers.ts`, `data/marketplace.ts` and `data/tests.ts`. The
+  rating-column circuit breaker moved as a factory: one breaker per LAYER
+  instead of one per facade instance.
+- `deps.service` is gone from `data/offlineBundles.ts`, `data/gamification.ts`
+  and `data/notes.ts`. The five collaborator calls it existed for are narrow
+  arrows the layer builds, each still lazily importing its service when CALLED.
+  `data/tests.ts` keeps `service` (it hands the whole facade to
+  `recordTestSessionAnswers`); that one goes with the class.
+- `dataLayerHost` is down from fifteen deps to seven: `legacyService` and the
+  six services that take the facade whole.
+- `topicMastery` is FLIPPED (the pilot). It took the facade and used one member
+  of it, so it now takes `Pick<DataLayer, 'getClient'>`, which both the layer
+  and the facade satisfy — flipped callers pass `dataLayer`, unflipped ones
+  keep passing the facade, and nothing moves twice.
+
+### Which of the remaining eighteen can flip the same cheap way
+
+Nine reach ONLY `getClient()` and can take a one-member host today, in any
+order: `academicCourses`, `studyRooms`, `communityModeration`, `creators`,
+`marketplaceCoupons`, `courseTopics`, `learningConnections`, `learningEvents`,
+plus `adminAudit` / `marketplaceFavoriteAlerts` / `userDataLifecycle`, which
+reach the facade only to pass it on.
+
+The rest reach namespaced members and therefore need the whole `DataLayer`,
+which means every caller of theirs must hold one first: `communities`
+(`getAllGroupUnreadCounts`, `isPlatformAdmin`, `listBlockedUserIds`),
+`activityFeed` (`listBlockedUserIds`), `moderation` (`createNotification`),
+`marketplacePayments`, `marketplaceQuestionBanks`, `marketplaceStudyPacks`,
+`marketplaceOrders` and `marketplaceSellerTools`.

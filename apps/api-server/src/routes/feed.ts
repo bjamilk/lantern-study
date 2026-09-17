@@ -71,7 +71,7 @@ masteryRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const service = getTopicMasteryService(legacyService());
+    const service = getTopicMasteryService(dataLayer);
     const [topics, weak, strong] = await Promise.all([
       service.listForUser(userId, {
         courseId: str(req.query.courseId) ?? null,
@@ -91,8 +91,8 @@ masteryRouter.post(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    await getTopicMasteryService(legacyService()).refresh(userId, { force: true });
-    const topics = await getTopicMasteryService(legacyService()).listForUser(userId);
+    await getTopicMasteryService(dataLayer).refresh(userId, { force: true });
+    const topics = await getTopicMasteryService(dataLayer).listForUser(userId);
     res.json({ success: true, data: { topics } });
   })
 );
@@ -104,7 +104,7 @@ masteryRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getTopicMasteryService(legacyService()).examReadiness(userId);
+    const data = await getTopicMasteryService(dataLayer).examReadiness(userId);
     res.json({ success: true, data });
   })
 );
@@ -124,7 +124,7 @@ masteryRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const courseId = str(req.query.courseId) ?? null;
-    const service = getTopicMasteryService(legacyService());
+    const service = getTopicMasteryService(dataLayer);
     const courses = await service.courseReadiness(userId, { courseId });
 
     let classSignal: Record<string, unknown> | undefined;
@@ -160,7 +160,7 @@ masteryRouter.get(
       res.status(400).json({ success: false, error: 'courseId is required' });
       return;
     }
-    const data = await getTopicMasteryService(legacyService()).unmatchedTags(userId, courseId);
+    const data = await getTopicMasteryService(dataLayer).unmatchedTags(userId, courseId);
     res.json({ success: true, data });
   })
 );
@@ -177,7 +177,7 @@ masteryRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getTopicMasteryService(legacyService()).courseAggregate(req.params.courseId);
+    const data = await getTopicMasteryService(dataLayer).courseAggregate(req.params.courseId);
     res.json({ success: true, data });
   })
 );

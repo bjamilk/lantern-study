@@ -5,19 +5,18 @@
  * ## Purpose
  *
  * `services/data/index.ts` builds every `deps` literal the data modules need.
- * Fifteen of those deps cannot be built from the data layer alone, and this
- * module is the one place that admits it. They fall into three groups:
+ * Seven of those deps cannot be built from the data layer alone, and this
+ * module is the one place that admits it.
  *
- *  1. BODIES THAT NEVER LEFT THE FACADE — `normalizeMessageRecord`,
- *     `normalizeListingRecord(Async)`, `signSimilarListingCards`,
- *     `calculateTestScore`, `generateTestQuestions`. Most are `private`, hence
- *     the casts below: they are reached through the instance until the lane
- *     that moves them into `services/data/*` runs.
- *  2. PER-INSTANCE STATE — `ratingColumnsAvailable` /
- *     `noteRatingColumnsMissing`, the circuit breaker for the unapplied
- *     rating-column migration. `supabase.reviewSignals.test.ts` asserts it PER
- *     INSTANCE, so it must stay on the instance and be read through it.
- *  3. SERVICES THAT TAKE THE WHOLE `SupabaseService` — `marketplaceOrders`,
+ * It held fifteen until monolith lane M3. The five bodies that never left the
+ * facade (`normalizeMessageRecord`, `normalizeListingRecord(Async)`,
+ * `signSimilarListingCards`, `calculateTestScore`, `generateTestQuestions`)
+ * now live in `data/mappers.ts`, `data/marketplace.ts` and `data/tests.ts`,
+ * and the per-instance rating-column circuit breaker is held by the LAYER
+ * (`createRatingColumnCircuitBreaker`). What is left is one group, plus
+ * `legacyService`:
+ *
+ *  1. SERVICES THAT TAKE THE WHOLE `SupabaseService` — `marketplaceOrders`,
  *     `marketplaceSellerTools`, `marketplaceFavoriteAlerts`,
  *     `learningConnections`, `userDataLifecycle`, `courseTopics`. The bodies
  *     here are the facade's own inline arrows, moved verbatim, lazy `import()`
@@ -39,23 +38,7 @@
 import type { SupabaseService } from './supabase';
 import type { DataLayerHost } from './data';
 
-/**
- * The facade methods this bridge reaches that TypeScript hides because they are
- * `private`. Casting once, here, keeps the casts out of the data layer.
- */
-type FacadeInternals = {
-  normalizeMessageRecord: (row: any) => any;
-  normalizeListingRecord: (listing: any) => any;
-  normalizeListingRecordAsync: (listing: any) => Promise<any>;
-  ratingColumnsAvailable: () => boolean;
-  noteRatingColumnsMissing: () => void;
-  calculateTestScore: (questions: any[], answers: any[]) => number;
-  generateTestQuestions: (config: any) => any[];
-};
-
 export function createDataLayerHost(service: SupabaseService): DataLayerHost {
-  const internals = service as unknown as FacadeInternals;
-
   return {
     legacyService: service,
 
@@ -63,17 +46,6 @@ export function createDataLayerHost(service: SupabaseService): DataLayerHost {
       const { getCourseTopicsService } = await import('./courseTopics');
       return getCourseTopicsService(service).resolveForArtefact(topicId, courseId);
     },
-
-    normalizeMessageRecord: (row) => internals.normalizeMessageRecord(row),
-    normalizeListingRecord: (listing) => internals.normalizeListingRecord(listing),
-    normalizeListingRecordAsync: (listing) =>
-      internals.normalizeListingRecordAsync(listing),
-    ratingColumnsAvailable: () => internals.ratingColumnsAvailable(),
-    noteRatingColumnsMissing: () => internals.noteRatingColumnsMissing(),
-    signSimilarListingCards: (listings) => service.signSimilarListingCards(listings),
-    calculateTestScore: (questions, answers) =>
-      internals.calculateTestScore(questions, answers),
-    generateTestQuestions: (config) => internals.generateTestQuestions(config),
 
     recordLearningConnection: async (input) => {
       const { getLearningConnectionsService } = await import('./learningConnections');

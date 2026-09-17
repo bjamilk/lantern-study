@@ -1,0 +1,1699 @@
+{
+  "root": [
+    {
+      "name": "getClient",
+      "kind": "function"
+    },
+    {
+      "name": "legacyService",
+      "kind": "legacy-facade"
+    }
+  ],
+  "namespaces": [
+    {
+      "namespace": "academic",
+      "functions": [
+        {
+          "name": "currentArtefactCourseId",
+          "arity": 0
+        },
+        {
+          "name": "resolveArtefactTopic",
+          "arity": 0
+        },
+        {
+          "name": "resolveArtefactTopicPatch",
+          "arity": 0
+        },
+        {
+          "name": "resolveCourseIdFromConfigLike",
+          "arity": 1
+        },
+        {
+          "name": "resolveStudySetIdFromConfigLike",
+          "arity": 1
+        },
+        {
+          "name": "writeWithTopicFallback",
+          "arity": 2
+        }
+      ]
+    },
+    {
+      "namespace": "adminAnalytics",
+      "functions": [
+        {
+          "name": "getAdminAnalytics",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "boardActions",
+      "functions": [
+        {
+          "name": "attachBoardRepostContext",
+          "arity": 0
+        },
+        {
+          "name": "bookmarkedAmong",
+          "arity": 0
+        },
+        {
+          "name": "bookmarksMissingTable",
+          "arity": 1
+        },
+        {
+          "name": "communityMemberRole",
+          "arity": 0
+        },
+        {
+          "name": "countRepostsFor",
+          "arity": 0
+        },
+        {
+          "name": "createBoardRepost",
+          "arity": 0
+        },
+        {
+          "name": "enrichBoardViewerState",
+          "arity": 0
+        },
+        {
+          "name": "favoritedAmong",
+          "arity": 0
+        },
+        {
+          "name": "getBookmarkedMessageIdsForGroup",
+          "arity": 0
+        },
+        {
+          "name": "importMessageBookmarks",
+          "arity": 0
+        },
+        {
+          "name": "listBookmarkedPosts",
+          "arity": 0
+        },
+        {
+          "name": "orphanedRepostEmbed",
+          "arity": 1
+        },
+        {
+          "name": "readBoardContextForGroups",
+          "arity": 0
+        },
+        {
+          "name": "readBoardPostRows",
+          "arity": 0
+        },
+        {
+          "name": "repostedByMeAmong",
+          "arity": 0
+        },
+        {
+          "name": "reviveRemovedRepost",
+          "arity": 0
+        },
+        {
+          "name": "setMessageBookmark",
+          "arity": 0
+        },
+        {
+          "name": "toBoardPostShape",
+          "arity": 0
+        },
+        {
+          "name": "toQuotedPost",
+          "arity": 1
+        },
+        {
+          "name": "undoBoardRepost",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "categories",
+      "functions": [
+        {
+          "name": "createCustomCategory",
+          "arity": 0
+        },
+        {
+          "name": "getCustomCategories",
+          "arity": 0
+        },
+        {
+          "name": "getUserPreferences",
+          "arity": 0
+        },
+        {
+          "name": "incrementCategoryUsage",
+          "arity": 0
+        },
+        {
+          "name": "upsertUserPreferences",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "chatSend",
+      "functions": [
+        {
+          "name": "attachReplyPreview",
+          "arity": 0
+        },
+        {
+          "name": "attachReplyPreviewsBatch",
+          "arity": 0
+        },
+        {
+          "name": "attachThreadReplyCounts",
+          "arity": 0
+        },
+        {
+          "name": "broadcastChatRead",
+          "arity": 0
+        },
+        {
+          "name": "buildReplyToFromParent",
+          "arity": 2
+        },
+        {
+          "name": "enrichDmMessageReceipts",
+          "arity": 0
+        },
+        {
+          "name": "enrichGroupMessageReceipts",
+          "arity": 0
+        },
+        {
+          "name": "extractMentionUsernames",
+          "arity": 1
+        },
+        {
+          "name": "fetchGroupMembers",
+          "arity": 0
+        },
+        {
+          "name": "fetchGroups",
+          "arity": 0
+        },
+        {
+          "name": "findGroupMessageByClientId",
+          "arity": 0
+        },
+        {
+          "name": "getDmThread",
+          "arity": 0
+        },
+        {
+          "name": "getGroupThread",
+          "arity": 0
+        },
+        {
+          "name": "getPinnedMessage",
+          "arity": 0
+        },
+        {
+          "name": "notifyBoardCommentRecipients",
+          "arity": 0
+        },
+        {
+          "name": "notifyGroupMessageRecipients",
+          "arity": 0
+        },
+        {
+          "name": "notifyMentionedUsers",
+          "arity": 0
+        },
+        {
+          "name": "notifyReplyRecipient",
+          "arity": 0
+        },
+        {
+          "name": "resolveBoardContext",
+          "arity": 0
+        },
+        {
+          "name": "resolveCommunityRoleFor",
+          "arity": 0
+        },
+        {
+          "name": "resolveGroupMentionUserIds",
+          "arity": 0
+        },
+        {
+          "name": "resolveThreadRootForReply",
+          "arity": 0
+        },
+        {
+          "name": "sendMessage",
+          "arity": 0
+        },
+        {
+          "name": "setMessagePin",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "client",
+      "functions": [
+        {
+          "name": "healthCheck",
+          "arity": 0
+        },
+        {
+          "name": "isPlatformAdmin",
+          "arity": 0
+        },
+        {
+          "name": "isTransientAuthError",
+          "arity": 1
+        },
+        {
+          "name": "verifySupabaseToken",
+          "arity": 0
+        },
+        {
+          "name": "verifySupabaseTokenDetailed",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "decks",
+      "functions": [
+        {
+          "name": "addCardsToExistingDeck",
+          "arity": 0
+        },
+        {
+          "name": "addDeckCollaborator",
+          "arity": 0
+        },
+        {
+          "name": "createDeck",
+          "arity": 0
+        },
+        {
+          "name": "createDeckWithCards",
+          "arity": 0
+        },
+        {
+          "name": "createFlashcard",
+          "arity": 0
+        },
+        {
+          "name": "deleteDeck",
+          "arity": 0
+        },
+        {
+          "name": "deleteDeckRowBestEffort",
+          "arity": 0
+        },
+        {
+          "name": "exportDeck",
+          "arity": 0
+        },
+        {
+          "name": "getDeck",
+          "arity": 0
+        },
+        {
+          "name": "getDeckCardRows",
+          "arity": 0
+        },
+        {
+          "name": "getDeckCollaborators",
+          "arity": 0
+        },
+        {
+          "name": "getDeckRow",
+          "arity": 0
+        },
+        {
+          "name": "getDecks",
+          "arity": 0
+        },
+        {
+          "name": "getSharedDecks",
+          "arity": 0
+        },
+        {
+          "name": "importDeck",
+          "arity": 0
+        },
+        {
+          "name": "invalidateDeckCaches",
+          "arity": 0
+        },
+        {
+          "name": "removeDeckCollaborator",
+          "arity": 0
+        },
+        {
+          "name": "replaceDeckCards",
+          "arity": 0
+        },
+        {
+          "name": "tryCreateDeckWithCardsRpc",
+          "arity": 0
+        },
+        {
+          "name": "updateDeck",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "directMessages",
+      "functions": [
+        {
+          "name": "acceptDmMessageRequest",
+          "arity": 0
+        },
+        {
+          "name": "blockUser",
+          "arity": 0
+        },
+        {
+          "name": "declineDmMessageRequest",
+          "arity": 0
+        },
+        {
+          "name": "didUserBlock",
+          "arity": 0
+        },
+        {
+          "name": "getDirectMessages",
+          "arity": 0
+        },
+        {
+          "name": "isDmBlockedBetween",
+          "arity": 0
+        },
+        {
+          "name": "listBlockedUserIds",
+          "arity": 0
+        },
+        {
+          "name": "searchMessages",
+          "arity": 0
+        },
+        {
+          "name": "sendDirectMessage",
+          "arity": 0
+        },
+        {
+          "name": "unblockUser",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "gamification",
+      "functions": [
+        {
+          "name": "applyTestCompletionGamification",
+          "arity": 0
+        },
+        {
+          "name": "awardAchievement",
+          "arity": 0
+        },
+        {
+          "name": "awardBadge",
+          "arity": 0
+        },
+        {
+          "name": "awardPoints",
+          "arity": 0
+        },
+        {
+          "name": "getAchievements",
+          "arity": 0
+        },
+        {
+          "name": "getBadges",
+          "arity": 0
+        },
+        {
+          "name": "getGamificationStats",
+          "arity": 0
+        },
+        {
+          "name": "getLeaderboard",
+          "arity": 0
+        },
+        {
+          "name": "getLevels",
+          "arity": 0
+        },
+        {
+          "name": "getStudyActivity",
+          "arity": 0
+        },
+        {
+          "name": "getUserAchievements",
+          "arity": 0
+        },
+        {
+          "name": "getUserBadges",
+          "arity": 0
+        },
+        {
+          "name": "getUserLevel",
+          "arity": 0
+        },
+        {
+          "name": "getUserProgress",
+          "arity": 0
+        },
+        {
+          "name": "incrementUserStatsAndAwardBadges",
+          "arity": 0
+        },
+        {
+          "name": "parseStreakReferenceDate",
+          "arity": 0
+        },
+        {
+          "name": "profileToGamificationUser",
+          "arity": 0
+        },
+        {
+          "name": "recomputeDerivedUserStats",
+          "arity": 0
+        },
+        {
+          "name": "recomputeUserStreak",
+          "arity": 0
+        },
+        {
+          "name": "recordStudyActivity",
+          "arity": 0
+        },
+        {
+          "name": "syncGamificationProgress",
+          "arity": 0
+        },
+        {
+          "name": "syncGamificationProgressWithStats",
+          "arity": 0
+        },
+        {
+          "name": "touchLastSeen",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "groupMessages",
+      "functions": [
+        {
+          "name": "addMessageReaction",
+          "arity": 0
+        },
+        {
+          "name": "attachPeerUpvotes",
+          "arity": 0
+        },
+        {
+          "name": "clearPinOnRemovedMessage",
+          "arity": 0
+        },
+        {
+          "name": "countDistinctReactionEmoji",
+          "arity": 0
+        },
+        {
+          "name": "countPeerUpvotesForMessage",
+          "arity": 0
+        },
+        {
+          "name": "editChatMessage",
+          "arity": 0
+        },
+        {
+          "name": "fetchMessages",
+          "arity": 0
+        },
+        {
+          "name": "getGroupMessages",
+          "arity": 0
+        },
+        {
+          "name": "getMessageById",
+          "arity": 0
+        },
+        {
+          "name": "getUserReactionsForGroup",
+          "arity": 0
+        },
+        {
+          "name": "getUserReactionsForThread",
+          "arity": 0
+        },
+        {
+          "name": "getUserVotesForGroup",
+          "arity": 0
+        },
+        {
+          "name": "invalidateChatMessageMutation",
+          "arity": 2
+        },
+        {
+          "name": "mapChatMutationRow",
+          "arity": 2
+        },
+        {
+          "name": "reactionsMissingTable",
+          "arity": 1
+        },
+        {
+          "name": "readMessageReactions",
+          "arity": 0
+        },
+        {
+          "name": "refreshChatMessageNotifications",
+          "arity": 0
+        },
+        {
+          "name": "refreshChatPreview",
+          "arity": 0
+        },
+        {
+          "name": "removeChatMessage",
+          "arity": 0
+        },
+        {
+          "name": "removeMessageReaction",
+          "arity": 0
+        },
+        {
+          "name": "removeVote",
+          "arity": 0
+        },
+        {
+          "name": "syncQuestionStatusAfterVote",
+          "arity": 0
+        },
+        {
+          "name": "updateMessageFlagged",
+          "arity": 0
+        },
+        {
+          "name": "updateQuestionStatus",
+          "arity": 0
+        },
+        {
+          "name": "voteQuestion",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "groups",
+      "functions": [
+        {
+          "name": "acceptGroupInvite",
+          "arity": 0
+        },
+        {
+          "name": "addGroupMember",
+          "arity": 0
+        },
+        {
+          "name": "addGroupMembersBatch",
+          "arity": 0
+        },
+        {
+          "name": "canNotifyUser",
+          "arity": 0
+        },
+        {
+          "name": "canViewPeerChatAvatar",
+          "arity": 0
+        },
+        {
+          "name": "createGroup",
+          "arity": 0
+        },
+        {
+          "name": "declineGroupInvite",
+          "arity": 0
+        },
+        {
+          "name": "deleteGroup",
+          "arity": 0
+        },
+        {
+          "name": "getAuthorizedDmMessage",
+          "arity": 0
+        },
+        {
+          "name": "getAuthorizedGroupMessage",
+          "arity": 0
+        },
+        {
+          "name": "getGroupById",
+          "arity": 0
+        },
+        {
+          "name": "getGroupByInviteId",
+          "arity": 0
+        },
+        {
+          "name": "getGroupMembers",
+          "arity": 0
+        },
+        {
+          "name": "getGroupStats",
+          "arity": 0
+        },
+        {
+          "name": "getGroups",
+          "arity": 0
+        },
+        {
+          "name": "getPendingGroupInvitesForUser",
+          "arity": 0
+        },
+        {
+          "name": "isDmThreadParticipant",
+          "arity": 0
+        },
+        {
+          "name": "isGroupAdmin",
+          "arity": 0
+        },
+        {
+          "name": "isGroupMember",
+          "arity": 0
+        },
+        {
+          "name": "removeGroupMember",
+          "arity": 0
+        },
+        {
+          "name": "updateGroup",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "mappers",
+      "functions": [
+        {
+          "name": "mapChatMessageRow",
+          "arity": 2
+        },
+        {
+          "name": "mapProfileSender",
+          "arity": 2
+        },
+        {
+          "name": "normalizeMessageRecord",
+          "arity": 0
+        },
+        {
+          "name": "parseMessageContent",
+          "arity": 1
+        },
+        {
+          "name": "resolveNestedProfile",
+          "arity": 1
+        }
+      ]
+    },
+    {
+      "namespace": "marketplace",
+      "functions": [
+        {
+          "name": "addFavorite",
+          "arity": 0
+        },
+        {
+          "name": "addMarketplaceReview",
+          "arity": 0
+        },
+        {
+          "name": "assertSellerListingUpdateAllowed",
+          "arity": 0
+        },
+        {
+          "name": "assertValidBundleItems",
+          "arity": 1
+        },
+        {
+          "name": "assertValidListingKind",
+          "arity": 1
+        },
+        {
+          "name": "assertValidListingQuantity",
+          "arity": 1
+        },
+        {
+          "name": "attachListingKinds",
+          "arity": 0
+        },
+        {
+          "name": "attachMarketplaceReviewSignals",
+          "arity": 0
+        },
+        {
+          "name": "attachSellerTrust",
+          "arity": 0
+        },
+        {
+          "name": "boostMarketplaceListing",
+          "arity": 0
+        },
+        {
+          "name": "buyMarketplaceListingNow",
+          "arity": 0
+        },
+        {
+          "name": "canUserReviewListing",
+          "arity": 0
+        },
+        {
+          "name": "createInquiry",
+          "arity": 0
+        },
+        {
+          "name": "createInquiryNotification",
+          "arity": 0
+        },
+        {
+          "name": "createMarketplaceListing",
+          "arity": 0
+        },
+        {
+          "name": "createPurchaseNotification",
+          "arity": 0
+        },
+        {
+          "name": "deleteMarketplaceListing",
+          "arity": 0
+        },
+        {
+          "name": "deleteMarketplaceListingSafely",
+          "arity": 0
+        },
+        {
+          "name": "fetchSellerTrust",
+          "arity": 0
+        },
+        {
+          "name": "finalizeOfferAcceptSale",
+          "arity": 0
+        },
+        {
+          "name": "getBuyerInquiries",
+          "arity": 0
+        },
+        {
+          "name": "getInquiryByListingAndBuyer",
+          "arity": 0
+        },
+        {
+          "name": "getInquiryByThread",
+          "arity": 0
+        },
+        {
+          "name": "getListingsBySeller",
+          "arity": 0
+        },
+        {
+          "name": "getMarketplaceCampusById",
+          "arity": 0
+        },
+        {
+          "name": "getMarketplaceCampuses",
+          "arity": 0
+        },
+        {
+          "name": "getMarketplaceCategoryAnalytics",
+          "arity": 0
+        },
+        {
+          "name": "getMarketplaceListingById",
+          "arity": 0
+        },
+        {
+          "name": "getMarketplaceListingForViewer",
+          "arity": 0
+        },
+        {
+          "name": "getMarketplaceListings",
+          "arity": 0
+        },
+        {
+          "name": "getMarketplaceListingsByIds",
+          "arity": 0
+        },
+        {
+          "name": "getMarketplaceReviews",
+          "arity": 0
+        },
+        {
+          "name": "getRelatedMarketplaceListings",
+          "arity": 0
+        },
+        {
+          "name": "getRelatedMarketplaceListingsInner",
+          "arity": 0
+        },
+        {
+          "name": "getSavedSearchMatches",
+          "arity": 0
+        },
+        {
+          "name": "getSellerInquiries",
+          "arity": 0
+        },
+        {
+          "name": "getSellerStats",
+          "arity": 0
+        },
+        {
+          "name": "getUserFavorites",
+          "arity": 0
+        },
+        {
+          "name": "incrementListingViews",
+          "arity": 0
+        },
+        {
+          "name": "initiateMarketplaceTransaction",
+          "arity": 0
+        },
+        {
+          "name": "isListingFavorited",
+          "arity": 0
+        },
+        {
+          "name": "isMissingRatingColumn",
+          "arity": 1
+        },
+        {
+          "name": "listingStateError",
+          "arity": 2
+        },
+        {
+          "name": "logMarketplaceBudgetTransactions",
+          "arity": 0
+        },
+        {
+          "name": "marketplaceWriteError",
+          "arity": 1
+        },
+        {
+          "name": "maybeLogManualSoldBudget",
+          "arity": 0
+        },
+        {
+          "name": "normalizeFavoriteRecord",
+          "arity": 0
+        },
+        {
+          "name": "normalizeInquiryRecord",
+          "arity": 0
+        },
+        {
+          "name": "normalizeListingRecord",
+          "arity": 0
+        },
+        {
+          "name": "normalizeListingRecordAsync",
+          "arity": 0
+        },
+        {
+          "name": "normalizeOfferRecord",
+          "arity": 0
+        },
+        {
+          "name": "noteRatingColumnsMissing",
+          "arity": 0
+        },
+        {
+          "name": "pickCompactListingFields",
+          "arity": 1
+        },
+        {
+          "name": "pickServerOwnedListingFields",
+          "arity": 1
+        },
+        {
+          "name": "ratingColumnsAvailable",
+          "arity": 0
+        },
+        {
+          "name": "removeFavorite",
+          "arity": 0
+        },
+        {
+          "name": "reportMarketplaceListing",
+          "arity": 0
+        },
+        {
+          "name": "sanitizeListingImages",
+          "arity": 1
+        },
+        {
+          "name": "setMarketplaceReviewVote",
+          "arity": 0
+        },
+        {
+          "name": "signSimilarListingCards",
+          "arity": 0
+        },
+        {
+          "name": "stripInquiryListingModeration",
+          "arity": 1
+        },
+        {
+          "name": "stripServerOwnedListingFields",
+          "arity": 1
+        },
+        {
+          "name": "toListingCardRecords",
+          "arity": 0
+        },
+        {
+          "name": "updateInquiryStatus",
+          "arity": 0
+        },
+        {
+          "name": "updateListingStatus",
+          "arity": 0
+        },
+        {
+          "name": "updateMarketplaceListing",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "notes",
+      "functions": [
+        {
+          "name": "acceptNoteShareLink",
+          "arity": 0
+        },
+        {
+          "name": "addNoteAttachment",
+          "arity": 0
+        },
+        {
+          "name": "addNoteCollaborator",
+          "arity": 0
+        },
+        {
+          "name": "addNoteComment",
+          "arity": 0
+        },
+        {
+          "name": "attachNoteSearchText",
+          "arity": 0
+        },
+        {
+          "name": "canEditNote",
+          "arity": 0
+        },
+        {
+          "name": "copyNoteForUser",
+          "arity": 0
+        },
+        {
+          "name": "createNote",
+          "arity": 0
+        },
+        {
+          "name": "createNoteFolder",
+          "arity": 0
+        },
+        {
+          "name": "createNoteShareLink",
+          "arity": 0
+        },
+        {
+          "name": "createSignedNoteFileUploadUrl",
+          "arity": 0
+        },
+        {
+          "name": "createSignedNoteFileUrl",
+          "arity": 0
+        },
+        {
+          "name": "deleteNote",
+          "arity": 0
+        },
+        {
+          "name": "deleteNoteFile",
+          "arity": 0
+        },
+        {
+          "name": "deleteNoteFolder",
+          "arity": 0
+        },
+        {
+          "name": "downloadNoteFile",
+          "arity": 0
+        },
+        {
+          "name": "getNote",
+          "arity": 0
+        },
+        {
+          "name": "getNoteAttachment",
+          "arity": 0
+        },
+        {
+          "name": "getNoteAttachments",
+          "arity": 0
+        },
+        {
+          "name": "getNoteCollaborators",
+          "arity": 0
+        },
+        {
+          "name": "getNoteComments",
+          "arity": 0
+        },
+        {
+          "name": "getNoteFolders",
+          "arity": 0
+        },
+        {
+          "name": "getNoteOwnerPresentation",
+          "arity": 0
+        },
+        {
+          "name": "getNoteQuiz",
+          "arity": 0
+        },
+        {
+          "name": "getNotes",
+          "arity": 0
+        },
+        {
+          "name": "isNoteOwner",
+          "arity": 0
+        },
+        {
+          "name": "isNoteQuizProtected",
+          "arity": 1
+        },
+        {
+          "name": "leaveNoteCollaboration",
+          "arity": 0
+        },
+        {
+          "name": "listNoteShareLinks",
+          "arity": 0
+        },
+        {
+          "name": "mapNote",
+          "arity": 2
+        },
+        {
+          "name": "mapNoteFolder",
+          "arity": 1
+        },
+        {
+          "name": "mapNoteQuiz",
+          "arity": 1
+        },
+        {
+          "name": "previewNoteShareLink",
+          "arity": 0
+        },
+        {
+          "name": "removeNoteCollaborator",
+          "arity": 0
+        },
+        {
+          "name": "resolveNoteAccess",
+          "arity": 0
+        },
+        {
+          "name": "resolveNoteAttachmentStoragePath",
+          "arity": 1
+        },
+        {
+          "name": "revokeNoteShareLink",
+          "arity": 0
+        },
+        {
+          "name": "shareNoteWithGroup",
+          "arity": 0
+        },
+        {
+          "name": "updateNote",
+          "arity": 0
+        },
+        {
+          "name": "updateNoteAttachment",
+          "arity": 0
+        },
+        {
+          "name": "updateNoteCollaboratorRole",
+          "arity": 0
+        },
+        {
+          "name": "updateNoteFolder",
+          "arity": 0
+        },
+        {
+          "name": "updateNoteQuiz",
+          "arity": 0
+        },
+        {
+          "name": "uploadNoteFile",
+          "arity": 0
+        },
+        {
+          "name": "upsertNoteQuiz",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "notifications",
+      "functions": [
+        {
+          "name": "createBulkNotifications",
+          "arity": 0
+        },
+        {
+          "name": "createNotification",
+          "arity": 2
+        },
+        {
+          "name": "deleteAllNotifications",
+          "arity": 0
+        },
+        {
+          "name": "deleteNotification",
+          "arity": 0
+        },
+        {
+          "name": "getNotificationById",
+          "arity": 0
+        },
+        {
+          "name": "getNotificationStats",
+          "arity": 0
+        },
+        {
+          "name": "getUserNotifications",
+          "arity": 0
+        },
+        {
+          "name": "markAllNotificationsAsRead",
+          "arity": 0
+        },
+        {
+          "name": "markNotificationAsRead",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "offlineBundles",
+      "functions": [
+        {
+          "name": "addFlashcardComment",
+          "arity": 0
+        },
+        {
+          "name": "attachQuestionStatStems",
+          "arity": 0
+        },
+        {
+          "name": "deleteFlashcard",
+          "arity": 0
+        },
+        {
+          "name": "deleteOfflineBundle",
+          "arity": 0
+        },
+        {
+          "name": "fetchDeckRecord",
+          "arity": 0
+        },
+        {
+          "name": "getAccessibleDeckIds",
+          "arity": 0
+        },
+        {
+          "name": "getDeckForUser",
+          "arity": 0
+        },
+        {
+          "name": "getFlashcard",
+          "arity": 0
+        },
+        {
+          "name": "getFlashcardComments",
+          "arity": 0
+        },
+        {
+          "name": "getFlashcardForUser",
+          "arity": 0
+        },
+        {
+          "name": "getFlashcards",
+          "arity": 0
+        },
+        {
+          "name": "getOfflineBundles",
+          "arity": 0
+        },
+        {
+          "name": "getUserQuestionStat",
+          "arity": 0
+        },
+        {
+          "name": "getUserQuestionStats",
+          "arity": 0
+        },
+        {
+          "name": "resetDeckStatistics",
+          "arity": 0
+        },
+        {
+          "name": "reviewFlashcard",
+          "arity": 0
+        },
+        {
+          "name": "saveOfflineBundle",
+          "arity": 0
+        },
+        {
+          "name": "updateFlashcard",
+          "arity": 0
+        },
+        {
+          "name": "updateUserQuestionStats",
+          "arity": 0
+        },
+        {
+          "name": "upsertUserQuestionStat",
+          "arity": 0
+        },
+        {
+          "name": "verifyDeckAccess",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "readState",
+      "functions": [
+        {
+          "name": "archiveDmThread",
+          "arity": 0
+        },
+        {
+          "name": "assertChatMuteAccess",
+          "arity": 0
+        },
+        {
+          "name": "clearChatMute",
+          "arity": 0
+        },
+        {
+          "name": "deleteDmThread",
+          "arity": 0
+        },
+        {
+          "name": "getAllDMUnreadCounts",
+          "arity": 0
+        },
+        {
+          "name": "getAllDMUnreadCountsFallback",
+          "arity": 0
+        },
+        {
+          "name": "getAllGroupUnreadCounts",
+          "arity": 0
+        },
+        {
+          "name": "getAllGroupUnreadCountsFallback",
+          "arity": 0
+        },
+        {
+          "name": "getChatMute",
+          "arity": 0
+        },
+        {
+          "name": "getDMUnreadCount",
+          "arity": 0
+        },
+        {
+          "name": "getGroupUnreadCount",
+          "arity": 0
+        },
+        {
+          "name": "isChatMuted",
+          "arity": 0
+        },
+        {
+          "name": "markDMAsRead",
+          "arity": 0
+        },
+        {
+          "name": "markGroupAsRead",
+          "arity": 0
+        },
+        {
+          "name": "setChatMute",
+          "arity": 0
+        },
+        {
+          "name": "unarchiveDmThread",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "storageAcl",
+      "functions": [
+        {
+          "name": "canAccessFlashcardImage",
+          "arity": 0
+        },
+        {
+          "name": "canAccessQuestionImage",
+          "arity": 0
+        },
+        {
+          "name": "canAccessStorageObject",
+          "arity": 0
+        },
+        {
+          "name": "createSignedStorageUrl",
+          "arity": 0
+        },
+        {
+          "name": "createSignedStorageUrlWithVariant",
+          "arity": 0
+        },
+        {
+          "name": "escapeIlikePattern",
+          "arity": 1
+        },
+        {
+          "name": "normalizeStorageUrl",
+          "arity": 0
+        },
+        {
+          "name": "resolveStorageReference",
+          "arity": 0
+        },
+        {
+          "name": "signStorageDisplayUrl",
+          "arity": 0
+        },
+        {
+          "name": "signStorageDisplayUrls",
+          "arity": 0
+        },
+        {
+          "name": "storageUrlMatchesObject",
+          "arity": 3
+        }
+      ]
+    },
+    {
+      "namespace": "tests",
+      "functions": [
+        {
+          "name": "abandonTestDraft",
+          "arity": 0
+        },
+        {
+          "name": "attachSourceNoteTitles",
+          "arity": 0
+        },
+        {
+          "name": "calculateTestScore",
+          "arity": 2
+        },
+        {
+          "name": "clearCompletedTestHistory",
+          "arity": 0
+        },
+        {
+          "name": "completeTestDraft",
+          "arity": 0
+        },
+        {
+          "name": "createPersonalTest",
+          "arity": 0
+        },
+        {
+          "name": "createTest",
+          "arity": 0
+        },
+        {
+          "name": "createTestDraft",
+          "arity": 0
+        },
+        {
+          "name": "createTestResult",
+          "arity": 0
+        },
+        {
+          "name": "deleteCompletedTestSession",
+          "arity": 0
+        },
+        {
+          "name": "deleteTest",
+          "arity": 0
+        },
+        {
+          "name": "fetchDeckTitles",
+          "arity": 0
+        },
+        {
+          "name": "fetchNoteTitles",
+          "arity": 0
+        },
+        {
+          "name": "fetchTestResults",
+          "arity": 0
+        },
+        {
+          "name": "generateTestQuestions",
+          "arity": 1
+        },
+        {
+          "name": "getPerformanceStats",
+          "arity": 0
+        },
+        {
+          "name": "getSubjectStats",
+          "arity": 0
+        },
+        {
+          "name": "getTestById",
+          "arity": 0
+        },
+        {
+          "name": "getTestQuestions",
+          "arity": 0
+        },
+        {
+          "name": "getTestResults",
+          "arity": 0
+        },
+        {
+          "name": "getTestTemplates",
+          "arity": 0
+        },
+        {
+          "name": "getUserTests",
+          "arity": 0
+        },
+        {
+          "name": "mapTestSessionRowToClient",
+          "arity": 0
+        },
+        {
+          "name": "resolvePersonalTestSourceTitle",
+          "arity": 0
+        },
+        {
+          "name": "resolveTestSessionForCaller",
+          "arity": 0
+        },
+        {
+          "name": "startTest",
+          "arity": 0
+        },
+        {
+          "name": "submitTest",
+          "arity": 0
+        },
+        {
+          "name": "updateTestDraft",
+          "arity": 0
+        },
+        {
+          "name": "updateUserStats",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "uploads",
+      "functions": [
+        {
+          "name": "assertCoverColumn",
+          "arity": 0
+        },
+        {
+          "name": "deleteCoverObject",
+          "arity": 0
+        },
+        {
+          "name": "setDeckCoverPath",
+          "arity": 0
+        },
+        {
+          "name": "setNoteCoverPath",
+          "arity": 0
+        },
+        {
+          "name": "setStudySetCoverPath",
+          "arity": 0
+        },
+        {
+          "name": "uploadChatAudio",
+          "arity": 0
+        },
+        {
+          "name": "uploadChatImage",
+          "arity": 0
+        },
+        {
+          "name": "uploadCoverImage",
+          "arity": 0
+        },
+        {
+          "name": "uploadFlashcardImage",
+          "arity": 0
+        },
+        {
+          "name": "uploadGroupAvatar",
+          "arity": 0
+        },
+        {
+          "name": "uploadMarketplaceImage",
+          "arity": 0
+        },
+        {
+          "name": "uploadProfileAvatar",
+          "arity": 0
+        },
+        {
+          "name": "uploadQuestionImage",
+          "arity": 0
+        },
+        {
+          "name": "uploadSiblingThumb",
+          "arity": 0
+        }
+      ]
+    },
+    {
+      "namespace": "users",
+      "functions": [
+        {
+          "name": "clearExpoPushToken",
+          "arity": 0
+        },
+        {
+          "name": "createUser",
+          "arity": 0
+        },
+        {
+          "name": "createUserProfile",
+          "arity": 0
+        },
+        {
+          "name": "deleteUser",
+          "arity": 1
+        },
+        {
+          "name": "deleteUserProfileOnly",
+          "arity": 0
+        },
+        {
+          "name": "exportUserData",
+          "arity": 0
+        },
+        {
+          "name": "fetchUserProfile",
+          "arity": 0
+        },
+        {
+          "name": "getUserByEmail",
+          "arity": 0
+        },
+        {
+          "name": "getUserById",
+          "arity": 0
+        },
+        {
+          "name": "getUserGroups",
+          "arity": 0
+        },
+        {
+          "name": "getUserStats",
+          "arity": 0
+        },
+        {
+          "name": "getUsers",
+          "arity": 0
+        },
+        {
+          "name": "invalidateProfilePresentationCaches",
+          "arity": 0
+        },
+        {
+          "name": "isProfileVisibleToViewer",
+          "arity": 0
+        },
+        {
+          "name": "resolveCollaboratorUserId",
+          "arity": 0
+        },
+        {
+          "name": "sendExpoPushForNotification",
+          "arity": 0
+        },
+        {
+          "name": "updateExpoPushToken",
+          "arity": 0
+        },
+        {
+          "name": "updateUser",
+          "arity": 0
+        },
+        {
+          "name": "updateUserProfile",
+          "arity": 0
+        }
+      ]
+    }
+  ]
+}

@@ -250,8 +250,9 @@ describe('ChallengeService.createChallenge delivery integrity', () => {
 // it: a cast to `any` let it call a member the injected `DataLayer` does not
 // have, so every challenge with questions threw at runtime while tsc and the
 // suite stayed green. The stand-in below is shaped like the real layer on
-// purpose — `getClient` and nothing else at the root — so a call to any member
-// that only the old facade had fails here the way it failed in production.
+// purpose — `getClient` and the `mappers` namespace, nothing else at the root —
+// so a call to any member that only the old facade had fails here the way it
+// failed in production.
 describe('ChallengeService.resolveQuestions', () => {
   const questionRow = {
     id: 'q-1',
@@ -277,10 +278,19 @@ describe('ChallengeService.resolveQuestions', () => {
     profiles: { id: 'author-1', name: 'Author', avatar_url: null },
   };
 
+  // The REAL parser, not a stub: `resolveQuestions` reaches it through the
+  // layer (`data.mappers.parseMessageContent`) since lane M3 moved it out of
+  // the facade, and a fake here would let the mapping rot unnoticed — which is
+  // the failure this suite exists for.
+  const { parseMessageContent } = jest.requireActual('./data/mappers');
+
   function layerReturning(rows: unknown[]) {
     const inFilter = jest.fn().mockResolvedValue({ data: rows, error: null });
     const db = { from: jest.fn(() => ({ select: jest.fn(() => ({ in: inFilter })) })) };
-    return { layer: { getClient: () => db } as any, inFilter };
+    return {
+      layer: { getClient: () => db, mappers: { parseMessageContent } } as any,
+      inFilter,
+    };
   }
 
   it('maps a stored QUESTION row into a playable question without touching the facade', async () => {

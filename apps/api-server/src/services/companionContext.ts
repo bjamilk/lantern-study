@@ -165,8 +165,7 @@ export async function buildTrustedCompanionContext(
   let weakTopics: string[] = [];
   try {
     const { getTopicMasteryService } = await import('./topicMastery');
-    // TRANSITIONAL (M2d): `getTopicMasteryService` still takes the `SupabaseService` facade whole.
-    const masteryWeak = await getTopicMasteryService(layer.legacyService).weakTopics(userId, 5);
+    const masteryWeak = await getTopicMasteryService(layer).weakTopics(userId, 5);
     weakTopics = masteryWeak.map((row) => row.topic);
   } catch {
     /* fall through to the inline tally */

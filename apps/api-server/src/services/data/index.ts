@@ -40,15 +40,18 @@
  *
  * ## The gotcha: `host`, and why it exists
  *
- * Fifteen deps cannot be built from the data layer alone. Some are bodies that
- * never left `SupabaseService` (`normalizeMessageRecord`,
- * `normalizeListingRecord`, `calculateTestScore`, …); some are its per-INSTANCE
- * rating-column circuit breaker (`ratingColumnsAvailable` /
- * `noteRatingColumnsMissing`), which `supabase.reviewSignals.test.ts` asserts
- * per instance; and the rest are thin wrappers over services that take the
- * whole `SupabaseService` (`marketplaceOrders`, `learningConnections`,
- * `userDataLifecycle`, `courseTopics`). They all arrive as `DataLayerHost`,
- * implemented in `services/dataLayerHost.ts` and built in `server.ts`.
+ * Seven deps cannot be built from the data layer alone: thin wrappers over the
+ * services that take the whole `SupabaseService` (`marketplaceOrders`,
+ * `marketplaceSellerTools`, `marketplaceFavoriteAlerts`,
+ * `learningConnections`, `userDataLifecycle`, `courseTopics`), plus
+ * `legacyService` itself. They arrive as `DataLayerHost`, implemented in
+ * `services/dataLayerHost.ts` and built in `server.ts`.
+ *
+ * It was fifteen until monolith lane M3: the five bodies that never left the
+ * facade moved into `data/mappers.ts`, `data/marketplace.ts` and
+ * `data/tests.ts`, and the per-INSTANCE rating-column circuit breaker is now
+ * held HERE, one per layer (`ratingColumns` below), which is the property
+ * `supabase.reviewSignals.test.ts` asserts.
  *
  * This is a TRANSITIONAL seam, not an architecture: it shrinks as those bodies
  * move into `services/data/*` and as the `services/` importers are flipped, and
@@ -69,6 +72,7 @@ import * as directMessagesData from "./directMessages";
 import * as gamificationData from "./gamification";
 import * as groupMessagesData from "./groupMessages";
 import * as groupsData from "./groups";
+import * as mappersData from "./mappers";
 import * as marketplaceData from "./marketplace";
 import * as notesData from "./notes";
 import * as notificationsData from "./notifications";
@@ -96,19 +100,11 @@ export type DataLayerHost = {
   legacyService: SupabaseService;
   /** `getCourseTopicsService(service).resolveForArtefact`. */
   resolveTopicForArtefact: academicData.ResolveTopicForArtefact;
-  normalizeMessageRecord: chatSendData.ChatSendDeps["normalizeMessageRecord"];
-  normalizeListingRecord: marketplaceData.MarketplaceDeps["normalizeListingRecord"];
-  normalizeListingRecordAsync: marketplaceData.MarketplaceDeps["normalizeListingRecordAsync"];
-  ratingColumnsAvailable: marketplaceData.MarketplaceDeps["ratingColumnsAvailable"];
-  noteRatingColumnsMissing: marketplaceData.MarketplaceDeps["noteRatingColumnsMissing"];
-  signSimilarListingCards: marketplaceData.MarketplaceDeps["signSimilarListingCards"];
   recordLearningConnection: marketplaceData.MarketplaceDeps["recordLearningConnection"];
   createOrderFromBuyNow: marketplaceData.MarketplaceDeps["createOrderFromBuyNow"];
   createOrderFromOfferAccept: marketplaceData.MarketplaceDeps["createOrderFromOfferAccept"];
   consumeBoostCredit: marketplaceData.MarketplaceDeps["consumeBoostCredit"];
   notifyListingBackAvailable: marketplaceData.MarketplaceDeps["notifyListingBackAvailable"];
-  calculateTestScore: testsData.TestDeps["calculateTestScore"];
-  generateTestQuestions: testsData.TestDeps["generateTestQuestions"];
   deleteUserAccountFully: usersData.DeleteAccountDeps["deleteUserAccountFully"];
   exportUserDataArchive: usersData.ExportAccountDeps["exportUserDataArchive"];
 };
@@ -185,6 +181,50 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   // during construction.
   const layer = {} as DataLayer;
 
+  // The rating-column circuit breaker, ONE per layer — the per-instance
+  // property `supabase.reviewSignals.test.ts` asserts, now held here instead
+  // of on a `SupabaseService` field. See gotcha 2 in `data/marketplace.ts`.
+  const ratingColumns = marketplaceData.createRatingColumnCircuitBreaker();
+
+  // --- deps the layer builds over services that still take the whole facade --
+  //
+  // Narrowed in monolith lane M3 from `service: host.legacyService`, which is
+  // what these four data modules used to be handed. The lazy `await import()`
+  // is the one the data modules used to do inline: it still runs when the dep
+  // is CALLED, never at module load, so the cycle stays out of the boot path.
+  // Each arrow loses its `host.legacyService` as its service is flipped onto
+  // the layer.
+  const recordLearningEvent: notesData.NotesDeps["recordLearningEvent"] = async (
+    input,
+  ) =>
+    (await import("../learningEvents")).recordLearningEvent(
+      host.legacyService,
+      input,
+    );
+  const lookupDeckOwnerAndCourse: offlineBundlesData.FlashcardDeps["lookupDeckOwnerAndCourse"] =
+    async (deckId) =>
+      (await import("../learningEvents")).lookupDeckOwnerAndCourse(
+        host.legacyService,
+        deckId,
+      );
+  const refreshTopicMastery: offlineBundlesData.FlashcardDeps["refreshTopicMastery"] =
+    async (userId) => {
+      const { getTopicMasteryService } = await import("../topicMastery");
+      getTopicMasteryService(layer).refreshAsync(userId);
+    };
+  const recordLearningConnection: notesData.NotesDeps["recordLearningConnection"] =
+    async (input) => {
+      const { getLearningConnectionsService } = await import(
+        "../learningConnections"
+      );
+      await getLearningConnectionsService(host.legacyService).record(input);
+    };
+  const recordActivity: notesData.NotesDeps["recordActivity"] = async (input) => {
+    const { getActivityFeedService } = await import("../activityFeed");
+    // TRANSITIONAL (M3): `activityFeed` still takes the facade whole.
+    await getActivityFeedService(host.legacyService).record(input);
+  };
+
   // --- deps literals, one per domain ---------------------------------------
 
   const boardActionsDeps: boardActionsData.BoardActionDeps = {
@@ -220,7 +260,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     getUserById: (uid) => layer.users.getUserById(uid),
     incrementUserStatsAndAwardBadges: (uid, increments) => layer.gamification.incrementUserStatsAndAwardBadges(uid, increments),
     isGroupAdmin: (gid, uid) => layer.groups.isGroupAdmin(gid, uid),
-    normalizeMessageRecord: (row) => host.normalizeMessageRecord(row),
+    normalizeMessageRecord: (row) => layer.mappers.normalizeMessageRecord(row),
     notifyBoardCommentRecipients: (params) => layer.chatSend.notifyBoardCommentRecipients(params),
     notifyGroupMessageRecipients: (params) => layer.chatSend.notifyGroupMessageRecipients(params),
     notifyMentionedUsers: (params) => layer.chatSend.notifyMentionedUsers(params),
@@ -245,7 +285,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     createNotification: (uid, notification) => layer.notifications.createNotification(uid, notification),
     enrichDmMessageReceipts: (messages, threadId, uid, otherId) => layer.chatSend.enrichDmMessageReceipts(messages, threadId, uid, otherId),
     isDmBlockedBetween: (a, b) => layer.directMessages.isDmBlockedBetween(a, b),
-    normalizeMessageRecord: (row) => host.normalizeMessageRecord(row),
+    normalizeMessageRecord: (row) => layer.mappers.normalizeMessageRecord(row),
     recordLearningConnection: host.recordLearningConnection,
     resolveThreadRootForReply: (table, replyToMessageId, scope) => layer.chatSend.resolveThreadRootForReply(table, replyToMessageId, scope),
   };
@@ -260,7 +300,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     recomputeDerivedUserStats: (uid) => layer.gamification.recomputeDerivedUserStats(uid),
     recomputeUserStreak: (uid, referenceDate) => layer.gamification.recomputeUserStreak(uid, referenceDate),
     recordStudyActivity: (uid, type, amount, activityDate) => layer.gamification.recordStudyActivity(uid, type, amount, activityDate),
-    service: host.legacyService,
+    recordActivity,
     syncGamificationProgressWithStats: (uid, options) => layer.gamification.syncGamificationProgressWithStats(uid, options),
     updateUser: (uid, updates, options) => layer.users.updateUser(uid, updates, options),
   };
@@ -276,7 +316,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     getResponseProfile: (value) => getResponseProfile(value),
     invalidateChatMessageMutation: (k, row) => layer.groupMessages.invalidateChatMessageMutation(k, row),
     mapChatMutationRow: (k, row) => layer.groupMessages.mapChatMutationRow(k, row),
-    normalizeMessageRecord: (row) => host.normalizeMessageRecord(row),
+    normalizeMessageRecord: (row) => layer.mappers.normalizeMessageRecord(row),
     reactionsMissingTable: (error) => layer.groupMessages.reactionsMissingTable(error),
     readMessageReactions: (id, s) => layer.groupMessages.readMessageReactions(id, s),
     refreshChatMessageNotifications: (k, id, action, preview) => layer.groupMessages.refreshChatMessageNotifications(k, id, action, preview),
@@ -312,19 +352,24 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     maybeLogManualSoldBudget: (lid, sid) => layer.marketplace.maybeLogManualSoldBudget(lid, sid),
     normalizeFavoriteRecord: (f) => layer.marketplace.normalizeFavoriteRecord(f),
     normalizeInquiryRecord: (i) => layer.marketplace.normalizeInquiryRecord(i),
-    normalizeListingRecord: (l) => host.normalizeListingRecord(l),
-    normalizeListingRecordAsync: (l) => host.normalizeListingRecordAsync(l),
+    normalizeListingRecord: (l) => layer.marketplace.normalizeListingRecord(l),
+    normalizeListingRecordAsync: (l) => layer.marketplace.normalizeListingRecordAsync(l),
     normalizeStorageUrl: (url) => layer.storageAcl.normalizeStorageUrl(url),
-    noteRatingColumnsMissing: () => host.noteRatingColumnsMissing(),
+    createNotification: (uid, notification) => layer.notifications.createNotification(uid, notification),
+    signStorageDisplayUrl: (url, expiresInSeconds, variant) => layer.storageAcl.signStorageDisplayUrl(url, expiresInSeconds, variant),
+    noteRatingColumnsMissing: () => layer.marketplace.noteRatingColumnsMissing(),
     notifyListingBackAvailable: host.notifyListingBackAvailable,
     pickCompactListingFields: (l) => layer.marketplace.pickCompactListingFields(l),
-    ratingColumnsAvailable: () => host.ratingColumnsAvailable(),
+    ratingColumnsAvailable: () => layer.marketplace.ratingColumnsAvailable(),
     recordLearningConnection: host.recordLearningConnection,
     resolveArtefactTopic: (input) => layer.academic.resolveArtefactTopic(input),
-    signSimilarListingCards: (l) => host.signSimilarListingCards(l),
+    signSimilarListingCards: (l) => layer.marketplace.signSimilarListingCards(l),
     signStorageDisplayUrls: (refs, options) => layer.storageAcl.signStorageDisplayUrls(refs, options),
     stripInquiryListingModeration: (inquiry) => layer.marketplace.stripInquiryListingModeration(inquiry),
     toListingCardRecords: (l) => layer.marketplace.toListingCardRecords(l),
+  };
+  const mappersDeps: mappersData.MessageRecordDeps = {
+    normalizeStorageUrl: (url) => layer.storageAcl.normalizeStorageUrl(url),
   };
   const notesDeps: notesData.NotesDeps = {
     addNoteAttachment: (nid, payload) => layer.notes.addNoteAttachment(nid, payload),
@@ -348,7 +393,9 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     resolveCollaboratorUserId: (identifier) => layer.users.resolveCollaboratorUserId(identifier),
     resolveNoteAccess: (nid, uid) => layer.notes.resolveNoteAccess(nid, uid),
     resolveNoteAttachmentStoragePath: (attachment) => layer.notes.resolveNoteAttachmentStoragePath(attachment),
-    service: host.legacyService,
+    recordActivity,
+    recordLearningConnection,
+    recordLearningEvent,
     updateNote: (uid, nid, updates) => layer.notes.updateNote(uid, nid, updates),
     uploadNoteFile: (params) => layer.notes.uploadNoteFile(params),
     canEditNote: (uid, nid) => layer.notes.canEditNote(uid, nid),
@@ -365,7 +412,10 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     getFlashcardForUser: (id, uid) => layer.offlineBundles.getFlashcardForUser(id, uid),
     getResponseProfile: (profile) => getResponseProfile(profile),
     getUserPreferences: (uid) => layer.categories.getUserPreferences(uid),
-    service: host.legacyService,
+    lookupDeckOwnerAndCourse,
+    recordLearningConnection,
+    recordLearningEvent,
+    refreshTopicMastery,
     updateFlashcard: (id, updates, uid, options) => layer.offlineBundles.updateFlashcard(id, updates, uid, options),
     verifyDeckAccess: (uid, id, level) => layer.offlineBundles.verifyDeckAccess(uid, id, level),
   };
@@ -390,12 +440,12 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     // parameter, so the cast restores the signature `TestDeps` declares.
     attachSourceNoteTitles: ((rows: any, uid: any) =>
       layer.tests.attachSourceNoteTitles(rows, uid)) as testsData.TestDeps["attachSourceNoteTitles"],
-    calculateTestScore: (questions, answers) => host.calculateTestScore(questions, answers),
+    calculateTestScore: (questions, answers) => layer.tests.calculateTestScore(questions, answers),
     createTestResult: (id, resultData, uid, options) => layer.tests.createTestResult(id, resultData, uid, options),
     deleteTest: (id) => layer.tests.deleteTest(id),
     fetchDeckTitles: (ids, uid) => layer.tests.fetchDeckTitles(ids, uid),
     fetchNoteTitles: (ids, uid) => layer.tests.fetchNoteTitles(ids, uid),
-    generateTestQuestions: (config) => host.generateTestQuestions(config),
+    generateTestQuestions: (config) => layer.tests.generateTestQuestions(config),
     getTestById: (id, uid) => layer.tests.getTestById(id, uid),
     getUserTests: (uid, options) => layer.tests.getUserTests(uid, options),
     isGroupMember: (groupId, uid) => layer.groups.isGroupMember(groupId, uid),
@@ -437,7 +487,8 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   layer.gamification = createGamificationApi(client, gamificationDeps);
   layer.groupMessages = createGroupMessagesApi(client, groupMessagesDeps);
   layer.groups = createGroupsApi(client, groupsDeps);
-  layer.marketplace = createMarketplaceApi(client, marketplaceDeps, host);
+  layer.mappers = createMappersApi(mappersDeps);
+  layer.marketplace = createMarketplaceApi(client, marketplaceDeps, host, ratingColumns);
   layer.notes = createNotesApi(client, notesDeps);
   layer.notifications = createNotificationsApi(client, notificationsDeps);
   layer.offlineBundles = createOfflineBundlesApi(client, offlineBundlesDeps);
@@ -695,12 +746,31 @@ function createGroupsApi(
   };
 }
 
+function createMappersApi(mappersDeps: mappersData.MessageRecordDeps) {
+  return {
+    mapProfileSender: mappersData.mapProfileSender,
+    resolveNestedProfile: mappersData.resolveNestedProfile,
+    mapChatMessageRow: mappersData.mapChatMessageRow,
+    parseMessageContent: mappersData.parseMessageContent,
+    normalizeMessageRecord: bindDeps(mappersDeps, mappersData.normalizeMessageRecord),
+  };
+}
+
 function createMarketplaceApi(
   client: DataClient,
   marketplaceDeps: marketplaceData.MarketplaceDeps,
   host: DataLayerHost,
+  ratingColumns: ReturnType<typeof marketplaceData.createRatingColumnCircuitBreaker>,
 ) {
   return {
+    ratingColumnsAvailable: ratingColumns.ratingColumnsAvailable,
+    noteRatingColumnsMissing: ratingColumns.noteRatingColumnsMissing,
+    normalizeListingRecord: bindDeps(marketplaceDeps, marketplaceData.normalizeListingRecord),
+    normalizeListingRecordAsync: bindDeps(marketplaceDeps, marketplaceData.normalizeListingRecordAsync),
+    normalizeOfferRecord: bindDeps(marketplaceDeps, marketplaceData.normalizeOfferRecord),
+    signSimilarListingCards: bindDeps(marketplaceDeps, marketplaceData.signSimilarListingCards),
+    createInquiryNotification: bindDeps(marketplaceDeps, marketplaceData.createInquiryNotification),
+    createPurchaseNotification: bindDeps(marketplaceDeps, marketplaceData.createPurchaseNotification),
     marketplaceWriteError: marketplaceData.marketplaceWriteError,
     stripServerOwnedListingFields: marketplaceData.stripServerOwnedListingFields,
     pickServerOwnedListingFields: marketplaceData.pickServerOwnedListingFields,
@@ -919,6 +989,8 @@ function createTestsApi(
   testsDeps: testsData.TestDeps,
 ) {
   return {
+    generateTestQuestions: testsData.generateTestQuestions,
+    calculateTestScore: testsData.calculateTestScore,
     getUserTests: bindDbDeps(client, testsDeps, testsData.getUserTests),
     getTestById: bindDb(client, testsData.getTestById),
     resolveTestSessionForCaller: bindDbDeps(client, testsDeps, testsData.resolveTestSessionForCaller),
@@ -1020,6 +1092,7 @@ export type DataLayer = {
   gamification: GamificationApi;
   groupMessages: GroupMessagesApi;
   groups: GroupsApi;
+  mappers: MappersApi;
   marketplace: MarketplaceApi;
   notes: NotesApi;
   notifications: NotificationsApi;
@@ -1042,6 +1115,7 @@ export type DirectMessagesApi = ReturnType<typeof createDirectMessagesApi>;
 export type GamificationApi = ReturnType<typeof createGamificationApi>;
 export type GroupMessagesApi = ReturnType<typeof createGroupMessagesApi>;
 export type GroupsApi = ReturnType<typeof createGroupsApi>;
+export type MappersApi = ReturnType<typeof createMappersApi>;
 export type MarketplaceApi = ReturnType<typeof createMarketplaceApi>;
 export type NotesApi = ReturnType<typeof createNotesApi>;
 export type NotificationsApi = ReturnType<typeof createNotificationsApi>;

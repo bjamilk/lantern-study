@@ -64,15 +64,22 @@
  * read `this.<method>` at CALL time — an instance field holding the deps reads
  * as `undefined` there, and would bypass every `jest.spyOn` on the class.
  *
- * `deps.service` is the `SupabaseService` instance itself, for the three
- * collaborators that take it whole (`recordLearningEvent`, the activity feed
- * and learning connections) — the same shape `data/offlineBundles.ts` uses.
+ * The three collaborators that take the whole `SupabaseService` —
+ * `recordLearningEvent`, the activity feed and learning connections — arrive
+ * as three NARROW arrows (`recordLearningEvent`, `recordActivity`,
+ * `recordLearningConnection`) since monolith lane M3, so this module no longer
+ * names the facade at all. Their lazy `await import(...)` moved into the arrow
+ * `data/index.ts` builds, which keeps the cycle out of the boot path exactly
+ * as before — the same shape `data/offlineBundles.ts` uses.
  */
 import { logger } from "../../utils/logger";
 import { detectImageMime } from "../../utils/fileValidation";
 import { VersionConflictError } from "../../utils/versionConflict";
 import { normalizeCoverRef } from "@lantern/shared/utils/storageUrl";
-import type { LearningSurface } from "@lantern/shared/learning";
+import type {
+  LearningEventInput,
+  LearningSurface,
+} from "@lantern/shared/learning";
 
 import {
   applyCourseFilter,
@@ -84,14 +91,14 @@ import {
 import { IMMUTABLE_IMAGE_CACHE_CONTROL } from "../imageProcessing";
 // Append-only learning log (Phase 1 · C). Value import of a leaf module
 // (learningEvents only type-imports the facade), so no runtime import cycle.
-import { recordLearningEvent } from "../learningEvents";
 import { mapNoteCommentRow, NOTE_COMMENT_SELECT } from "../noteCommentMapping";
 import { buildNoteStoragePath } from "../noteFiles";
 import { topicFilterApplies, writeWithTopicFallback } from "./academic";
 import { topicIdOf } from "./testMappers";
 
 import type { DataClient } from "./client";
-import type { SupabaseService } from "../supabase";
+import type { ActivityInput } from "../activityFeed";
+import type { ConnectionInput as LearningConnectionInput } from "../learningConnections";
 
 /**
  * Everything a moved body used to reach through `this`.
@@ -106,8 +113,10 @@ import type { SupabaseService } from "../supabase";
 type NoteSearchTextRow = { id: string; body?: string; searchText?: string };
 
 export type NotesDeps = {
-  /** The `SupabaseService` instance itself, for the collaborators that take it whole. */
-  service: SupabaseService;
+  /** The three collaborators that take the whole facade; see the banner. */
+  recordLearningEvent: (input: LearningEventInput) => Promise<number>;
+  recordActivity: (input: ActivityInput) => Promise<void>;
+  recordLearningConnection: (input: LearningConnectionInput) => Promise<void>;
 
   /** Siblings in this module — dispatched dynamically, see the banner. */
   addNoteAttachment: (
@@ -688,7 +697,7 @@ export async function getNote(
 
 export async function createNote(
   db: DataClient,
-  deps: Pick<NotesDeps, "mapNote" | "resolveArtefactTopic" | "service">,
+  deps: Pick<NotesDeps, "mapNote" | "resolveArtefactTopic" | "recordLearningEvent">,
   userId: string,
   payload: {
     title?: string;
@@ -735,7 +744,7 @@ export async function createNote(
   // learning_events: note_created — every creation path (typed, PDF/slides/
   // image/audio/YouTube imports) lands here; only POST /notes knows the
   // surface header, the rest default to 'api'. Never throws.
-  await recordLearningEvent(deps.service, {
+  await deps.recordLearningEvent({
     userId,
     eventType: "note_created",
     targetType: "note",
@@ -1577,7 +1586,13 @@ export async function previewNoteShareLink(
 
 export async function acceptNoteShareLink(
   db: DataClient,
-  deps: Pick<NotesDeps, "createNotification" | "getNote" | "service">,
+  deps: Pick<
+    NotesDeps,
+    | "createNotification"
+    | "getNote"
+    | "recordActivity"
+    | "recordLearningConnection"
+  >,
   token: string, userId: string,
 ) {
   const { hashNoteShareToken, isValidNoteShareTokenFormat } =
@@ -1634,8 +1649,7 @@ export async function acceptNoteShareLink(
     // North-star metric (Phase 3 · O): the note's author is the actor.
     // Phase 3 M: the feed verb that matched this hook had no writer.
     void (async () => {
-      const { getActivityFeedService } = await import("../activityFeed");
-      await getActivityFeedService(deps.service).record({
+      await deps.recordActivity({
         actorId: note.userId,
         verb: "shared_note",
         objectType: "note",
@@ -1647,10 +1661,7 @@ export async function acceptNoteShareLink(
     })();
 
     void (async () => {
-      const { getLearningConnectionsService } = await import(
-        "../learningConnections"
-      );
-      await getLearningConnectionsService(deps.service).record({
+      await deps.recordLearningConnection({
         actorId: note.userId,
         beneficiaryId: userId,
         kind: "note_redeemed",

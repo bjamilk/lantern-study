@@ -16,9 +16,14 @@
  *
  * No tables and no client: these are pure functions over rows that a caller
  * has already read. `mapChatMessageRow` takes the output of
- * `SupabaseService.normalizeMessageRecord` as a VALUE rather than calling it,
- * because that method still depends on `this.parseMessageContent` and
- * `this.normalizeStorageUrl`, which live in sections not yet extracted.
+ * `normalizeMessageRecord` as a VALUE rather than calling it, which is how the
+ * three copies it replaces were written.
+ *
+ * MOVED HERE (monolith lane M3, step 18): `normalizeMessageRecord` and its
+ * private helper `parseMessageContent`, verbatim, from `SupabaseService`. They
+ * were the last two chat bodies that never left the facade — they depended on
+ * `this.normalizeStorageUrl`, which is now an injected `deps` arrow like every
+ * other cross-module reach in `services/data/*`.
  *
  * ## The gotcha
  *
@@ -31,9 +36,19 @@
  * The normalized record is spread LAST on purpose — it must win over the
  * envelope fields, as it did in all three original copies.
  */
+import { normalizeReactions } from "@lantern/shared/chat";
 import { scrubEmailFromDisplayName } from "@lantern/shared/utils/displayNames";
 
 import { Message } from "../../types";
+
+/**
+ * What `normalizeMessageRecord` reaches outside this module. One arrow, for
+ * the same reason every other `deps` literal exists here: the storage URL
+ * rewriter is the storage ACL's, not the mapper's.
+ */
+export type MessageRecordDeps = {
+  normalizeStorageUrl: (url: string) => string;
+};
 
 export type ProfileSenderRow = {
   id?: string;
@@ -108,4 +123,108 @@ export function mapChatMessageRow(
     isArchived: row.is_archived || false,
     ...normalized,
   } as Message;
+}
+
+/**
+ * The content half of a `messages` row: a TEXT row carries `text`, a QUESTION
+ * row carries its `question_data` spread flat, and anything else contributes
+ * nothing.
+ *
+ * MOVED (monolith lane M3) from `SupabaseService.parseMessageContent`,
+ * verbatim. Its only caller is `normalizeMessageRecord` below, which is why it
+ * was private there; it is exported here because the layer publishes what it
+ * moves, and `services/challengeService.ts` reads it off the injected object.
+ */
+export function parseMessageContent(msg: any): Partial<Message> {
+  if (msg.type === "TEXT") {
+    return {
+      type: "TEXT",
+      text: msg.text,
+    };
+  } else if (msg.type === "QUESTION") {
+    return {
+      type: "QUESTION",
+      ...msg.question_data,
+    };
+  }
+  return {};
+}
+
+/**
+ * A `messages` / `dm_messages` row → the message DTO's content and state
+ * fields. Every chat, board and DM read path runs its rows through this.
+ *
+ * MOVED (monolith lane M3) from `SupabaseService.normalizeMessageRecord`,
+ * verbatim, with `this.parseMessageContent` now the sibling above and
+ * `this.normalizeStorageUrl` now `deps.normalizeStorageUrl`.
+ *
+ * A REMOVED row is presented as a tombstone — text, question data and image
+ * stripped before parsing — and that stripping is the reason the whole body is
+ * one function: every caller must get it, not just the ones that remember.
+ */
+export function normalizeMessageRecord(
+  deps: MessageRecordDeps,
+  msg: any,
+): Partial<Message> & { type: "TEXT" | "QUESTION" } {
+  const removedAt = msg.removed_at || msg.removedAt || null;
+  const isRemoved = !!removedAt;
+  const presentationRecord = isRemoved
+    ? { ...msg, text: null, question_data: null, image_url: null }
+    : msg;
+  const parsed = parseMessageContent(presentationRecord);
+  const imageUrl = presentationRecord.image_url || parsed.imageUrl;
+  const type = (parsed.type || msg.type || "TEXT") as "TEXT" | "QUESTION";
+  return {
+    ...parsed,
+    type,
+    ...(imageUrl ? { imageUrl: deps.normalizeStorageUrl(imageUrl) } : {}),
+    editedAt: msg.edited_at || msg.editedAt || undefined,
+    removedAt: removedAt || undefined,
+    isRemoved,
+    // Denormalised emoji counts (20260830120000). Every listing query now
+    // SELECTs `reactions`; before it did not, so a freshly loaded board or
+    // chat read {} and the counts only appeared after a realtime UPDATE or
+    // the viewer's own tap. `normalizeReactions` also absorbs the
+    // pre-migration case, where the column is simply absent.
+    reactions: normalizeReactions(msg.reactions),
+    // Required by the shipped optimistic-send path so a client can match its
+    // own pending row to the persisted one instead of rendering it twice.
+    clientMessageId: msg.client_message_id ?? msg.clientMessageId ?? undefined,
+    // Board columns (20260903120000). Absent — not null — pre-migration, and
+    // a removed post shows its tombstone, never its title.
+    subject: isRemoved ? null : (msg.subject ?? undefined),
+    pinnedAt: msg.pinned_at ?? msg.pinnedAt ?? undefined,
+    pinnedBy: msg.pinned_by ?? msg.pinnedBy ?? undefined,
+    // Board post kinds (20260908120000). Absent — not null — pre-migration;
+    // `normalizeBoardPostKind` reads both as 'discussion'. The removal
+    // reason SURVIVES a removal on purpose: it is the tombstone's whole
+    // point, unlike the title and body, which are stripped.
+    postKind: msg.post_kind ?? msg.postKind ?? undefined,
+    removedReason: msg.removed_reason ?? msg.removedReason ?? undefined,
+    answeredMessageId:
+      msg.answered_message_id ?? msg.answeredMessageId ?? undefined,
+    replyToMessageId:
+      msg.reply_to_message_id || msg.replyToMessageId || undefined,
+    mentionedUserIds:
+      msg.mentioned_user_ids || msg.mentionedUserIds || undefined,
+    replyTo: msg.replyTo || undefined,
+    threadRootId: msg.thread_root_id || msg.threadRootId || undefined,
+    replyCount:
+      typeof msg.replyCount === "number" ? msg.replyCount : undefined,
+    // Board repost hydration (§6.4), attached by attachBoardRepostContext
+    // before this maps the row. Absent on chat pages, which never run it.
+    repostOf: msg.repostOf ?? undefined,
+    repostCount:
+      typeof msg.repostCount === "number" ? msg.repostCount : undefined,
+    // Peer-upvote progress, attached by attachPeerUpvotes before this maps the
+    // row. Absent — not 0 — on paths that do not compute it, so a client can
+    // tell "no peers yet" from "this build does not report it".
+    peerUpvotes:
+      typeof msg.peerUpvotes === "number" ? msg.peerUpvotes : undefined,
+    receiptStatus: msg.receiptStatus || undefined,
+    seenByCount:
+      typeof msg.seenByCount === "number" ? msg.seenByCount : undefined,
+    seenByTotal:
+      typeof msg.seenByTotal === "number" ? msg.seenByTotal : undefined,
+  };
 }

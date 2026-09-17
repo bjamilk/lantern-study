@@ -16,7 +16,7 @@
  * refresh, not forty; and a refresh is never on the critical path of the write
  * that triggered it.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 import {
   computeCourseReadiness,
@@ -78,13 +78,26 @@ function mapRow(row: any): TopicMasteryRow {
   };
 }
 
+/**
+ * All this service needs from its host: the service-role client.
+ *
+ * FLIPPED (monolith lane M3, the pilot): it used to take the whole
+ * `SupabaseService` and reach exactly one member on it. `DataLayer` satisfies
+ * this type, so a flipped caller hands over `dataLayer` itself; the facade
+ * satisfies it too, structurally, which is what lets the call sites this lane
+ * has not reached yet — the facade's own `deps` arrows, and the `services/`
+ * singletons that still hold a facade — keep working unchanged. Nothing has to
+ * move twice, and this alias disappears with the class.
+ */
+export type TopicMasteryHost = Pick<DataLayer, 'getClient'>;
+
 export class TopicMasteryService {
   private lastRefresh = new Map<string, number>();
 
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: TopicMasteryHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   /**
@@ -555,7 +568,7 @@ export class TopicMasteryService {
 
 let service: TopicMasteryService | null = null;
 
-export function getTopicMasteryService(supabaseService: SupabaseService): TopicMasteryService {
-  if (!service) service = new TopicMasteryService(supabaseService);
+export function getTopicMasteryService(host: TopicMasteryHost): TopicMasteryService {
+  if (!service) service = new TopicMasteryService(host);
   return service;
 }
