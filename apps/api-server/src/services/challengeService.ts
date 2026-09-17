@@ -12,6 +12,21 @@ import { logger } from '../utils/logger';
 
 const CHALLENGE_EXPIRY_HOURS = 24;
 
+/**
+ * A `messages` row's type-specific content, as the client `Message` spells it:
+ * TEXT carries `text`, QUESTION spreads `question_data`. Verbatim copy of the
+ * facade's private `SupabaseService.parseMessageContent` — see the FIXED note
+ * in `resolveQuestions` for why it is here rather than reached through a cast.
+ */
+export function parseChallengeMessageContent(msg: any): Record<string, unknown> {
+  if (msg.type === 'TEXT') {
+    return { type: 'TEXT', text: msg.text };
+  } else if (msg.type === 'QUESTION') {
+    return { type: 'QUESTION', ...msg.question_data };
+  }
+  return {};
+}
+
 export class ChallengeService {
   constructor(private data: DataLayer) {}
 
@@ -147,7 +162,14 @@ export class ChallengeService {
 
     const byId = new Map<string, any>();
     for (const msg of data || []) {
-      const parsed = (this.data as any).parseMessageContent(msg);
+      // FIXED (hotfix after #92): this read `(this.data as any).parseMessageContent`.
+      // `this.data` became a `DataLayer` in #92, which has no such member — it
+      // was a PRIVATE method of the `SupabaseService` facade, reached through an
+      // `any` cast, so tsc could not see the break and every challenge question
+      // resolution threw `parseMessageContent is not a function`. The body is
+      // pure, so it lives here until the facade-deletion lane publishes it as
+      // `data.mappers.parseMessageContent`.
+      const parsed = parseChallengeMessageContent(msg);
       const mapped = {
         id: msg.id,
         groupId: msg.group_id,
