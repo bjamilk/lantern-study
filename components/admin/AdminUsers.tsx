@@ -3,8 +3,19 @@ import { AdminUser } from '../../services/admin';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
+import { Skeleton } from '../ui/Skeleton';
+import { Caption } from '../ui/Text';
 import { PaginationBar } from './PaginationBar';
 import { AdminPagination } from '../../services/admin';
+import {
+  AdminEmpty,
+  AdminPageHeader,
+  AdminRowActions,
+  AdminStatusBadge,
+  AdminTable,
+  adminCellClass,
+  adminRowClass,
+} from './AdminChrome';
 import { formatDate, usersToCsvRows, exportCsv } from './types';
 
 interface AdminUsersProps {
@@ -18,6 +29,7 @@ interface AdminUsersProps {
   onSelectUser: (userId: string) => void;
   onToggleBan: (user: AdminUser, reason?: string) => void;
   onToggleAdmin: (user: AdminUser) => void;
+  loading?: boolean;
   /**
    * From the server. Undefined means "not loaded yet" and must not disable the
    * button — only an explicit false does, so a slow stats call never looks
@@ -38,82 +50,103 @@ export const AdminUsers: React.FC<AdminUsersProps> = ({
   onToggleBan,
   onToggleAdmin,
   roleManagementEnabled,
+  loading = false,
 }) => {
   const roleDisabled = roleManagementEnabled === false;
   const roleHint = roleDisabled
     ? 'Role management is switched off on the server (ENABLE_ADMIN_ROLE_MANAGEMENT=false).'
     : undefined;
+
   return (
-  <Card className="space-y-3">
-    <div className="flex flex-wrap gap-2 items-center justify-between">
-      <Input
-        value={userSearch}
-        onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="Search name, username, email, or user ID"
-        className="flex-1 min-w-[220px]"
+    <div className="space-y-4">
+      <AdminPageHeader
+        eyebrow="People"
+        title="Users"
+        description="Search accounts, open a profile, ban, or change platform-admin access."
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => exportCsv('admin-users.csv', usersToCsvRows(users))}
+            disabled={!users.length}
+          >
+            Export CSV
+          </Button>
+        }
       />
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => exportCsv('admin-users.csv', usersToCsvRows(users))}
-        disabled={!users.length}
-      >
-        Export CSV
-      </Button>
-    </div>
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-lantern-text-muted border-b border-lantern-border">
-            <th className="py-2 pr-2">User</th>
-            <th className="py-2 pr-2">Email</th>
-            <th className="py-2 pr-2">Joined</th>
-            <th className="py-2 pr-2">Status</th>
-            <th className="py-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => (
-            <tr key={user.id} className="border-b border-lantern-border/60">
-              <td className="py-2 pr-2">
-                <button type="button" className="text-lantern-primary hover:underline text-left" onClick={() => onSelectUser(user.id)}>
-                  {user.name || user.username || user.id.slice(0, 8)}
-                </button>
-              </td>
-              <td className="py-2 pr-2 text-lantern-text-muted">{user.email || '-'}</td>
-              <td className="py-2 pr-2">{formatDate(user.created_at)}</td>
-              <td className="py-2 pr-2">{user.is_banned ? 'Banned' : 'Active'}{user.is_platform_admin ? ' · Admin' : ''}</td>
-              <td className="py-2 flex flex-wrap gap-1">
-                <Button size="sm" variant="ghost" onClick={() => onSelectUser(user.id)}>Details</Button>
-                <Button
-                  size="sm"
-                  variant={user.is_banned ? 'secondary' : 'danger'}
-                  loading={actionLoading[`ban:${user.id}`]}
-                  onClick={() => onToggleBan(user)}
-                >
-                  {user.is_banned ? 'Unban' : 'Ban'}
-                </Button>
-                <span title={roleHint}>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={roleDisabled}
-                    loading={actionLoading[`role:${user.id}`]}
-                    onClick={() => onToggleAdmin(user)}
+
+      <Card className="space-y-4">
+        <Input
+          value={userSearch}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search name, username, email, or user ID"
+        />
+
+        {loading && !users.length ? (
+          <div className="space-y-2" aria-busy="true" aria-label="Loading users">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : users.length ? (
+          <AdminTable headers={['User', 'Email', 'Joined', 'Status', 'Actions']}>
+            {users.map((user) => (
+              <tr key={user.id} className={adminRowClass}>
+                <td className={adminCellClass}>
+                  <button
+                    type="button"
+                    className="font-semibold text-lantern-text hover:underline text-left"
+                    onClick={() => onSelectUser(user.id)}
                   >
-                    {user.is_platform_admin ? 'Revoke admin' : 'Make admin'}
-                  </Button>
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                    {user.name || user.username || user.id.slice(0, 8)}
+                  </button>
+                </td>
+                <td className={`${adminCellClass} text-lantern-text-muted`}>{user.email || '—'}</td>
+                <td className={adminCellClass}>{formatDate(user.created_at)}</td>
+                <td className={adminCellClass}>
+                  <div className="flex flex-wrap gap-1">
+                    <AdminStatusBadge tone={user.is_banned ? 'danger' : 'success'}>
+                      {user.is_banned ? 'Banned' : 'Active'}
+                    </AdminStatusBadge>
+                    {user.is_platform_admin ? <AdminStatusBadge tone="accent">Admin</AdminStatusBadge> : null}
+                  </div>
+                </td>
+                <td className={`${adminCellClass} whitespace-nowrap`}>
+                  <AdminRowActions>
+                    <Button size="sm" variant="ghost" onClick={() => onSelectUser(user.id)}>
+                      Details
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={user.is_banned ? 'secondary' : 'danger'}
+                      loading={actionLoading[`ban:${user.id}`]}
+                      onClick={() => onToggleBan(user)}
+                    >
+                      {user.is_banned ? 'Unban' : 'Ban'}
+                    </Button>
+                    <span title={roleHint}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={roleDisabled}
+                        loading={actionLoading[`role:${user.id}`]}
+                        onClick={() => onToggleAdmin(user)}
+                      >
+                        {user.is_platform_admin ? 'Revoke admin' : 'Make admin'}
+                      </Button>
+                    </span>
+                  </AdminRowActions>
+                </td>
+              </tr>
+            ))}
+          </AdminTable>
+        ) : (
+          <AdminEmpty>No users match this search.</AdminEmpty>
+        )}
+
+        {roleDisabled ? <Caption className="text-lantern-text-muted">{roleHint}</Caption> : null}
+        <PaginationBar pagination={pagination} onPrev={onPrev} onNext={onNext} />
+      </Card>
     </div>
-    {roleDisabled ? (
-      <p className="text-xs text-lantern-text-muted">{roleHint}</p>
-    ) : null}
-    <PaginationBar pagination={pagination} onPrev={onPrev} onNext={onNext} />
-  </Card>
   );
 };
