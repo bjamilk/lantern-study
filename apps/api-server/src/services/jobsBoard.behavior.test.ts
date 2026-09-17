@@ -78,12 +78,12 @@ function makeClient(tables: Record<string, any[]>) {
 }
 
 function makeService(client: any) {
-  const supabase = {
-    getClient: () => client,
-    createNotification: jest.fn(async () => undefined),
-    sendDirectMessage: jest.fn(async () => undefined),
-  };
-  return { svc: new JobsBoardService(supabase as any), supabase };
+  // The stubs are the same `jest.fn()`s the flat `SupabaseService` stand-in
+  // carried; they only moved under the `DataLayer` namespace that owns them.
+  const notifications = { createNotification: jest.fn(async () => undefined) };
+  const directMessages = { sendDirectMessage: jest.fn(async () => undefined) };
+  const data = { getClient: () => client, notifications, directMessages };
+  return { svc: new JobsBoardService(data as any), data };
 }
 
 const postingRow = (extra: Record<string, unknown> = {}) => ({
@@ -491,7 +491,7 @@ describe("bulkUpdateApplicationStatus", () => {
       error: null,
     });
     const client = makeClient({ job_applications: [listChain, updateChain] });
-    const { svc, supabase } = makeService(client);
+    const { svc, data } = makeService(client);
     jest.spyOn(svc, "getPosting").mockResolvedValue(posting as any);
 
     const result = await svc.bulkUpdateApplicationStatus(
@@ -506,8 +506,8 @@ describe("bulkUpdateApplicationStatus", () => {
     // Only the non-withdrawn application is written…
     expect(callsTo(updateChain, "in")).toEqual([["id", ["a2"]]]);
     // …and only its candidate is notified.
-    expect(supabase.createNotification).toHaveBeenCalledTimes(1);
-    expect(supabase.createNotification).toHaveBeenCalledWith(
+    expect(data.notifications.createNotification).toHaveBeenCalledTimes(1);
+    expect(data.notifications.createNotification).toHaveBeenCalledWith(
       "cand-2",
       expect.anything(),
     );

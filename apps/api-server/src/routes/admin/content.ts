@@ -25,7 +25,7 @@
 import { Router } from 'express';
 import { logAdminAction } from '../../services/adminAudit';
 import * as adminData from '../../services/adminData';
-import { escapePostgrestSearch, supabaseService } from './context';
+import { dataLayer, escapePostgrestSearch, supabaseService } from './context';
 import { adminRoute } from './errors';
 
 const router = Router();
@@ -192,7 +192,7 @@ router.get('/jobs/postings', adminRoute(async (req: any, res: any) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const status = (req.query.status as string) || '';
-  const result = await getJobsBoardService(supabaseService).adminListPostings(page, limit, status || undefined);
+  const result = await getJobsBoardService(dataLayer).adminListPostings(page, limit, status || undefined);
   res.json({ success: true, ...result });
 }));
 
@@ -203,7 +203,7 @@ router.patch('/jobs/postings/:id', adminRoute(async (req: any, res: any) => {
   if (!allowed.includes(status)) {
     return res.status(400).json({ success: false, error: `status must be one of ${allowed.join(', ')}` });
   }
-  const posting = await getJobsBoardService(supabaseService).updatePosting(
+  const posting = await getJobsBoardService(dataLayer).updatePosting(
     req.params.id,
     req.user.id,
     { status: status as 'active' | 'suspended_by_admin' | 'removed_by_admin' | 'closed' | 'paused' },
@@ -220,7 +220,7 @@ router.patch('/jobs/postings/:id', adminRoute(async (req: any, res: any) => {
 
 router.delete('/jobs/postings/:id', adminRoute(async (req: any, res: any) => {
   const { getJobsBoardService } = await import('../../services/jobsBoard');
-  await getJobsBoardService(supabaseService).updatePosting(
+  await getJobsBoardService(dataLayer).updatePosting(
     req.params.id,
     req.user.id,
     { status: 'removed_by_admin' },
@@ -240,7 +240,7 @@ router.get('/jobs/companies', adminRoute(async (req: any, res: any) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const status = (req.query.status as string) || '';
-  const result = await getJobsBoardService(supabaseService).adminListCompanies(page, limit, status || undefined);
+  const result = await getJobsBoardService(dataLayer).adminListCompanies(page, limit, status || undefined);
   res.json({ success: true, ...result });
 }));
 
@@ -250,7 +250,7 @@ router.patch('/jobs/companies/:id/verification', adminRoute(async (req: any, res
   if (!['verified', 'rejected', 'pending', 'unverified'].includes(status)) {
     return res.status(400).json({ success: false, error: 'Invalid verification status' });
   }
-  const company = await getJobsBoardService(supabaseService).setCompanyVerification(
+  const company = await getJobsBoardService(dataLayer).setCompanyVerification(
     req.params.id,
     status,
     note
@@ -268,7 +268,7 @@ router.patch('/jobs/companies/:id/verification', adminRoute(async (req: any, res
 router.patch('/jobs/postings/:id/school-approval', adminRoute(async (req: any, res: any) => {
   const { getJobsBoardService } = await import('../../services/jobsBoard');
   const approve = req.body?.approve !== false;
-  const posting = await getJobsBoardService(supabaseService).schoolApprovePosting(req.params.id, approve);
+  const posting = await getJobsBoardService(dataLayer).schoolApprovePosting(req.params.id, approve);
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
     action: approve ? 'job_school_approve' : 'job_school_reject',

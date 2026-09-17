@@ -43,7 +43,7 @@ export const initializeJobsBoardRoutes = (
 };
 
 function jobs() {
-  return getJobsBoardService(legacyService());
+  return getJobsBoardService(dataLayer);
 }
 
 /**
