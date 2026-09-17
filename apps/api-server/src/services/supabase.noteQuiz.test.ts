@@ -11,7 +11,15 @@
  * A refused regenerate now also says so: the returned quiz carries
  * `reused: true` so clients can toast honestly (absent means fresh).
  */
-import { SupabaseService } from "./supabase";
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as notesData from './data/notes';
 
 type Op = { fn: string; args: any[] };
 type Call = { table: string; ops: Op[]; terminal: string };
@@ -65,15 +73,15 @@ function fakeSelf(
   const self = {
     getNote: jest.fn(async () => ({ id: "note-1" })),
     getNoteQuiz: jest.fn(async () => existingQuizzes[Math.min(quizReads++, existingQuizzes.length - 1)]),
-    isNoteQuizProtected: SupabaseService.prototype.isNoteQuizProtected,
-    mapNoteQuiz: (SupabaseService.prototype as any).mapNoteQuiz,
+    isNoteQuizProtected: notesData.isNoteQuizProtected,
+    mapNoteQuiz: notesData.mapNoteQuiz,
     supabase: client,
   };
   return { self, calls };
 }
 
 const upsert = (self: unknown) =>
-  SupabaseService.prototype.upsertNoteQuiz.call(self as any, "u1", "note-1", {
+  notesData.upsertNoteQuiz((self as any).supabase, self as any, "u1", "note-1", {
     studyGoal: "retention",
     questions: NEW_QUESTIONS,
   });
@@ -150,7 +158,7 @@ describe("upsertNoteQuiz regenerate", () => {
 
 describe("isNoteQuizProtected", () => {
   const protectedOf = (quiz: any) =>
-    SupabaseService.prototype.isNoteQuizProtected.call(null as any, quiz);
+    notesData.isNoteQuizProtected(quiz);
 
   it("protects completed quizzes and quizzes with any answers", () => {
     expect(protectedOf({ completed: true, answers: {} })).toBe(true);

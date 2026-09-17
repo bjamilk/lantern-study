@@ -7,7 +7,16 @@
  * owner's folder view. updateNote now drops folderId/groupId from a non-owner's
  * update while still saving their content edits.
  */
-import { SupabaseService } from "./supabase";
+import * as academicData from './data/academic';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as notesData from './data/notes';
 
 type Op = { fn: string; args: any[] };
 type Call = { table: string; ops: Op[]; terminal: string };
@@ -77,20 +86,27 @@ function runUpdate(
       canEdit: access.canEdit,
       isOwner: access.isOwner,
     })),
-    mapNote: (SupabaseService.prototype as any).mapNote,
-    // No update here names a topic or a course, so the real resolver short-circuits.
-    resolveArtefactTopicPatch: (SupabaseService.prototype as any)
-      .resolveArtefactTopicPatch,
+    mapNote: notesData.mapNote,
+    // No update here names a topic or a course, so the real resolver
+    // short-circuits and never reaches `resolveTopicForArtefact`.
+    resolveArtefactTopicPatch: function (
+      this: any,
+      table: any,
+      id: string,
+      patch: any,
+    ) {
+      return academicData.resolveArtefactTopicPatch(
+        this.supabase,
+        async () => null,
+        table,
+        id,
+        patch,
+      );
+    },
   };
   return {
     calls,
-    result: SupabaseService.prototype.updateNote.call(
-      self as any,
-      access.isOwner ? "owner" : "editor-user",
-      "n1",
-      updates,
-      {},
-    ),
+    result: notesData.updateNote((self as any).supabase, self as any, access.isOwner ? "owner" : "editor-user", "n1", updates, {}),
   };
 }
 
