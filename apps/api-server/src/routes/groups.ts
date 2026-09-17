@@ -93,7 +93,11 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { allowDevAuthBypass, requireGroupMember } from '../middleware/authorizeResource';
 import { handleValidationErrors, validateGroupId, validateBatchMemberIds, validateCreateGroup, validateUpdateGroup, validatePagination, validateSearch } from '../middleware/validation';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
+// Type only (erased at compile time): the two services below still take the
+// `SupabaseService` facade, so a flipped route hands them `data.legacyService`
+// until the `services/` importers are flipped too.
+import type { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { getCommunitiesService } from '../services/communities';
@@ -126,7 +130,7 @@ async function isBarredFromCommunity(
     communityId: input.communityId as string | null | undefined,
   });
   if (!discovery.communityId) return false;
-  const member = await getCommunitiesService(supabaseService).isActiveMember(
+  const member = await getCommunitiesService(legacyService()).isActiveMember(
     userId,
     discovery.communityId,
   );
@@ -187,12 +191,19 @@ const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
   profile === 'compact' ? 'compact' : 'full';
 
 // Initialize services (will be injected in main server)
-let supabaseService: SupabaseService;
+//
+// `data` is the composition root's `DataLayer` (`services/data/index.ts`), not
+// the `SupabaseService` facade: the domain functions arrive already bound to
+// the client and to their `deps`. See `docs/data-layer-wiring.md`.
+let data: DataLayer;
 let cacheService: CacheService;
 
+/** The facade handle the not-yet-flipped services below still require. */
+const legacyService = () => data.legacyService as SupabaseService;
+
 // Initialize function to be called from main server
-export const initializeGroupRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeGroupRoutes = (dataLayer: DataLayer, cache: CacheService) => {
+  data = dataLayer;
   cacheService = cache;
 };
 
@@ -239,7 +250,7 @@ router.get(
         }
       }
 
-      const groups = await supabaseService.getGroups({
+      const groups = await data.groups.getGroups({
         page: pageNum,
         limit: limitNum,
         search: search as string,
@@ -282,7 +293,7 @@ router.get(
         return res.json({ success: true, data: cached });
       }
 
-      const unreadCounts = await supabaseService.getAllGroupUnreadCounts(userId);
+      const unreadCounts = await data.readState.getAllGroupUnreadCounts(userId);
       await cacheService.set(cacheKey, unreadCounts, CacheTTL.unreadCounts);
 
       res.json({
@@ -308,7 +319,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const invites = await supabaseService.getPendingGroupInvitesForUser(userId);
+    const invites = await data.groups.getPendingGroupInvitesForUser(userId);
     res.json({ success: true, data: invites });
   })
 );
@@ -324,7 +335,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const accepted = await supabaseService.acceptGroupInvite(groupId, userId);
+    const accepted = await data.groups.acceptGroupInvite(groupId, userId);
     if (!accepted) {
       return res.status(404).json({
         success: false,
@@ -338,7 +349,7 @@ router.post(
     await cacheService.deletePattern('groups:user:*');
     await cacheService.deletePattern(`user:groups:${userId}:*`);
 
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     res.json({
       success: true,
       data: group,
@@ -358,7 +369,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const declined = await supabaseService.declineGroupInvite(groupId, userId);
+    const declined = await data.groups.declineGroupInvite(groupId, userId);
     if (!declined) {
       return res.status(404).json({
         success: false,
@@ -393,7 +404,7 @@ router.get(
 
     logger.debug('Fetching group', { groupId, userId });
 
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
 
     if (!group) {
       return res.status(404).json({
@@ -449,7 +460,7 @@ router.post(
     // Pre-migration there is nowhere to record 'study_group', and silently
     // creating a board instead would drop the user into the wrong surface —
     // the one thing the no-silent-disappearance rule forbids (spec §1.1/§3.1).
-    if (surface === 'study_group' && !(await hasGroupCommunitySurface(supabaseService.getClient()))) {
+    if (surface === 'study_group' && !(await hasGroupCommunitySurface(data.getClient()))) {
       return res.status(503).json({
         success: false,
         error: COMMUNITY_BOARD_COPY.studyGroupsUnavailable,
@@ -471,14 +482,14 @@ router.post(
 
     logger.debug('Creating group', { groupData, userId, memberIds });
 
-    const newGroup = await supabaseService.createGroup(groupData, userId, memberIds);
+    const newGroup = await data.groups.createGroup(groupData, userId, memberIds);
 
     const pendingInviteUserIds = (newGroup as { pendingInviteUserIds?: string[] }).pendingInviteUserIds || [];
     if (pendingInviteUserIds.length > 0) {
-      const actor = await supabaseService.getUserById(userId);
+      const actor = await data.users.getUserById(userId);
       const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'Someone';
       for (const inviteeId of pendingInviteUserIds) {
-        void supabaseService.createNotification(inviteeId, {
+        void data.notifications.createNotification(inviteeId, {
           message: `${actorLabel} invited you to join "${newGroup.name}". Open the invite to accept or decline.`,
           link: `/invites/groups/${newGroup.id}`,
           type: 'group_invite',
@@ -517,7 +528,7 @@ router.put(
     logger.debug('Updating group', { groupId, updateData, userId });
 
     // Check if user has permission to update this group
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -561,7 +572,7 @@ router.put(
       return res.status(403).json({ success: false, error: 'Join this community first' });
     }
 
-    const updatedGroup = await supabaseService.updateGroup(
+    const updatedGroup = await data.groups.updateGroup(
       groupId,
       isArchiveOnly ? { isArchived: updateData.isArchived } : updateData,
     );
@@ -591,7 +602,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({ success: false, error: 'Group not found or access denied' });
     }
@@ -615,14 +626,14 @@ router.post(
       return res.status(400).json({ success: false, error: 'Avatar exceeds 2 MB limit' });
     }
 
-    const uploaded = await supabaseService.uploadGroupAvatar({
+    const uploaded = await data.uploads.uploadGroupAvatar({
       groupId,
       fileName,
       base64Data,
       contentType: contentType || 'image/jpeg',
     });
 
-    const updatedGroup = await supabaseService.updateGroup(groupId, { avatarUrl: uploaded.avatarUrl });
+    const updatedGroup = await data.groups.updateGroup(groupId, { avatarUrl: uploaded.avatarUrl });
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern('groups:list:*');
     await cacheService.deletePattern('groups:user:*');
@@ -652,7 +663,7 @@ router.delete(
     logger.debug('Deleting group', { groupId, userId });
 
     // Check if user has permission to delete this group
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -673,14 +684,14 @@ router.delete(
     // it (messages cascade on the group). It is minted with no admins, so the
     // check above already refuses today — this makes the rule explicit rather
     // than an accident of how the lounge happens to be configured.
-    if (await getCommunitiesService(supabaseService).isCommunityLounge(groupId)) {
+    if (await getCommunitiesService(legacyService()).isCommunityLounge(groupId)) {
       return res.status(403).json({
         success: false,
         error: 'This is a community chat and cannot be deleted.',
       });
     }
 
-    await supabaseService.deleteGroup(groupId);
+    await data.groups.deleteGroup(groupId);
 
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
@@ -728,7 +739,7 @@ router.post(
     }
 
     // Check if user has permission to add members
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -749,13 +760,13 @@ router.post(
     }
 
     // Admin invites create a pending membership — invitee must accept.
-    await supabaseService.addGroupMember(groupId, memberId, { pending: true });
+    await data.groups.addGroupMember(groupId, memberId, { pending: true });
 
-    const groupMeta = await supabaseService.getGroupById(groupId);
-    const actor = await supabaseService.getUserById(userId);
+    const groupMeta = await data.groups.getGroupById(groupId);
+    const actor = await data.users.getUserById(userId);
     const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'An admin';
     if (groupMeta) {
-      void supabaseService.createNotification(memberId, {
+      void data.notifications.createNotification(memberId, {
         message: `${actorLabel} invited you to join "${groupMeta.name}". Open the invite to accept or decline.`,
         link: `/invites/groups/${groupId}`,
         type: 'group_invite',
@@ -823,7 +834,7 @@ router.post(
     }
 
     // Check if user has permission to add members
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -853,19 +864,19 @@ router.post(
     };
 
     try {
-      const batchResult = await supabaseService.addGroupMembersBatch(groupId, userIds);
+      const batchResult = await data.groups.addGroupMembersBatch(groupId, userIds);
       results.invited = batchResult.invited;
       results.added = batchResult.invited;
       results.alreadyMembers = batchResult.alreadyMembers;
       results.alreadyPending = batchResult.alreadyPending;
 
       if (results.invited.length > 0) {
-        const groupMeta = await supabaseService.getGroupById(groupId);
-        const actor = await supabaseService.getUserById(userId);
+        const groupMeta = await data.groups.getGroupById(groupId);
+        const actor = await data.users.getUserById(userId);
         const actorLabel = actor?.username ? `@${actor.username}` : actor?.name || 'An admin';
         if (groupMeta) {
           for (const memberId of results.invited) {
-            void supabaseService.createNotification(memberId, {
+            void data.notifications.createNotification(memberId, {
               message: `${actorLabel} invited you to join "${groupMeta.name}". Open the invite to accept or decline.`,
               link: `/invites/groups/${groupId}`,
               type: 'group_invite',
@@ -916,12 +927,12 @@ router.get(
       return res.status(400).json({ success: false, error: 'inviteId is required' });
     }
 
-    const group = await supabaseService.getGroupByInviteId(inviteId);
+    const group = await data.groups.getGroupByInviteId(inviteId);
     if (!group || group.isArchived) {
       return res.status(404).json({ success: false, error: 'Invalid or expired invite link' });
     }
 
-    const { count } = await supabaseService.getClient()
+    const { count } = await data.getClient()
       .from('group_members')
       .select('user_id', { count: 'exact', head: true })
       .eq('group_id', group.id)
@@ -950,7 +961,7 @@ router.get(
       return res.status(400).json({ success: false, error: 'inviteId is required' });
     }
 
-    const group = await supabaseService.getGroupByInviteId(inviteId);
+    const group = await data.groups.getGroupByInviteId(inviteId);
     if (!group) {
       return res.status(404).json({ success: false, error: 'Invalid or expired invite link' });
     }
@@ -958,13 +969,13 @@ router.get(
       return res.status(400).json({ success: false, error: 'This group has been archived' });
     }
 
-    const { count } = await supabaseService.getClient()
+    const { count } = await data.getClient()
       .from('group_members')
       .select('user_id', { count: 'exact', head: true })
       .eq('group_id', group.id)
       .eq('pending', false);
 
-    const { data: membership } = await supabaseService.getClient()
+    const { data: membership } = await data.getClient()
       .from('group_members')
       .select('user_id, pending')
       .eq('group_id', group.id)
@@ -1008,7 +1019,7 @@ router.post(
     }
 
     // Look up group by invite_id
-    const group = await supabaseService.getGroupByInviteId(inviteId);
+    const group = await data.groups.getGroupByInviteId(inviteId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1024,7 +1035,7 @@ router.post(
     }
 
     // Invite-link join is user-initiated consent — join as active member immediately.
-    const updatedGroup = await supabaseService.addGroupMember(group.id, userId, { pending: false });
+    const updatedGroup = await data.groups.addGroupMember(group.id, userId, { pending: false });
 
     // Invalidate caches
     await cacheService.delete(`group:${group.id}`);
@@ -1038,7 +1049,7 @@ router.post(
     // Academic feed (Phase 3 · M): visible to the group, not to followers — a
     // join is news to the room you joined, not to the internet.
     const { getActivityFeedService } = await import('../services/activityFeed');
-    await getActivityFeedService(supabaseService).record({
+    await getActivityFeedService(legacyService()).record({
       actorId: userId,
       verb: 'joined_group',
       objectType: 'group',
@@ -1069,7 +1080,7 @@ router.post(
     const { groupId } = req.params;
     logger.debug('Leaving group', { groupId, userId });
 
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1077,7 +1088,7 @@ router.post(
       });
     }
 
-    const isMember = await supabaseService.isGroupMember(groupId, userId);
+    const isMember = await data.groups.isGroupMember(groupId, userId);
     if (!isMember) {
       return res.status(400).json({
         success: false,
@@ -1095,7 +1106,7 @@ router.post(
       });
     }
 
-    await supabaseService.removeGroupMember(groupId, userId);
+    await data.groups.removeGroupMember(groupId, userId);
 
     await cacheService.delete(`group:${groupId}`);
     await cacheService.deletePattern(`group:members:${groupId}:*`);
@@ -1125,7 +1136,7 @@ router.delete(
     logger.debug('Removing member from group', { groupId, memberId, userId });
 
     // Check if user has permission to remove members
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1154,7 +1165,7 @@ router.delete(
       });
     }
 
-    const updatedGroup = await supabaseService.removeGroupMember(groupId, memberId);
+    const updatedGroup = await data.groups.removeGroupMember(groupId, memberId);
 
     // Invalidate caches
     await cacheService.delete(`group:${groupId}`);
@@ -1194,7 +1205,7 @@ router.get(
     logger.debug('Fetching group members', { groupId, page, limit, userId });
 
     // Check if group exists (without strict access check for dev)
-    const group = await supabaseService.getGroupById(groupId);
+    const group = await data.groups.getGroupById(groupId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1203,7 +1214,7 @@ router.get(
     }
 
     // Service caches public member rows only and attaches self PII after the cache hit (SEC-04).
-    const members = await supabaseService.getGroupMembers(groupId, {
+    const members = await data.groups.getGroupMembers(groupId, {
       page: parseInt(page as string),
       limit: parseInt(limit as string),
       requestingUserId: userId,
@@ -1236,7 +1247,7 @@ router.get(
     logger.debug('Fetching group stats', { groupId, userId });
 
     // Check if user has access to this group
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({
         success: false,
@@ -1248,7 +1259,7 @@ router.get(
     let stats = await cacheService.get(cacheKey);
 
     if (!stats) {
-      stats = await supabaseService.getGroupStats(groupId);
+      stats = await data.groups.getGroupStats(groupId);
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, stats, 300);
@@ -1272,7 +1283,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { groupId } = req.params;
-    const status = await supabaseService.getChatMute(userId, 'group', groupId);
+    const status = await data.readState.getChatMute(userId, 'group', groupId);
     res.json({ success: true, data: status });
   })
 );
@@ -1295,7 +1306,7 @@ router.put(
         error: 'Provide duration (1h|8h|24h|7d) or durationMinutes (1-43200)',
       });
     }
-    const result = await supabaseService.setChatMute(
+    const result = await data.readState.setChatMute(
       userId,
       'group',
       groupId,
@@ -1322,7 +1333,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { groupId } = req.params;
-    const success = await supabaseService.clearChatMute(userId, 'group', groupId);
+    const success = await data.readState.clearChatMute(userId, 'group', groupId);
     if (!success) {
       return res.status(404).json({
         success: false,
@@ -1351,7 +1362,7 @@ router.post(
 
       const { groupId } = req.params;
 
-      const result = await supabaseService.markGroupAsRead(groupId, userId);
+      const result = await data.readState.markGroupAsRead(groupId, userId);
 
       res.json({
         success: result.success,
@@ -1390,7 +1401,7 @@ router.post(
     if (!userId) return;
 
     const { groupId, memberId } = req.params;
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({ success: false, error: 'Group not found or access denied' });
     }
@@ -1404,7 +1415,7 @@ router.post(
       return res.json({ success: true, data: group });
     }
 
-    const updatedGroup = await supabaseService.updateGroup(groupId, {
+    const updatedGroup = await data.groups.updateGroup(groupId, {
       adminIds: [...(group.adminIds || []), memberId],
     });
 
@@ -1427,7 +1438,7 @@ router.delete(
     if (!userId) return;
 
     const { groupId, memberId } = req.params;
-    const group = await supabaseService.getGroupById(groupId, userId);
+    const group = await data.groups.getGroupById(groupId, userId);
     if (!group) {
       return res.status(404).json({ success: false, error: 'Group not found or access denied' });
     }
@@ -1441,7 +1452,7 @@ router.delete(
       return res.status(400).json({ success: false, error: 'Cannot demote the only admin' });
     }
 
-    const updatedGroup = await supabaseService.updateGroup(groupId, {
+    const updatedGroup = await data.groups.updateGroup(groupId, {
       adminIds: (group.adminIds || []).filter((id: string) => id !== memberId),
     });
 

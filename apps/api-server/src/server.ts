@@ -70,6 +70,7 @@ initSentry();
 import { CacheService, cacheService as sharedCacheService } from './services/cache';
 import { ApiKeyService } from './services/apiKey';
 import { SupabaseService } from './services/supabase';
+import { createDataLayer, type DataLayer } from './services/data';
 
 // Import middleware
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores, isWebhookRateLimitExempt } from './middleware/rateLimit';
@@ -176,6 +177,7 @@ if (process.env.NODE_ENV === 'production') {
 let cacheService: CacheService;
 let apiKeyService: ApiKeyService;
 let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
 async function initializeServices() {
   try {
@@ -207,6 +209,33 @@ async function initializeServices() {
       serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     };
     supabaseService = new SupabaseService(dbConfig);
+
+    // The data layer (`services/data/index.ts`): the same domain functions the
+    // facade delegates to, bound ONCE to the client and to their `deps`. Route
+    // families flipped off `SupabaseService` are injected with this instead.
+    // `host` carries the three deps that still need the facade instance and
+    // shrinks to nothing as the remaining importers are flipped — see
+    // `docs/data-layer-wiring.md`.
+    dataLayer = createDataLayer({
+      client: supabaseService.getClient(),
+      supabaseUrl: dbConfig.url,
+      host: {
+        legacyService: supabaseService,
+        incrementUserStatsAndAwardBadges: (userId, increments) =>
+          supabaseService.incrementUserStatsAndAwardBadges(userId, increments),
+        deleteUserAccountFully: async (userId) =>
+          (await import('./services/userDataLifecycle')).deleteUserAccountFully(
+            supabaseService,
+            userId,
+          ),
+        exportUserDataArchive: async (userId) =>
+          (await import('./services/userDataLifecycle')).exportUserDataArchive(
+            supabaseService,
+            userId,
+          ),
+      },
+    });
+
     const { setIdempotencyClient } = await import('./middleware/idempotency');
     setIdempotencyClient(() => supabaseService.getClient());
 
@@ -244,7 +273,7 @@ async function initializeServices() {
     const { initializeSitemapRoutes } = await import('./routes/sitemap');
 
     initializeUserRoutes(supabaseService, cacheService);
-    initializeGroupRoutes(supabaseService, cacheService);
+    initializeGroupRoutes(dataLayer, cacheService);
     initializeMessageRoutes(supabaseService, cacheService);
     initializeNotificationRoutes(supabaseService, cacheService);
     initializeTestRoutes(supabaseService, cacheService);
