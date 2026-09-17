@@ -561,7 +561,7 @@ router.post(
       // owner's followers — "X is collaborating on Y" is their news, and the
       // collaborator themselves already knows.
       const { getActivityFeedService } = await import('../services/activityFeed');
-      await getActivityFeedService(legacyService()).record({
+      await getActivityFeedService(dataLayer).record({
         actorId: userId,
         verb: 'added_deck_collaborator',
         objectType: 'deck',

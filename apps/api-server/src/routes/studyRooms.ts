@@ -5,7 +5,6 @@
 import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { getStudyRoomsService } from '../services/studyRooms';
 import { PublicError } from '../utils/safeError';
@@ -14,14 +13,6 @@ import { requireAuthUserId } from '../utils/requestAuth';
 
 const router = Router();
 let dataLayer: DataLayer;
-
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 
 export const initializeStudyRoomRoutes = (layer: DataLayer): void => {
   dataLayer = layer;
@@ -53,7 +44,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudyRoomsService(legacyService()).list(userId, {
+      const data = await getStudyRoomsService(dataLayer).list(userId, {
         communityId: uuidParam(req.query.communityId),
         courseId: uuidParam(req.query.courseId),
       });
@@ -78,7 +69,7 @@ router.post(
         topic?: string;
         title?: string;
       };
-      const data = await getStudyRoomsService(legacyService()).joinOrCreate(userId, body);
+      const data = await getStudyRoomsService(dataLayer).joinOrCreate(userId, body);
       res.status(201).json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -93,7 +84,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudyRoomsService(legacyService()).get(userId, req.params.id);
+      const data = await getStudyRoomsService(dataLayer).get(userId, req.params.id);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -108,7 +99,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudyRoomsService(legacyService()).join(userId, req.params.id);
+      const data = await getStudyRoomsService(dataLayer).join(userId, req.params.id);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -123,7 +114,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudyRoomsService(legacyService()).leave(userId, req.params.id);
+      const data = await getStudyRoomsService(dataLayer).leave(userId, req.params.id);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);

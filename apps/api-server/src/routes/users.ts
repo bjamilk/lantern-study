@@ -187,7 +187,7 @@ async function withInstitution<T extends { institutionId?: string | null }>(user
   const cacheKey = `institution:${institutionId}`;
   let institution = (await cacheService.get(cacheKey)) as { id: string; name: string; slug: string } | null;
   if (!institution) {
-    institution = await getAcademicCoursesService(legacyService()).resolveInstitution(institutionId);
+    institution = await getAcademicCoursesService(dataLayer).resolveInstitution(institutionId);
     if (institution) await cacheService.set(cacheKey, institution, 600);
   }
   return { ...user, institution: institution ?? null };
@@ -810,7 +810,7 @@ router.put(
       } else {
         try {
           selectedInstitutionId = (
-            await getAcademicCoursesService(legacyService()).assertSelectableInstitution(
+            await getAcademicCoursesService(dataLayer).assertSelectableInstitution(
               String(updateData.institutionId)
             )
           ).id;
@@ -889,7 +889,7 @@ router.put(
     // Best-effort inside the service; a stale membership must not fail a save.
     if (ACADEMIC_PROFILE_FIELDS.some((field) => updateData[field] !== undefined)) {
       const { getCommunitiesService } = await import('../services/communities');
-      await getCommunitiesService(legacyService()).refreshAutoMemberships(userId);
+      await getCommunitiesService(dataLayer).refreshAutoMemberships(userId);
     }
 
     // Write-through: a chosen institution also seeds the marketplace campus

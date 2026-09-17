@@ -435,8 +435,8 @@ export class MarketplaceStudyPacksService {
 
     // Academic feed (Phase 3 · M): announce the publish to the creator's
     // followers. Best-effort — the listing is already live.
-    const { getActivityFeedService } = await import('./activityFeed');
-    await getActivityFeedService(this.supabaseService).record({
+    const { getActivityFeedService, feedHostFromFlat } = await import('./activityFeed');
+    await getActivityFeedService(feedHostFromFlat(this.supabaseService)).record({
       actorId: userId,
       verb: 'published_pack',
       objectType: 'listing',

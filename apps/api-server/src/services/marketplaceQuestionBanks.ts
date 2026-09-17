@@ -266,8 +266,8 @@ export class MarketplaceQuestionBanksService {
     await getCreatorsService(this.supabaseService).refreshStats(userId);
 
     // Academic feed (Phase 3 · M) — best-effort; the listing is already live.
-    const { getActivityFeedService } = await import('./activityFeed');
-    await getActivityFeedService(this.supabaseService).record({
+    const { getActivityFeedService, feedHostFromFlat } = await import('./activityFeed');
+    await getActivityFeedService(feedHostFromFlat(this.supabaseService)).record({
       actorId: userId,
       verb: 'published_bank',
       objectType: 'listing',

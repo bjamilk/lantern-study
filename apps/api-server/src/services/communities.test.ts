@@ -85,10 +85,11 @@ function makeService(opts: {
     rpc: () => Promise.resolve({ data: null, error: null }),
   };
   const service = new CommunitiesService({
-    getClient: () => db,
-    listBlockedUserIds: async () => [],
-    isPlatformAdmin: async () => opts.isPlatformAdmin === true,
-  } as never);
+    getClient: () => db as never,
+    directMessages: { listBlockedUserIds: async () => [] },
+    client: { isPlatformAdmin: async () => opts.isPlatformAdmin === true },
+    readState: { getAllGroupUnreadCounts: async () => ({}) },
+  });
   return { service, writes, selects };
 }
 
@@ -376,10 +377,11 @@ describe('the community gate (assertCanAccessCommunities)', () => {
       rpc: () => Promise.resolve({ data: null, error: null }),
     };
     return new CommunitiesService({
-      getClient: () => db,
-      listBlockedUserIds: async () => [],
-      isPlatformAdmin: async () => false,
-    } as never);
+      getClient: () => db as never,
+      directMessages: { listBlockedUserIds: async () => [] },
+      client: { isPlatformAdmin: async () => false },
+      readState: { getAllGroupUnreadCounts: async () => ({}) },
+    });
   }
 
   it('refuses a half-filled academic profile with 403, not 500', async () => {
@@ -412,10 +414,11 @@ describe('the community gate (assertCanAccessCommunities)', () => {
       rpc: () => Promise.resolve({ data: null, error: null }),
     };
     const service = new CommunitiesService({
-      getClient: () => db,
-      listBlockedUserIds: async () => [],
-      isPlatformAdmin: async () => true,
-    } as never);
+      getClient: () => db as never,
+      directMessages: { listBlockedUserIds: async () => [] },
+      client: { isPlatformAdmin: async () => true },
+      readState: { getAllGroupUnreadCounts: async () => ({}) },
+    });
     await expect(service.assertCanAccessCommunities(VIEWER)).resolves.toEqual({
       institutionId: null,
     });
@@ -481,10 +484,11 @@ describe('joinDiscoverableGroup', () => {
       },
     };
     const service = new CommunitiesService({
-      getClient: () => db,
-      listBlockedUserIds: async () => [],
-      isPlatformAdmin: async () => false,
-    } as never);
+      getClient: () => db as never,
+      directMessages: { listBlockedUserIds: async () => [] },
+      client: { isPlatformAdmin: async () => false },
+      readState: { getAllGroupUnreadCounts: async () => ({}) },
+    });
     return { service, writes };
   }
 

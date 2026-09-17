@@ -8,7 +8,6 @@
 import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import {
   getCommunitiesService,
@@ -26,14 +25,6 @@ const router = Router();
 export const discoverRouter = Router();
 
 let dataLayer: DataLayer;
-
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `data.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 
 export const initializeCommunityRoutes = (layer: DataLayer): void => {
   dataLayer = layer;
@@ -82,7 +73,7 @@ router.get(
       return;
     }
 
-    const data = await getCommunitiesService(legacyService()).publicSummaryBySlug(slug);
+    const data = await getCommunitiesService(dataLayer).publicSummaryBySlug(slug);
     if (!data) {
       // Unknown AND private answer the same way: the card must not become an
       // oracle for whether a private room exists.
@@ -105,7 +96,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getCommunitiesService(legacyService()).listMine(userId);
+    const data = await getCommunitiesService(dataLayer).listMine(userId);
     res.json({ success: true, data });
   })
 );
@@ -128,7 +119,7 @@ router.post(
         endsAt?: string | null;
         location?: string | null;
       };
-      const data = await getCommunitiesService(legacyService()).createCommunity(userId, body);
+      const data = await getCommunitiesService(dataLayer).createCommunity(userId, body);
       res.status(201).json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -153,8 +144,8 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      await getCommunitiesService(legacyService()).assertCanAccessCommunities(userId);
-      const data = await getCommunityModerationService(legacyService()).joinByCode(
+      await getCommunitiesService(dataLayer).assertCanAccessCommunities(userId);
+      const data = await getCommunityModerationService(dataLayer).joinByCode(
         userId,
         (req.body ?? {}).code
       );
@@ -173,7 +164,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunityModerationService(legacyService()).listInvites(
+      const data = await getCommunityModerationService(dataLayer).listInvites(
         userId,
         req.params.communityId
       );
@@ -193,7 +184,7 @@ router.post(
     if (!userId) return;
     try {
       const body = (req.body ?? {}) as { expiresInMs?: unknown; maxUses?: unknown };
-      const data = await getCommunityModerationService(legacyService()).createInvite(
+      const data = await getCommunityModerationService(dataLayer).createInvite(
         userId,
         req.params.communityId,
         body
@@ -213,7 +204,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunityModerationService(legacyService()).revokeInvite(
+      const data = await getCommunityModerationService(dataLayer).revokeInvite(
         userId,
         req.params.communityId,
         req.params.code
@@ -236,7 +227,7 @@ router.post(
     const actorId = requireAuthUserId(req, res);
     if (!actorId) return;
     try {
-      const data = await getCommunityModerationService(legacyService()).setMemberRole(
+      const data = await getCommunityModerationService(dataLayer).setMemberRole(
         actorId,
         req.params.communityId,
         req.params.userId,
@@ -262,7 +253,7 @@ router.post(
     if (!actorId) return;
     try {
       const body = (req.body ?? {}) as { duration?: unknown; reason?: unknown };
-      const data = await getCommunityModerationService(legacyService()).muteMember(
+      const data = await getCommunityModerationService(dataLayer).muteMember(
         actorId,
         req.params.communityId,
         req.params.userId,
@@ -286,7 +277,7 @@ router.delete(
     const actorId = requireAuthUserId(req, res);
     if (!actorId) return;
     try {
-      const data = await getCommunityModerationService(legacyService()).removePost(
+      const data = await getCommunityModerationService(dataLayer).removePost(
         actorId,
         req.params.communityId,
         req.params.postId,
@@ -313,7 +304,7 @@ router.post(
     if (!actorId) return;
     try {
       const body = (req.body ?? {}) as { answerMessageId?: unknown };
-      const data = await getCommunityModerationService(legacyService()).markPostAnswered(
+      const data = await getCommunityModerationService(dataLayer).markPostAnswered(
         actorId,
         req.params.communityId,
         req.params.postId,
@@ -334,7 +325,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).getBySlug(userId, req.params.slug);
+      const data = await getCommunitiesService(dataLayer).getBySlug(userId, req.params.slug);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -352,7 +343,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).listMembers(
+      const data = await getCommunitiesService(dataLayer).listMembers(
         userId,
         req.params.communityId,
         {
@@ -377,7 +368,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).listChannels(
+      const data = await getCommunitiesService(dataLayer).listChannels(
         userId,
         req.params.communityId
       );
@@ -398,7 +389,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).openLounge(
+      const data = await getCommunitiesService(dataLayer).openLounge(
         userId,
         req.params.communityId
       );
@@ -417,7 +408,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).join(userId, req.params.communityId);
+      const data = await getCommunitiesService(dataLayer).join(userId, req.params.communityId);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -433,7 +424,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).leave(userId, req.params.communityId);
+      const data = await getCommunitiesService(dataLayer).leave(userId, req.params.communityId);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -452,7 +443,7 @@ discoverRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).discoverCommunities(userId, {
+      const data = await getCommunitiesService(dataLayer).discoverCommunities(userId, {
         q: str(req.query.q),
         kind: str(req.query.kind),
         institutionId: str(req.query.institutionId),
@@ -474,7 +465,7 @@ discoverRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).discoverGroups(userId, {
+      const data = await getCommunitiesService(dataLayer).discoverGroups(userId, {
         q: str(req.query.q),
         communityId: str(req.query.communityId),
         courseId: str(req.query.courseId),
@@ -495,7 +486,7 @@ discoverRouter.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).joinDiscoverableGroup(
+      const data = await getCommunitiesService(dataLayer).joinDiscoverableGroup(
         userId,
         req.params.groupId
       );
@@ -513,7 +504,7 @@ discoverRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(legacyService()).discoverPeople(userId, {
+      const data = await getCommunitiesService(dataLayer).discoverPeople(userId, {
         q: str(req.query.q),
         institutionId: str(req.query.institutionId),
         courseId: str(req.query.courseId),

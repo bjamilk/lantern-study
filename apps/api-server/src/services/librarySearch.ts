@@ -518,8 +518,7 @@ export class LibrarySearchService {
     private data: DataLayer,
     courses?: AcademicCoursesService
   ) {
-    // TRANSITIONAL (M2d): `AcademicCoursesService` still takes the `SupabaseService` facade whole.
-    this.courses = courses ?? new AcademicCoursesService(data.legacyService);
+    this.courses = courses ?? new AcademicCoursesService(data);
   }
 
   private get db() {

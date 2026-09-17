@@ -77,8 +77,8 @@ function makeDb(script: Step[], opts: { rpc?: StepResult; isPlatformAdmin?: bool
   };
   const service = new CommunityModerationService({
     getClient: () => db,
-    isPlatformAdmin: async () => opts.isPlatformAdmin === true,
-  } as never);
+    client: { isPlatformAdmin: async () => opts.isPlatformAdmin === true },
+  });
   return { service, queries, script, db };
 }
 

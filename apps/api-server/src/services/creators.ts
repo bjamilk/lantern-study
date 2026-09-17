@@ -89,12 +89,12 @@ export class CreatorsService {
     // Phase 3: a follow is both feed-worthy and a learning connection. Actor is
     // the FOLLOWEE — they are the one whose work reached someone new — which is
     // also why this is not symmetric with unfollow.
-    const [{ getActivityFeedService }, { getLearningConnectionsService }] = await Promise.all([
+    const [{ getActivityFeedService, feedHostFromFlat }, { getLearningConnectionsService }] = await Promise.all([
       import('./activityFeed'),
       import('./learningConnections'),
     ]);
     await Promise.all([
-      getActivityFeedService(this.supabaseService).record({
+      getActivityFeedService(feedHostFromFlat(this.supabaseService)).record({
         actorId: followerId,
         verb: 'followed_creator',
         objectType: 'profile',

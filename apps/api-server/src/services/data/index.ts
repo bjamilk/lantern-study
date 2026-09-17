@@ -255,8 +255,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
       );
   const recordActivity: notesData.NotesDeps["recordActivity"] = async (input) => {
     const { getActivityFeedService } = await import("../activityFeed");
-    // TRANSITIONAL (M3): `activityFeed` still takes the facade whole.
-    await getActivityFeedService(host.legacyService).record(input);
+    await getActivityFeedService(layer).record(input);
   };
 
   // --- deps literals, one per domain ---------------------------------------

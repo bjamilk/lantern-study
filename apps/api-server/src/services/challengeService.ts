@@ -711,7 +711,7 @@ export class ChallengeService {
       {
         const { getActivityFeedService } = await import('./activityFeed');
         // TRANSITIONAL (M2d): `getActivityFeedService` still takes the `SupabaseService` facade whole.
-        await getActivityFeedService(this.data.legacyService).record({
+        await getActivityFeedService(this.data).record({
           actorId: userId,
           verb: 'completed_challenge',
           objectType: 'challenge',

@@ -89,7 +89,7 @@ router.get(
     if (!userId) return;
     const status = (req.query.status as 'active' | 'archived' | 'all' | undefined) ?? 'active';
     const academicYear = typeof req.query.academicYear === 'string' && req.query.academicYear ? req.query.academicYear : undefined;
-    const data = await getAcademicCoursesService(legacyService()).listUserCourses(userId, { status, academicYear });
+    const data = await getAcademicCoursesService(dataLayer).listUserCourses(userId, { status, academicYear });
     res.json({ success: true, data });
   })
 );
@@ -104,7 +104,7 @@ router.put(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getAcademicCoursesService(legacyService()).setUserCourses(userId, {
+      const data = await getAcademicCoursesService(dataLayer).setUserCourses(userId, {
         courseIds: req.body?.courseIds,
         academicYear: req.body?.academicYear,
       });
@@ -126,7 +126,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getAcademicCoursesService(legacyService()).archiveSemester(userId, req.body?.academicYear);
+      const data = await getAcademicCoursesService(dataLayer).archiveSemester(userId, req.body?.academicYear);
       res.json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -145,7 +145,7 @@ router.patch(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getAcademicCoursesService(legacyService()).updateUserCourse(userId, req.params.courseId, {
+      const data = await getAcademicCoursesService(dataLayer).updateUserCourse(userId, req.params.courseId, {
         examDate: req.body?.examDate,
         semester: req.body?.semester,
         status: req.body?.status,
@@ -172,7 +172,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const removed = await getAcademicCoursesService(legacyService()).removeUserCourse(
+      const removed = await getAcademicCoursesService(dataLayer).removeUserCourse(
         userId,
         req.params.courseId,
         typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined

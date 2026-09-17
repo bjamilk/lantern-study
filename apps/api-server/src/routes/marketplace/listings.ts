@@ -737,7 +737,7 @@ router.put(
 
     if ((courseWasProvided || nextTopicId !== undefined) && updatedListing) {
       const { getAcademicCoursesService } = await import('../../services/academicCourses');
-      await getAcademicCoursesService(supabaseService).setListingCourse(
+      await getAcademicCoursesService(dataLayer).setListingCourse(
         id,
         courseWasProvided ? nextCourseId : undefined,
         nextTopicId

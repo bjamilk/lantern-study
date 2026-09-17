@@ -72,13 +72,13 @@ function makeDb(script: Step[], unread: Record<string, number> = {}) {
     rpc: () => Promise.resolve({ data: null, error: null }),
   };
   const service = new CommunitiesService({
-    getClient: () => db,
-    listBlockedUserIds: async () => [],
+    getClient: () => db as never,
+    directMessages: { listBlockedUserIds: async () => [] },
     // listMembers asks whether the caller is a platform admin before it
     // decides whether to attach moderator-only mute state to the roster.
-    isPlatformAdmin: async () => false,
-    getAllGroupUnreadCounts: async () => unread,
-  } as never);
+    client: { isPlatformAdmin: async () => false },
+    readState: { getAllGroupUnreadCounts: async () => unread },
+  });
   return { service, queries, script };
 }
 
