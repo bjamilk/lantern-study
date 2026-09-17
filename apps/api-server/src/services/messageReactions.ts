@@ -32,7 +32,7 @@
  * its job, not a failure. This needs no migration, which matters: the founder
  * hand-applies those and the API always deploys first.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 export type ReactionScope = 'group' | 'dm';
 
@@ -87,13 +87,13 @@ export class ReactionWriteError extends Error {
  * `getAuthorizedDmMessage`) — this only writes.
  */
 export async function addMessageReaction(
-  service: SupabaseService,
+  layer: DataLayer,
   messageId: string,
   userId: string,
   emoji: string,
   scope: ReactionScope = 'group'
 ): Promise<{ reactions: Record<string, number> }> {
-  const { error } = await service
+  const { error } = await layer
     .getClient()
     .from('message_reactions')
     .insert({ [reactionParentColumn(scope)]: messageId, user_id: userId, emoji });
@@ -107,7 +107,7 @@ export async function addMessageReaction(
 
   // The AFTER INSERT trigger has already recounted the parent, so this read is
   // the true map — including the duplicate case, where it is unchanged.
-  return service.readMessageReactions(messageId, scope);
+  return layer.groupMessages.readMessageReactions(messageId, scope);
 }
 
 /**
@@ -115,13 +115,13 @@ export async function addMessageReaction(
  * that is not there is a no-op, for the same reason the add is idempotent.
  */
 export async function removeMessageReaction(
-  service: SupabaseService,
+  layer: DataLayer,
   messageId: string,
   userId: string,
   emoji: string,
   scope: ReactionScope = 'group'
 ): Promise<{ reactions: Record<string, number> }> {
-  const { error } = await service
+  const { error } = await layer
     .getClient()
     .from('message_reactions')
     .delete()
@@ -136,5 +136,5 @@ export async function removeMessageReaction(
     throw new ReactionWriteError(REACTION_REMOVE_FAILED, 500);
   }
 
-  return service.readMessageReactions(messageId, scope);
+  return layer.groupMessages.readMessageReactions(messageId, scope);
 }

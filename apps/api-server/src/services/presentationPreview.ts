@@ -1,4 +1,4 @@
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import {
   assertValidOfficeZip,
   buildPresentationStudyText,
@@ -24,7 +24,7 @@ export interface PresentationPreviewJobParams {
 }
 
 export async function runPresentationPreviewJob(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: PresentationPreviewJobParams
 ): Promise<void> {
   const { noteId, attachmentId, storagePath, fileName } = params;
@@ -33,7 +33,7 @@ export async function runPresentationPreviewJob(
   try {
     let buffer = params.buffer;
     if (!buffer) {
-      const downloaded = await supabaseService.downloadNoteFile(storagePath);
+      const downloaded = await layer.notes.downloadNoteFile(storagePath);
       buffer = downloaded.buffer;
     }
     if (/\.pptx$/i.test(fileName)) {
@@ -49,7 +49,7 @@ export async function runPresentationPreviewJob(
       await convertPresentationToPdf(buffer, fileName, { noteId });
 
     if (!pdfBuffer) {
-      await supabaseService.updateNoteAttachment(attachmentId, {
+      await layer.notes.updateNoteAttachment(attachmentId, {
         extractedText: studyText,
         metadata: {
           ...meta,
@@ -88,18 +88,18 @@ export async function runPresentationPreviewJob(
     }
 
     const previewStoragePath = storagePath.replace(/\.[^.]+$/, '') + '-preview.pdf';
-    await supabaseService.uploadNoteFile({
+    await layer.notes.uploadNoteFile({
       storagePath: previewStoragePath,
       buffer: pdfBuffer,
       contentType: 'application/pdf',
     });
-    const previewUrl = await supabaseService.createSignedNoteFileUrl(previewStoragePath);
+    const previewUrl = await layer.notes.createSignedNoteFileUrl(previewStoragePath);
 
     // Page model (walk-through): the Gotenberg PDF is the only paginable view
     // of a deck, so this is the moment slides become pages. Best effort — the
     // preview and the extracted text are this job's real output and neither
     // depends on the page rows.
-    await persistPagesFromPdfBuffer(supabaseService, attachmentId, pdfBuffer, {
+    await persistPagesFromPdfBuffer(layer, attachmentId, pdfBuffer, {
       noteId,
       source: 'presentation_preview',
     });
@@ -121,7 +121,7 @@ export async function runPresentationPreviewJob(
         : {}),
     };
 
-    await supabaseService.updateNoteAttachment(attachmentId, {
+    await layer.notes.updateNoteAttachment(attachmentId, {
       extractedText: studyText,
       metadata: finalMeta,
     });
@@ -151,7 +151,7 @@ export async function runPresentationPreviewJob(
         },
         undefined,
         () =>
-          runNoteOcrJob(supabaseService, {
+          runNoteOcrJob(layer, {
             noteId,
             attachmentId,
             storagePath: previewStoragePath,
@@ -169,7 +169,7 @@ export async function runPresentationPreviewJob(
     }
   } catch (err) {
     logger.error('Presentation preview job error', { noteId, attachmentId, err });
-    await supabaseService
+    await layer.notes
       .updateNoteAttachment(attachmentId, {
         metadata: {
           ...meta,

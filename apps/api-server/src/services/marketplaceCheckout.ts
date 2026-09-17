@@ -7,7 +7,7 @@ import {
 } from '@lantern/shared/marketplace';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
 import { PublicError } from '../utils/safeError';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { getMarketplaceAddressesService } from './marketplaceAddresses';
 import { getMarketplaceCartService } from './marketplaceCart';
 import {
@@ -24,10 +24,10 @@ export type CheckoutGroupInput = {
 };
 
 export class MarketplaceCheckoutService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   async getCheckout(checkoutId: string, buyerId: string) {
@@ -49,12 +49,14 @@ export class MarketplaceCheckoutService {
       buyerEmail?: string;
     },
   ) {
-    const cart = await getMarketplaceCartService(this.supabaseService).listCart(buyerId);
+    const cart = await getMarketplaceCartService(this.data).listCart(buyerId);
     if (cart.length === 0) throw new PublicError('Cart is empty');
 
-    const ordersService = getMarketplaceOrdersService(this.supabaseService);
-    const sellerTools = getMarketplaceSellerToolsService(this.supabaseService);
-    const addresses = getMarketplaceAddressesService(this.supabaseService);
+    // TRANSITIONAL (M2d): `getMarketplaceOrdersService` still takes the `SupabaseService` facade whole.
+    const ordersService = getMarketplaceOrdersService(this.data.legacyService);
+    // TRANSITIONAL (M2d): `getMarketplaceSellerToolsService` still takes the `SupabaseService` facade whole.
+    const sellerTools = getMarketplaceSellerToolsService(this.data.legacyService);
+    const addresses = getMarketplaceAddressesService(this.data);
 
     const modeBySeller = new Map(
       (input.groups || []).map((group) => [group.sellerId, group] as const),
@@ -70,7 +72,7 @@ export class MarketplaceCheckoutService {
     const prepared: PreparedLine[] = [];
 
     for (const item of cart) {
-      const listing = item.listing || (await this.supabaseService.getMarketplaceListingById(item.listing_id));
+      const listing = item.listing || (await this.data.marketplace.getMarketplaceListingById(item.listing_id));
       if (!listing) throw new PublicError('A cart listing is no longer available');
       if (isDigitalListingKind(listing.listing_kind)) {
         throw new PublicError('Digital products are bought instantly and cannot be checked out from the cart');
@@ -145,7 +147,8 @@ export class MarketplaceCheckoutService {
       const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
         './marketplacePayments'
       );
-      const payments = getMarketplacePaymentsService(this.supabaseService);
+      // TRANSITIONAL (M2d): `getMarketplacePaymentsService` still takes the `SupabaseService` facade whole.
+      const payments = getMarketplacePaymentsService(this.data.legacyService);
       const paystackOn = marketplacePaystackEnabled();
 
       for (const line of prepared) {
@@ -245,8 +248,8 @@ export class MarketplaceCheckoutService {
 let checkoutService: MarketplaceCheckoutService | null = null;
 
 export function getMarketplaceCheckoutService(
-  supabaseService: SupabaseService,
+  data: DataLayer,
 ): MarketplaceCheckoutService {
-  if (!checkoutService) checkoutService = new MarketplaceCheckoutService(supabaseService);
+  if (!checkoutService) checkoutService = new MarketplaceCheckoutService(data);
   return checkoutService;
 }

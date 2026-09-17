@@ -1,5 +1,5 @@
 import { processJobSavedSearchAlerts } from "./jobAlerts";
-import type { SupabaseService } from "./supabase";
+import type { DataLayer } from "./data";
 
 type Row = Record<string, unknown>;
 
@@ -70,10 +70,12 @@ function makePosting(overrides: Row = {}): Row {
 function makeService(client: unknown, createNotification = jest.fn()) {
   return {
     getClient: () => client,
-    createNotification: createNotification.mockResolvedValue({
-      id: "notification-1",
-    }),
-  } as unknown as SupabaseService;
+    notifications: {
+      createNotification: createNotification.mockResolvedValue({
+        id: "notification-1",
+      }),
+    },
+  } as unknown as DataLayer;
 }
 
 describe("processJobSavedSearchAlerts", () => {

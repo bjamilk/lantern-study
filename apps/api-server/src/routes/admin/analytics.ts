@@ -87,14 +87,13 @@ router.get('/stats', adminRoute(async (req: any, res: any) => {
     deckCount,
     offlineBundleCount,
     openDisputeCount,
-  } = await adminData.getDashboardCounts(supabaseService, { todayStart, last7d, last24h });
+  } = await adminData.getDashboardCounts(dataLayer, { todayStart, last7d, last24h });
 
   // Distinct study_activity users in the last 7 days (same definition as Analytics tab WAU/DAU family).
   const sevenDaysAgoDate = new Date();
   sevenDaysAgoDate.setUTCDate(sevenDaysAgoDate.getUTCDate() - 6);
   const sevenDaysAgoYmd = sevenDaysAgoDate.toISOString().slice(0, 10);
-  const { data: recentStudyUsers } = await adminData.listRecentStudyActivityUsers(
-    supabaseService,
+  const { data: recentStudyUsers } = await adminData.listRecentStudyActivityUsers(dataLayer,
     sevenDaysAgoYmd
   );
   const activeUsers7d = new Set((recentStudyUsers || []).map((r: any) => r.user_id).filter(Boolean)).size;
@@ -103,7 +102,7 @@ router.get('/stats', adminRoute(async (req: any, res: any) => {
   // usage-tracking change); the old events-times-flat-guess only as fallback
   // for windows that predate token recording. Blended $/1M tokens is
   // env-tunable because it is pricing, not code.
-  const { data: tokenRows } = await adminData.listAiTokenEstimates(supabaseService, last7d, 10000);
+  const { data: tokenRows } = await adminData.listAiTokenEstimates(dataLayer, last7d, 10000);
   const aiTokens7d = (tokenRows || []).reduce(
     (sum: number, r: any) => sum + (typeof r.token_estimate === 'number' ? r.token_estimate : 0),
     0
@@ -176,7 +175,7 @@ router.get('/ai-analytics', adminRoute(async (req: any, res: any) => {
   const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 7));
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data, error } = await adminData.listAiEvents(supabaseService, since, 5000);
+  const { data, error } = await adminData.listAiEvents(dataLayer, since, 5000);
   if (error) throw error;
 
   const byEvent: Record<string, number> = {};
@@ -207,7 +206,7 @@ router.get('/ai-tokens', adminRoute(async (req: any, res: any) => {
   const since = daysAgoIso(days);
   const ROW_LIMIT = 10000;
 
-  const { data, error } = await adminData.listAiInferenceRows(supabaseService, since, ROW_LIMIT);
+  const { data, error } = await adminData.listAiInferenceRows(dataLayer, since, ROW_LIMIT);
   if (error) throw error;
 
   const rows = data || [];
@@ -236,7 +235,7 @@ router.get('/events', adminRoute(async (req: any, res: any) => {
   const since = daysAgoIso(days);
   const ROW_LIMIT = 10000;
 
-  const { data, error } = await adminData.listProductEvents(supabaseService, since, ROW_LIMIT);
+  const { data, error } = await adminData.listProductEvents(dataLayer, since, ROW_LIMIT);
   if (error) throw error;
 
   const rows = data || [];
@@ -256,7 +255,7 @@ router.get('/ai-analytics/users', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
   const since = daysAgoIso(days);
 
-  const { data, error } = await adminData.listAiEventsByUser(supabaseService, since, 20000);
+  const { data, error } = await adminData.listAiEventsByUser(dataLayer, since, 20000);
   if (error) throw error;
 
   const usageMap: Record<string, number> = {};
@@ -273,7 +272,7 @@ router.get('/ai-analytics/users', adminRoute(async (req: any, res: any) => {
   const userIds = top.map((u) => u.userId).filter((id) => id !== 'unknown');
   const authMap = await getAuthUserInfoForUserIds(userIds);
 
-  const { data: profileRows } = await adminData.getProfileSummaries(supabaseService, userIds);
+  const { data: profileRows } = await adminData.getProfileSummaries(dataLayer, userIds);
   const profileMap = Object.fromEntries((profileRows || []).map((p: any) => [p.id, p]));
 
   res.json({
@@ -294,10 +293,10 @@ router.get('/ai-analytics/users', adminRoute(async (req: any, res: any) => {
 router.get('/activity', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
   const [usersRes, reportsRes, listingsRes, aiRes] = await Promise.all([
-    adminData.listRecentUsers(supabaseService, limit),
-    adminData.listRecentMarketplaceReports(supabaseService, limit),
-    adminData.listRecentListings(supabaseService, limit),
-    adminData.listRecentAiEvents(supabaseService, limit),
+    adminData.listRecentUsers(dataLayer, limit),
+    adminData.listRecentMarketplaceReports(dataLayer, limit),
+    adminData.listRecentListings(dataLayer, limit),
+    adminData.listRecentAiEvents(dataLayer, limit),
   ]);
 
   const activities: Array<{
@@ -361,7 +360,7 @@ router.get('/activity', adminRoute(async (req: any, res: any) => {
 // GET /api/v1/admin/audit
 router.get('/audit', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 30));
-  const { data, error } = await adminData.listAuditEntries(supabaseService, limit);
+  const { data, error } = await adminData.listAuditEntries(dataLayer, limit);
 
   if (error) {
     const code = error.code || '';
@@ -376,7 +375,7 @@ router.get('/audit', adminRoute(async (req: any, res: any) => {
 
   const actorIds = [...new Set((data || []).map((r: any) => r.actor_id).filter(Boolean))] as string[];
   const { data: actors } = actorIds.length
-    ? await adminData.getProfileSummaries(supabaseService, actorIds)
+    ? await adminData.getProfileSummaries(dataLayer, actorIds)
     : { data: [] };
   const actorMap = Object.fromEntries((actors || []).map((a: any) => [a.id, a]));
 

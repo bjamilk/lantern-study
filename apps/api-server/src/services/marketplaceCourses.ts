@@ -20,7 +20,7 @@
  * read a list of course codes. Images ride only on the per-course listing rows,
  * where the client decides whether to render them.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 import type { MarketplaceCourseSummary } from '@lantern/shared/marketplace';
 
@@ -129,10 +129,10 @@ function toCard(row: Record<string, any>): CourseListingCard {
 }
 
 export class MarketplaceCoursesService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   /**
@@ -329,9 +329,9 @@ export class MarketplaceCoursesService {
 let coursesService: MarketplaceCoursesService | null = null;
 
 export function getMarketplaceCoursesService(
-  supabaseService: SupabaseService
+  data: DataLayer
 ): MarketplaceCoursesService {
-  if (!coursesService) coursesService = new MarketplaceCoursesService(supabaseService);
+  if (!coursesService) coursesService = new MarketplaceCoursesService(data);
   return coursesService;
 }
 

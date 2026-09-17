@@ -282,7 +282,7 @@ router.get(
       return res.json({ success: true, data: cached });
     }
 
-    const data = await getMarketplaceCoursesService(supabaseService).listCoursesWithListings({
+    const data = await getMarketplaceCoursesService(dataLayer).listCoursesWithListings({
       institutionId,
       limit,
     });
@@ -315,7 +315,7 @@ router.get(
       return res.json({ success: true, data: cached });
     }
 
-    const data = await getMarketplaceCoursesService(supabaseService).listListingsForCourse(
+    const data = await getMarketplaceCoursesService(dataLayer).listListingsForCourse(
       courseId,
       { limit, offset }
     );

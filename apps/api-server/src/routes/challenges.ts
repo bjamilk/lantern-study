@@ -16,9 +16,7 @@ let challengeService: ChallengeService;
 let cacheService: CacheService;
 
 export const initializeChallengeRoutes = (layer: DataLayer, cache: CacheService) => {
-  // TRANSITIONAL (M2a): ChallengeService still takes the `SupabaseService`
-  // facade whole; it is the same instance the data layer is built from.
-  challengeService = new ChallengeService(layer.legacyService);
+  challengeService = new ChallengeService(layer);
   cacheService = cache;
 };
 

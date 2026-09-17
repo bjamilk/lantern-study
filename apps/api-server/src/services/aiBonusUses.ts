@@ -17,7 +17,7 @@
  * as not granted, and the app charges the daily allowance exactly as it does
  * today. One warn log says so, once, rather than one per request.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 import {
   REFERRAL_BONUS_AI_USES_CAP,
@@ -37,17 +37,17 @@ export interface BonusGrantResult {
   unavailable?: boolean;
 }
 
-let supabaseService: SupabaseService | null = null;
+let layer: DataLayer | null = null;
 let warnedUnavailable = false;
 
-export function initializeAiBonusUses(supabase: SupabaseService): void {
-  supabaseService = supabase;
+export function initializeAiBonusUses(dataLayer: DataLayer): void {
+  layer = dataLayer;
   warnedUnavailable = false;
 }
 
 /** Test seam — lets the suite install a stub client without a real server. */
-export function __setAiBonusSupabaseForTests(stub: SupabaseService | null): void {
-  supabaseService = stub;
+export function __setAiBonusSupabaseForTests(stub: DataLayer | null): void {
+  layer = stub;
   warnedUnavailable = false;
 }
 
@@ -85,7 +85,7 @@ function warnOnce(operation: string, error: unknown): void {
 }
 
 function client() {
-  return supabaseService ? supabaseService.getClient() : null;
+  return layer ? layer.getClient() : null;
 }
 
 /** Banked balance for one account. 0 when the ledger is not there yet. */

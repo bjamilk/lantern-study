@@ -229,11 +229,11 @@ async function initializeServices() {
     // Initialize API key service (requires Supabase service role client)
     apiKeyService = new (await import('./services/apiKey')).ApiKeyService();
     const { initializeApiKeyService } = await import('./services/apiKey');
-    initializeApiKeyService(supabaseService);
+    initializeApiKeyService(dataLayer);
 
     // Initialize auth middleware with supabase service
     const { initializeAuthMiddleware } = await import('./middleware/auth');
-    initializeAuthMiddleware(supabaseService);
+    initializeAuthMiddleware(supabaseService, dataLayer);
 
     const { initializeAuthorizeResource, assertProductionAuthStrict } = await import('./middleware/authorizeResource');
     initializeAuthorizeResource(supabaseService);
@@ -278,7 +278,7 @@ async function initializeServices() {
     initializeAdminRoutes(dataLayer, cacheService);
     initializeAICompanionRoutes(dataLayer);
     initializeAIRoutes(dataLayer);
-    initializeAiBonusUses(supabaseService);
+    initializeAiBonusUses(dataLayer);
     initializeNotesRoutes(dataLayer, cacheService);
     initializeChallengeRoutes(dataLayer, cacheService);
     initializeAuthRoutes(dataLayer, cacheService);
@@ -302,10 +302,10 @@ async function initializeServices() {
     initializeSchoolRoutes(dataLayer);
 
     const { initializeWalletService } = await import('./services/walletService');
-    initializeWalletService(supabaseService, cacheService);
+    initializeWalletService(dataLayer, cacheService);
 
     const { initializeRecurringBudgetService } = await import('./services/recurringBudget');
-    initializeRecurringBudgetService(supabaseService);
+    initializeRecurringBudgetService(dataLayer);
 
     const { initializeBudgetRoutes } = await import('./routes/budget');
     initializeBudgetRoutes(dataLayer, cacheService);
@@ -315,18 +315,18 @@ async function initializeServices() {
     // double-send retention emails and marketplace alerts.
     const { startDataRetentionJobs } = await import('./services/dataRetention');
     if (!isBullMqEnabled()) {
-      startDataRetentionJobs(supabaseService);
+      startDataRetentionJobs(dataLayer);
     } else {
       logger.info('Data retention cron delegated to BullMQ worker');
     }
 
     const { startMarketplaceAlertJobs } = await import('./services/marketplaceAlerts');
     if (!isBullMqEnabled()) {
-      startMarketplaceAlertJobs(supabaseService);
+      startMarketplaceAlertJobs(dataLayer);
       const { startRetentionJobs } = await import('./services/retentionReminders');
-      startRetentionJobs(supabaseService);
+      startRetentionJobs(dataLayer);
       const { startExamReminderJobs } = await import('./services/examReminders');
-      startExamReminderJobs(supabaseService);
+      startExamReminderJobs(dataLayer);
     } else {
       logger.info('Marketplace alert cron delegated to BullMQ worker');
     }

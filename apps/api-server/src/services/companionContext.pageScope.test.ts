@@ -56,7 +56,7 @@ function mockSupabase() {
   };
   return {
     getClient: () => ({ from: table }),
-    fetchTestResults: async () => [],
+    tests: { fetchTestResults: async () => [] },
   } as any;
 }
 

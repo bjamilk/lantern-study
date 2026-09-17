@@ -18,7 +18,7 @@
  * no-op, so the walk-through says the document has not been split into pages
  * yet rather than inventing them. One warn log says so, once.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 import {
   MAX_OCR_PDF_PAGES,
@@ -122,11 +122,11 @@ function mapRow(row: Record<string, unknown>): NotePageRecord {
 
 /** Read the stored pages for one attachment, in page order. */
 export async function getPages(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   attachmentId: string
 ): Promise<NotePagesResult> {
   if (!attachmentId) return { available: false, reason: 'unsupported', pages: [] };
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from(TABLE)
     .select('attachment_id, page_index, text, image_path, char_count, created_at')
@@ -165,7 +165,7 @@ export interface PageWrite {
  * every writer here is a side effect of a job whose real work already succeeded.
  */
 export async function savePages(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   attachmentId: string,
   pages: PageWrite[]
 ): Promise<{ available: boolean; saved: number }> {
@@ -190,7 +190,7 @@ export async function savePages(
   let saved = 0;
   for (let i = 0; i < rows.length; i += WRITE_CHUNK) {
     const chunk = rows.slice(i, i + WRITE_CHUNK);
-    const { error } = await supabaseService
+    const { error } = await layer
       .getClient()
       .from(TABLE)
       .upsert(chunk, { onConflict: 'attachment_id,page_index' });
@@ -254,14 +254,14 @@ export function resolvePaginableSource(attachment: AttachmentLike): {
  * rather than start from nothing.
  */
 export async function ensurePages(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: { noteId: string; attachmentId: string }
 ): Promise<NotePagesResult & { backfilled: number }> {
-  const existing = await getPages(supabaseService, params.attachmentId);
+  const existing = await getPages(layer, params.attachmentId);
   if (!existing.available) return { ...existing, backfilled: 0 };
   if (existing.pages.length > 0) return { ...existing, backfilled: 0 };
 
-  const attachment = await supabaseService.getNoteAttachment(params.noteId, params.attachmentId);
+  const attachment = await layer.notes.getNoteAttachment(params.noteId, params.attachmentId);
   if (!attachment) {
     return { available: true, reason: 'source_missing', pages: [], backfilled: 0 };
   }
@@ -273,7 +273,7 @@ export async function ensurePages(
 
   let buffer: Buffer;
   try {
-    const downloaded = await supabaseService.downloadNoteFile(storagePath);
+    const downloaded = await layer.notes.downloadNoteFile(storagePath);
     buffer = downloaded.buffer;
   } catch (err) {
     logger.warn('Page backfill could not download the source file', {
@@ -289,7 +289,7 @@ export async function ensurePages(
     return { available: true, reason: 'unreadable', pages: [], backfilled: 0 };
   }
 
-  const write = await savePages(supabaseService, params.attachmentId, pages);
+  const write = await savePages(layer, params.attachmentId, pages);
   if (!write.available) {
     return { available: false, reason: 'schema_missing', pages: [], backfilled: 0 };
   }
@@ -300,7 +300,7 @@ export async function ensurePages(
     source: storagePath,
   });
 
-  const refreshed = await getPages(supabaseService, params.attachmentId);
+  const refreshed = await getPages(layer, params.attachmentId);
   return { ...refreshed, backfilled: write.saved };
 }
 
@@ -328,7 +328,7 @@ export interface NotePageTextResult {
  * and what tells the quiz door to stay disabled.
  */
 export async function getPageText(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: { noteId: string; attachmentId: string; pageIndex: number }
 ): Promise<NotePageTextResult> {
   const pageIndex = Math.floor(Number(params.pageIndex));
@@ -339,12 +339,12 @@ export async function getPageText(
   // The attachment must belong to THIS note. `getPages` is keyed by
   // attachment alone, so without this check a caller could pass a note it owns
   // and an attachment it does not, and read someone else's pages back.
-  const attachment = await supabaseService.getNoteAttachment(params.noteId, params.attachmentId);
+  const attachment = await layer.notes.getNoteAttachment(params.noteId, params.attachmentId);
   if (!attachment) {
     return { available: true, reason: 'page_missing', text: '', pageCount: 0 };
   }
 
-  const result = await ensurePages(supabaseService, {
+  const result = await ensurePages(layer, {
     noteId: params.noteId,
     attachmentId: params.attachmentId,
   });
@@ -378,23 +378,23 @@ export async function getPageText(
  * a later call continues with the pages still missing an image.
  */
 export async function ensurePageImages(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: { noteId: string; attachmentId: string; maxPages?: number }
 ): Promise<{ available: boolean; rendered: number }> {
-  const existing = await getPages(supabaseService, params.attachmentId);
+  const existing = await getPages(layer, params.attachmentId);
   if (!existing.available) return { available: false, rendered: 0 };
 
   const missing = existing.pages.filter((page) => !page.imagePath).map((page) => page.pageIndex);
   if (!missing.length) return { available: true, rendered: 0 };
 
-  const attachment = await supabaseService.getNoteAttachment(params.noteId, params.attachmentId);
+  const attachment = await layer.notes.getNoteAttachment(params.noteId, params.attachmentId);
   if (!attachment) return { available: true, rendered: 0 };
   const { storagePath } = resolvePaginableSource(attachment as AttachmentLike);
   if (!storagePath) return { available: true, rendered: 0 };
 
   let buffer: Buffer;
   try {
-    const downloaded = await supabaseService.downloadNoteFile(storagePath);
+    const downloaded = await layer.notes.downloadNoteFile(storagePath);
     buffer = downloaded.buffer;
   } catch (err) {
     logger.warn('Page image render could not download the source file', {
@@ -418,7 +418,7 @@ export async function ensurePageImages(
       // Path is derived from the source file so deleting the note's folder
       // still takes the page images with it.
       const imagePath = `${storagePath.replace(/\.[^./]+$/, '')}-page-${image.pageIndex}.${normalized.ext}`;
-      await supabaseService.uploadNoteFile({
+      await layer.notes.uploadNoteFile({
         storagePath: imagePath,
         buffer: normalized.buffer,
         contentType: normalized.contentType,
@@ -436,7 +436,7 @@ export async function ensurePageImages(
   }
 
   if (!writes.length) return { available: true, rendered: 0 };
-  const saved = await savePages(supabaseService, params.attachmentId, writes);
+  const saved = await savePages(layer, params.attachmentId, writes);
   return { available: saved.available, rendered: saved.available ? writes.length : 0 };
 }
 
@@ -448,7 +448,7 @@ export async function ensurePageImages(
  * real output, and a page-model failure must never fail or retry that job.
  */
 export async function persistPagesFromPdfBuffer(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   attachmentId: string,
   buffer: Buffer,
   context?: { noteId?: string; source?: string }
@@ -456,7 +456,7 @@ export async function persistPagesFromPdfBuffer(
   try {
     const { pages } = await extractPdfPageTextsFromBuffer(buffer, { maxPages: MAX_OCR_PDF_PAGES });
     if (!pages.length) return { available: true, saved: 0 };
-    const result = await savePages(supabaseService, attachmentId, pages);
+    const result = await savePages(layer, attachmentId, pages);
     if (result.saved > 0) {
       logger.info('Stored note attachment pages', {
         ...context,
@@ -486,7 +486,7 @@ export async function persistPagesFromPdfBuffer(
  * with less text than the blob already credits it with.
  */
 export async function persistPagesAfterPdfOcr(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   attachmentId: string,
   buffer: Buffer,
   ocrPages: Array<{ pageIndex: number; text: string }>,
@@ -511,7 +511,7 @@ export async function persistPagesAfterPdfOcr(
         text: mergeExtractionTexts(layerByIndex.get(pageIndex) || '', ocrByIndex.get(pageIndex) || ''),
       }));
 
-    const result = await savePages(supabaseService, attachmentId, merged);
+    const result = await savePages(layer, attachmentId, merged);
     if (result.saved > 0) {
       logger.info('Stored note attachment pages from OCR', {
         ...context,
@@ -537,7 +537,7 @@ export async function persistPagesAfterPdfOcr(
  * read mints a fresh URL rather than handing back one that worked yesterday.
  */
 export async function signPageImages(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   pages: NotePageRecord[],
   options?: { expiresInSeconds?: number }
 ): Promise<Map<number, string>> {
@@ -548,7 +548,7 @@ export async function signPageImages(
     .filter(Boolean) as Array<{ bucket: string; path: string; index: number }>;
   if (!refs.length) return new Map();
 
-  const signedByIndex = await supabaseService.signStorageDisplayUrls(refs, {
+  const signedByIndex = await layer.storageAcl.signStorageDisplayUrls(refs, {
     expiresInSeconds: options?.expiresInSeconds ?? 60 * 60 * 24,
   });
 

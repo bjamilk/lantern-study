@@ -1,4 +1,4 @@
-import type { SupabaseService } from "./supabase";
+import type { DataLayer } from "./data";
 import { logger } from "../utils/logger";
 
 const INTERVAL_MS = parseInt(
@@ -15,12 +15,12 @@ type NotificationInsert = {
 };
 
 async function batchCreateNotifications(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   items: NotificationInsert[],
 ): Promise<number> {
   if (!items.length) return 0;
 
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const userIds = [...new Set(items.map((item) => item.userId))];
   const { data: profiles } = await db
     .from("profiles")
@@ -91,9 +91,9 @@ function listingMatchesFilters(
 }
 
 export async function processSavedSearchAlerts(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): Promise<number> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const { data: searches, error } = await db
     .from("saved_searches")
     .select("*")
@@ -175,7 +175,7 @@ export async function processSavedSearchAlerts(
     }
 
     if (pending.length) {
-      sent += await batchCreateNotifications(supabaseService, pending);
+      sent += await batchCreateNotifications(layer, pending);
     }
 
     await db
@@ -191,9 +191,9 @@ export async function processSavedSearchAlerts(
 }
 
 export async function processReviewReminders(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): Promise<number> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const cutoff = sevenDaysAgo.toISOString();
@@ -238,7 +238,7 @@ export async function processReviewReminders(
 
     if (reminded && reminded.length > 0) continue;
 
-    const notification = await supabaseService.createNotification(
+    const notification = await layer.notifications.createNotification(
       order.buyer_id,
       {
         type: "marketplace_review_prompt",
@@ -270,9 +270,9 @@ const OFFER_EXPIRY_WARNING_HOURS = parseInt(
 );
 
 export async function processAbandonedCheckoutReminders(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): Promise<number> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const cutoff = new Date(
     Date.now() - ABANDONED_ORDER_MINUTES * 60 * 1000,
   ).toISOString();
@@ -305,7 +305,7 @@ export async function processAbandonedCheckoutReminders(
 
     if (reminded && reminded.length > 0) continue;
 
-    const notification = await supabaseService.createNotification(
+    const notification = await layer.notifications.createNotification(
       order.buyer_id,
       {
         type: "marketplace_abandoned_reminder",
@@ -328,9 +328,9 @@ export async function processAbandonedCheckoutReminders(
 }
 
 export async function processStaleOfferReminders(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): Promise<number> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const staleCutoff = new Date(
     Date.now() - STALE_OFFER_HOURS * 60 * 60 * 1000,
   ).toISOString();
@@ -367,7 +367,7 @@ export async function processStaleOfferReminders(
 
       if (reminded && reminded.length > 0) continue;
 
-      const notification = await supabaseService.createNotification(
+      const notification = await layer.notifications.createNotification(
         offer.seller_id,
         {
           type: "marketplace_offer_reminder",
@@ -411,7 +411,7 @@ export async function processStaleOfferReminders(
 
       if (reminded && reminded.length > 0) continue;
 
-      const notification = await supabaseService.createNotification(
+      const notification = await layer.notifications.createNotification(
         offer.buyer_id,
         {
           type: "marketplace_offer_reminder",
@@ -436,7 +436,7 @@ export async function processStaleOfferReminders(
 }
 
 export function startMarketplaceAlertJobs(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): void {
   if (process.env.ENABLE_MARKETPLACE_JOBS !== "true") {
     logger.info(
@@ -447,14 +447,14 @@ export function startMarketplaceAlertJobs(
 
   const run = async () => {
     try {
-      await processSavedSearchAlerts(supabaseService);
-      await processAbandonedCheckoutReminders(supabaseService);
-      await processStaleOfferReminders(supabaseService);
-      await processReviewReminders(supabaseService);
+      await processSavedSearchAlerts(layer);
+      await processAbandonedCheckoutReminders(layer);
+      await processStaleOfferReminders(layer);
+      await processReviewReminders(layer);
       const { processJobSavedSearchAlerts } = await import("./jobAlerts");
-      await processJobSavedSearchAlerts(supabaseService);
+      await processJobSavedSearchAlerts(layer);
       const { processJobDeadlineReminders } = await import("./jobReminders");
-      await processJobDeadlineReminders(supabaseService);
+      await processJobDeadlineReminders(layer);
     } catch (err) {
       logger.error("Marketplace alert job failed", err);
     }

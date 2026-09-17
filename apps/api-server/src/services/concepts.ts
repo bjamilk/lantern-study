@@ -8,7 +8,7 @@
  * createConcept, linkConcept). Shapes in @lantern/shared types Concept /
  * ConceptLink — keep the wire names stable.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -102,10 +102,10 @@ function clientSource(value: unknown, fallback: ConceptSource = 'user'): Concept
 }
 
 export class ConceptsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   /** Name search (ILIKE over the trigram index), optionally scoped to a course. Empty before the migration. */
@@ -259,7 +259,7 @@ export class ConceptsService {
         .maybeSingle();
       if (!message) throw denied();
       if (message.sender_id === userId) return;
-      if (message.group_id && (await this.supabaseService.isGroupMember(message.group_id, userId))) {
+      if (message.group_id && (await this.data.groups.isGroupMember(message.group_id, userId))) {
         return;
       }
       throw denied();
@@ -327,7 +327,7 @@ export class ConceptsService {
 
 let service: ConceptsService | null = null;
 
-export function getConceptsService(supabaseService: SupabaseService): ConceptsService {
-  if (!service) service = new ConceptsService(supabaseService);
+export function getConceptsService(data: DataLayer): ConceptsService {
+  if (!service) service = new ConceptsService(data);
   return service;
 }

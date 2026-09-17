@@ -78,8 +78,10 @@ function makeService(overrides: {
   const { db, writes } = makeDb(overrides.tables || {});
   const supabaseService: any = {
     getClient: () => db,
-    getNote: jest.fn(async () => overrides.note ?? { title: 'Bio 101', body: NOTE_BODY }),
-    getNoteAttachments: jest.fn(async () => overrides.attachments ?? []),
+    notes: {
+      getNote: jest.fn(async () => overrides.note ?? { title: 'Bio 101', body: NOTE_BODY }),
+      getNoteAttachments: jest.fn(async () => overrides.attachments ?? []),
+    },
   };
   return { service: new StudyPackFactoryService(supabaseService), writes, supabaseService };
 }

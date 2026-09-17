@@ -1,4 +1,4 @@
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { PublicError } from '../utils/safeError';
 import { isDigitalListingKind } from '@lantern/shared/marketplace';
 import { getMarketplaceOrdersService, type MarketplaceOrderRow } from './marketplaceOrders';
@@ -27,10 +27,10 @@ function normalizeQuantity(raw: unknown, fallback = 1): number {
 }
 
 export class MarketplaceCartService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   async listCart(buyerId: string): Promise<MarketplaceCartItemRow[]> {
@@ -83,7 +83,7 @@ export class MarketplaceCartService {
     quantityInput?: number
   ): Promise<MarketplaceCartItemRow> {
     const quantity = normalizeQuantity(quantityInput, 1);
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.data.marketplace.getMarketplaceListingById(listingId);
     if (!listing) throw new PublicError('Listing not found');
     this.assertListingPurchasable(listing, buyerId, quantity);
 
@@ -134,7 +134,7 @@ export class MarketplaceCartService {
       return null;
     }
 
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.data.marketplace.getMarketplaceListingById(listingId);
     if (!listing) throw new PublicError('Listing not found');
     this.assertListingPurchasable(listing, buyerId, raw);
 
@@ -176,7 +176,8 @@ export class MarketplaceCartService {
       throw new PublicError('Cart is empty');
     }
 
-    const ordersService = getMarketplaceOrdersService(this.supabaseService);
+    // TRANSITIONAL (M2d): `getMarketplaceOrdersService` still takes the `SupabaseService` facade whole.
+    const ordersService = getMarketplaceOrdersService(this.data.legacyService);
     const orders: MarketplaceOrderRow[] = [];
     const failures: Array<{ listingId: string; error: string }> = [];
     const succeededListingIds: string[] = [];
@@ -218,7 +219,7 @@ export class MarketplaceCartService {
 
 let cartService: MarketplaceCartService | null = null;
 
-export function getMarketplaceCartService(supabaseService: SupabaseService): MarketplaceCartService {
-  if (!cartService) cartService = new MarketplaceCartService(supabaseService);
+export function getMarketplaceCartService(data: DataLayer): MarketplaceCartService {
+  if (!cartService) cartService = new MarketplaceCartService(data);
   return cartService;
 }

@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from 'crypto';
 import bcrypt from 'bcryptjs';
-import { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 
 export const API_KEY_PREFIX = 'lsk_';
@@ -36,18 +36,18 @@ export interface ApiKeyValidationResult {
   keyId?: string;
 }
 
-let supabaseService: SupabaseService | null = null;
+let dataLayer: DataLayer | null = null;
 const lastUsedDebounce = new Map<string, number>();
 
-export function initializeApiKeyService(supabase: SupabaseService): void {
-  supabaseService = supabase;
+export function initializeApiKeyService(layer: DataLayer): void {
+  dataLayer = layer;
 }
 
-function requireSupabase(): SupabaseService {
-  if (!supabaseService) {
+function requireSupabase(): DataLayer {
+  if (!dataLayer) {
     throw new Error('ApiKeyService not initialized');
   }
-  return supabaseService;
+  return dataLayer;
 }
 
 function generateSecret(): string {

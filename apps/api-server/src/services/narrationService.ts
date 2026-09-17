@@ -47,7 +47,7 @@
  * honest change is a `kind` column on `offline_bundles` with `config` and
  * `questions` made nullable — a migration, not a workaround.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 import { PublicError } from '../utils/safeError';
 import { chatCompletion, extractJSON } from './aiService';
@@ -165,11 +165,11 @@ function mapRow(row: Record<string, unknown>): StoredNarrationScript {
 
 /** The stored script for one (document, student), or null when there is none. */
 export async function getNarrationScript(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   attachmentId: string,
   userId: string
 ): Promise<NarrationReadResult> {
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from(TABLE)
     .select(
@@ -195,10 +195,10 @@ export async function getNarrationScript(
 }
 
 async function writeRow(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   row: Record<string, unknown>
 ): Promise<{ available: boolean }> {
-  const { error } = await supabaseService
+  const { error } = await layer
     .getClient()
     .from(TABLE)
     .upsert({ ...row, updated_at: new Date().toISOString() }, {
@@ -283,7 +283,7 @@ export function isNarrationRunStale(
  * gets the honest answer in this response.
  */
 export async function expireStalledNarration(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   script: StoredNarrationScript | null,
   params: { userId: string },
   now: number = Date.now()
@@ -304,7 +304,7 @@ export async function expireStalledNarration(
   // version in the guard the second write matches nothing (the claim bumped
   // it), and the second claim then fails its own status guard and is reuse.
   try {
-    const { error } = await supabaseService
+    const { error } = await layer
       .getClient()
       .from(TABLE)
       .update({
@@ -340,11 +340,11 @@ export async function expireStalledNarration(
  * Best-effort: a missed heartbeat costs nothing but the window.
  */
 async function touchNarrationRun(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: { attachmentId: string; userId: string; version: number }
 ): Promise<void> {
   try {
-    const { error } = await supabaseService
+    const { error } = await layer
       .getClient()
       .from(TABLE)
       .update({ updated_at: new Date().toISOString() })
@@ -386,7 +386,7 @@ export interface NarrationClaimResult {
  * it is reuse, at cost 0, of the run the winner started.
  */
 export async function claimNarrationRun(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: {
     attachmentId: string;
     userId: string;
@@ -409,7 +409,7 @@ export async function claimNarrationRun(
     job_id: null,
     updated_at: new Date().toISOString(),
   };
-  const client = supabaseService.getClient();
+  const client = layer.getClient();
 
   if (!params.previous) {
     const { error } = await client.from(TABLE).insert(claimed);
@@ -467,11 +467,11 @@ export async function claimNarrationRun(
  * the student and must not replace it with a different failure.
  */
 export async function releaseNarrationClaim(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: { attachmentId: string; userId: string; previous: StoredNarrationScript | null }
 ): Promise<void> {
   try {
-    const client = supabaseService.getClient();
+    const client = layer.getClient();
     const previous = params.previous;
     if (!previous) {
       const { error } = await client
@@ -566,11 +566,11 @@ function pagesReasonMessage(reason: NotePagesReason): string {
  * put it back.
  */
 export async function resolveNarrationTarget(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: { noteId: string; attachmentId: string; userId: string; regenerate?: boolean }
 ): Promise<NarrationTarget> {
   const stored = await getNarrationScript(
-    supabaseService,
+    layer,
     params.attachmentId,
     params.userId
   );
@@ -587,7 +587,7 @@ export async function resolveNarrationTarget(
   // would reuse it at cost 0 while the client polls a script nobody is
   // writing. Retire it here, before reuse is decided, so this request becomes
   // an ordinary new run — and is charged, because the dead one was refunded.
-  const existing = await expireStalledNarration(supabaseService, stored.script, {
+  const existing = await expireStalledNarration(layer, stored.script, {
     userId: params.userId,
   });
 
@@ -612,7 +612,7 @@ export async function resolveNarrationTarget(
     };
   }
 
-  const pages = await ensurePages(supabaseService, {
+  const pages = await ensurePages(layer, {
     noteId: params.noteId,
     attachmentId: params.attachmentId,
   });
@@ -714,7 +714,7 @@ export interface BuildNarrationResult {
  * EVERY batch failed throws.
  */
 export async function buildNarrationScript(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: {
     noteId: string;
     attachmentId: string;
@@ -728,7 +728,7 @@ export async function buildNarrationScript(
   const version = Math.max(1, Math.floor(params.version || 1));
 
   await progress?.stage('reading');
-  const pages = await ensurePages(supabaseService, {
+  const pages = await ensurePages(layer, {
     noteId: params.noteId,
     attachmentId: params.attachmentId,
   });
@@ -748,7 +748,7 @@ export async function buildNarrationScript(
     );
   }
 
-  await markStatus(supabaseService, {
+  await markStatus(layer, {
     attachmentId: params.attachmentId,
     userId: params.userId,
     version,
@@ -789,7 +789,7 @@ export async function buildNarrationScript(
     }
     // The job record moved above; the row has to move too, or the stale
     // sweep reads a run that is still working as one that died.
-    await touchNarrationRun(supabaseService, {
+    await touchNarrationRun(layer, {
       attachmentId: params.attachmentId,
       userId: params.userId,
       version,
@@ -837,7 +837,7 @@ export async function buildNarrationScript(
 
   await progress?.stage('saving');
 
-  const write = await writeRow(supabaseService, {
+  const write = await writeRow(layer, {
     attachment_id: params.attachmentId,
     user_id: params.userId,
     version,
@@ -854,7 +854,7 @@ export async function buildNarrationScript(
   // Page pictures are what make the deck playable offline. Best-effort and
   // AFTER the script is stored: a render that times out must not lose a script
   // the student has already paid for — the next GET renders what is missing.
-  void ensurePageImages(supabaseService, {
+  void ensurePageImages(layer, {
     noteId: params.noteId,
     attachmentId: params.attachmentId,
     maxPages: MAX_NARRATION_PAGES,
@@ -883,7 +883,7 @@ export async function buildNarrationScript(
 
 /** Stamp a status on the row without touching the segments it already holds. */
 export async function markStatus(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: {
     attachmentId: string;
     userId: string;
@@ -908,7 +908,7 @@ export async function markStatus(
   // A fresh queued/generating row must not inherit stale segments from a
   // previous version; a ready row writes its own.
   if (params.status === 'queued') row.segments = [];
-  return writeRow(supabaseService, row);
+  return writeRow(layer, row);
 }
 
 /**
@@ -918,11 +918,11 @@ export async function markStatus(
  * record a failure must never mask the original error.
  */
 export async function markNarrationFailed(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: { attachmentId: string; userId: string; version: number; message: string }
 ): Promise<void> {
   try {
-    await markStatus(supabaseService, {
+    await markStatus(layer, {
       attachmentId: params.attachmentId,
       userId: params.userId,
       version: params.version,
@@ -967,14 +967,14 @@ export interface NarrationBundle {
  * offline copy needs refreshing.
  */
 export async function getNarrationBundle(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   params: { noteId: string; attachmentId: string; userId: string; includeImages?: boolean }
 ): Promise<
   | { available: false; reason: 'schema_missing'; bundle: null }
   | { available: true; reason: 'ok'; bundle: NarrationBundle | null }
 > {
   const stored = await getNarrationScript(
-    supabaseService,
+    layer,
     params.attachmentId,
     params.userId
   );
@@ -984,16 +984,16 @@ export async function getNarrationBundle(
   // The GET is what a waiting client polls, so it is often the first to notice
   // that the run behind it died. Report such a row as failed, with the reason,
   // rather than letting the player spin on `generating` forever.
-  const script = (await expireStalledNarration(supabaseService, stored.script, {
+  const script = (await expireStalledNarration(layer, stored.script, {
     userId: params.userId,
   }))!;
   let pages: Array<{ pageIndex: number; imageUrl?: string }> = [];
 
   if (params.includeImages !== false && script.status === 'ready') {
-    const stored_pages = await getPages(supabaseService, params.attachmentId);
+    const stored_pages = await getPages(layer, params.attachmentId);
     if (stored_pages.available && stored_pages.pages.length) {
       const capped = stored_pages.pages.slice(0, MAX_NARRATION_PAGES);
-      const signed = await signPageImages(supabaseService, capped, {
+      const signed = await signPageImages(layer, capped, {
         expiresInSeconds: NARRATION_IMAGE_URL_TTL_SECONDS,
       });
       pages = capped.map((page) => ({

@@ -139,7 +139,7 @@ const sectionRow = {
 const service = (db: ReturnType<typeof makeDb>) =>
   new ClassSectionsService({
     getClient: () => db,
-    createNotification: jest.fn(async () => null),
+    notifications: { createNotification: jest.fn(async () => null) },
   } as any);
 
 describe('classFail', () => {
@@ -261,8 +261,8 @@ describe('archive and TA', () => {
     });
     const svc = new ClassSectionsService({
       getClient: () => db,
-      createNotification: jest.fn(),
-      createNote,
+      notifications: { createNotification: jest.fn() },
+      notes: { createNote },
     } as any);
     const copied = await svc.copyMaterialToNotes(STUDENT, CLASS_ID, materialId);
     expect(copied).toEqual({ noteId: 'note-1', title: 'Week 3' });

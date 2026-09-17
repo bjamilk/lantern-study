@@ -380,7 +380,7 @@ router.get(
     if (!(await cacheService.get(referralCacheKey))) {
       await cacheService.set(referralCacheKey, '1', 3600);
       void import('../services/referrals')
-        .then(({ getReferralsService }) => getReferralsService(legacyService()).checkActivation(userId))
+        .then(({ getReferralsService }) => getReferralsService(dataLayer).checkActivation(userId))
         .catch(() => {});
     }
 
@@ -404,7 +404,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { getStudySetsService } = await import('../services/studySets');
-    const data = await getStudySetsService(legacyService()).resume(userId);
+    const data = await getStudySetsService(dataLayer).resume(userId);
     res.json({ success: true, data });
   })
 );
@@ -973,7 +973,7 @@ router.get(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const row = await getAccountLifecycle(legacyService(), userId);
+    const row = await getAccountLifecycle(dataLayer, userId);
     if (!row) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1013,7 +1013,7 @@ router.post(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const row = await getAccountLifecycle(legacyService(), userId);
+    const row = await getAccountLifecycle(dataLayer, userId);
     if (!row) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1021,7 +1021,7 @@ router.post(
       return res.status(409).json({ success: false, error: 'Account is already paused.' });
     }
 
-    const scheduled = await scheduleAccountDeletion(legacyService(), userId);
+    const scheduled = await scheduleAccountDeletion(dataLayer, userId);
     res.json({
       success: true,
       data: {
@@ -1048,7 +1048,7 @@ router.post(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const ok = await reactivateAccount(legacyService(), userId);
+    const ok = await reactivateAccount(dataLayer, userId);
     if (!ok) {
       return res.status(409).json({ success: false, error: 'Account is not paused.' });
     }
@@ -1078,7 +1078,7 @@ router.post(
 
     const { password } = req.body as { password?: string };
     if (requestingUserId === userId) {
-      const row = await getAccountLifecycle(legacyService(), userId);
+      const row = await getAccountLifecycle(dataLayer, userId);
       const email = row?.email;
       if (!email) {
         return res.status(400).json({ success: false, error: 'Unable to verify password for this account.' });
@@ -1145,7 +1145,7 @@ router.post(
       confirmEmailMismatch?: boolean;
     };
 
-    const row = await getAccountLifecycle(legacyService(), userId);
+    const row = await getAccountLifecycle(dataLayer, userId);
     if (!row?.email) {
       return res.status(400).json({ success: false, error: 'Unable to verify password for this account.' });
     }
@@ -1157,7 +1157,7 @@ router.post(
 
     try {
       const result = await importAccountArchive(
-        legacyService(),
+        dataLayer,
         userId,
         exportPayload as {
           format: string;
@@ -1980,7 +1980,7 @@ router.post(
       // rejection but nothing handled a hang, so a stalled study-presence write
       // held the whole beat open until the client's fetch timeout.
       const study = await withUpstreamTimeout(
-        getStudyPresenceService(legacyService()).heartbeat(userId, {
+        getStudyPresenceService(dataLayer).heartbeat(userId, {
           context: typeof body.context === 'string' ? body.context : undefined,
           courseId: typeof body.courseId === 'string' ? body.courseId : null,
           topic: typeof body.topic === 'string' ? body.topic : null,
@@ -2008,7 +2008,7 @@ router.delete(
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    await getStudyPresenceService(legacyService()).clear(userId);
+    await getStudyPresenceService(dataLayer).clear(userId);
     res.json({ success: true });
   })
 );

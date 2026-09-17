@@ -36,6 +36,7 @@ import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
 import { apiKeyService } from '../services/apiKey';
 import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { getUserBlockState } from '../services/adminAudit';
 import { suspensionMessage } from '@lantern/shared/moderation';
 import {
@@ -54,6 +55,13 @@ import { createRequestContext, type RequestContext } from '../services/dataLoade
 import { AuthenticatedRequest } from '../types';
 
 let supabaseService: SupabaseService | null = null;
+/**
+ * `server.ts` hands the middleware the layer it built, because the deactivated-
+ * account check reads through `services/accountLifecycle`, which is flipped.
+ * It stays optional so the three suites that inject a bare token-verifier stub
+ * keep working: none of them reaches a layer read.
+ */
+let dataLayer: DataLayer | null = null;
 
 interface CachedUser { id: string; [key: string]: any }
 const tokenCache = new LRUCache<string, CachedUser>({
@@ -125,7 +133,8 @@ async function rejectIfDeactivated(
 
   if (isDeactivatedLifecycleRoute(req.method, path, userId)) return false;
 
-  const row = await getAccountLifecycle(supabaseService, userId);
+  if (!dataLayer) return false;
+  const row = await getAccountLifecycle(dataLayer, userId);
   if (!isAccountDeactivated(row)) return false;
 
   res.status(403).json({
@@ -245,8 +254,12 @@ export async function rejectIfBannedOnly(userId: string, res: Response): Promise
 
 /** Injects the Supabase service; called once from server bootstrap. Until it
  * runs, the lifecycle and ban gates no-op (they return false). */
-export const initializeAuthMiddleware = (supabase: SupabaseService) => {
+export const initializeAuthMiddleware = (
+  supabase: SupabaseService,
+  layer?: DataLayer,
+) => {
   supabaseService = supabase;
+  dataLayer = layer ?? null;
 };
 
 export function evictAuthTokenCache(token: string): void {

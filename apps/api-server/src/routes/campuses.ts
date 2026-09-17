@@ -42,7 +42,7 @@ router.get(
       return res.json({ success: true, data: cached });
     }
 
-    const data = await getCampusSummaryService(legacyService()).getBySlug(req.params.slug, programme);
+    const data = await getCampusSummaryService(dataLayer).getBySlug(req.params.slug, programme);
     if (!data) {
       return res.status(404).json({ success: false, error: 'Campus not found' });
     }
@@ -64,7 +64,7 @@ router.get(
       res.set('Cache-Control', 'public, max-age=3600');
       return res.json({ success: true, data: cached });
     }
-    const data = await getCampusSummaryService(legacyService()).listSlugs();
+    const data = await getCampusSummaryService(dataLayer).listSlugs();
     await cacheService.set(cacheKey, data, 3600);
     res.set('Cache-Control', 'public, max-age=3600');
     res.json({ success: true, data });

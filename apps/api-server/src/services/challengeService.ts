@@ -5,7 +5,7 @@ import {
 } from '../utils/challengeScoring';
 import type { GroupChallenge, ChallengeConfig, ChallengeParticipant } from '../types/challenges';
 import type { User } from '../types';
-import { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { cacheService } from './cache';
 import { CacheKeys } from './cachePolicy';
 import { logger } from '../utils/logger';
@@ -13,10 +13,10 @@ import { logger } from '../utils/logger';
 const CHALLENGE_EXPIRY_HOURS = 24;
 
 export class ChallengeService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   private async ensureGroupMember(groupId: string, userId: string): Promise<boolean> {
@@ -40,7 +40,7 @@ export class ChallengeService {
   }
 
   private async fetchProfileBasics(userId: string) {
-    const user = await this.supabaseService.getUserById(userId);
+    const user = await this.data.users.getUserById(userId);
     if (!user) return { id: userId, name: 'Unknown', avatarUrl: undefined as string | undefined };
     return {
       id: userId,
@@ -147,7 +147,7 @@ export class ChallengeService {
 
     const byId = new Map<string, any>();
     for (const msg of data || []) {
-      const parsed = (this.supabaseService as any).parseMessageContent(msg);
+      const parsed = (this.data as any).parseMessageContent(msg);
       const mapped = {
         id: msg.id,
         groupId: msg.group_id,
@@ -298,7 +298,7 @@ export class ChallengeService {
 
     const challengerProfile = await this.fetchProfileBasics(challenge.challenger_id);
     try {
-      await this.supabaseService.createNotification(challenge.opponent_id, {
+      await this.data.notifications.createNotification(challenge.opponent_id, {
         type: 'challenge_invite',
         message: `${challengerProfile.name} challenged you to a duel!`,
         link: `challenge:${challenge.id}`,
@@ -513,7 +513,7 @@ export class ChallengeService {
     }
 
     const opponentName = challenge.opponent?.name || 'Opponent';
-    void this.supabaseService
+    void this.data.notifications
       .createNotification(challenge.challengerId, {
         type: 'challenge_accepted',
         message: `${opponentName} accepted your duel challenge!`,
@@ -558,7 +558,7 @@ export class ChallengeService {
     }
 
     const opponentName = challenge.opponent?.name || 'Opponent';
-    void this.supabaseService
+    void this.data.notifications
       .createNotification(challenge.challengerId, {
         type: 'challenge_declined',
         message: `${opponentName} declined your duel challenge.`,
@@ -598,15 +598,15 @@ export class ChallengeService {
   }
 
   private async awardWinner(winnerId: string): Promise<void> {
-    await this.supabaseService.incrementUserStatsAndAwardBadges(winnerId, { gamesWon: 1 });
+    await this.data.gamification.incrementUserStatsAndAwardBadges(winnerId, { gamesWon: 1 });
   }
 
   private async recordDuelActivity(challengerId: string, opponentId: string): Promise<void> {
     await Promise.all([
-      this.supabaseService.recordStudyActivity(challengerId, 'game', 1).catch((err) => {
+      this.data.gamification.recordStudyActivity(challengerId, 'game', 1).catch((err) => {
         logger.warn('Failed to record duel activity for challenger', { challengerId, err });
       }),
-      this.supabaseService.recordStudyActivity(opponentId, 'game', 1).catch((err) => {
+      this.data.gamification.recordStudyActivity(opponentId, 'game', 1).catch((err) => {
         logger.warn('Failed to record duel activity for opponent', { opponentId, err });
       }),
     ]);
@@ -616,7 +616,7 @@ export class ChallengeService {
     challengeId: string,
     userId: string,
     answers: Record<string, any>
-  ): Promise<GroupChallenge & { gamification?: Awaited<ReturnType<SupabaseService['syncGamificationProgress']>> }> {
+  ): Promise<GroupChallenge & { gamification?: Awaited<ReturnType<DataLayer['gamification']['syncGamificationProgress']>> }> {
     const challenge = await this.getChallenge(challengeId, userId);
     if (!challenge) throw Object.assign(new Error('Challenge not found'), { statusCode: 404 });
     if (challenge.status !== 'accepted') {
@@ -702,7 +702,8 @@ export class ChallengeService {
       // cannot double-post.
       {
         const { getActivityFeedService } = await import('./activityFeed');
-        await getActivityFeedService(this.supabaseService).record({
+        // TRANSITIONAL (M2d): `getActivityFeedService` still takes the `SupabaseService` facade whole.
+        await getActivityFeedService(this.data.legacyService).record({
           actorId: userId,
           verb: 'completed_challenge',
           objectType: 'challenge',
@@ -719,7 +720,8 @@ export class ChallengeService {
       // above, so a replayed request cannot double-write.
       {
         const { getLearningConnectionsService } = await import('./learningConnections');
-        const connections = getLearningConnectionsService(this.supabaseService);
+        // TRANSITIONAL (M2d): `getLearningConnectionsService` still takes the `SupabaseService` facade whole.
+        const connections = getLearningConnectionsService(this.data.legacyService);
         await Promise.all([
           connections.record({
             actorId: challenge.challengerId,
@@ -748,13 +750,13 @@ export class ChallengeService {
         : 'The duel ended in a draw!';
 
       await Promise.all([
-        this.supabaseService.createNotification(challenge.challengerId, {
+        this.data.notifications.createNotification(challenge.challengerId, {
           type: 'challenge_result',
           message: resultMessage,
           link: `challenge:${challengeId}`,
           data: { challengeId, winnerId, groupId: challenge.groupId },
         }),
-        this.supabaseService.createNotification(challenge.opponentId, {
+        this.data.notifications.createNotification(challenge.opponentId, {
           type: 'challenge_result',
           message: resultMessage,
           link: `challenge:${challengeId}`,
@@ -763,7 +765,7 @@ export class ChallengeService {
       ]);
 
       await this.invalidateChallengeCaches(challenge.challengerId, challenge.opponentId);
-      const gamification = await this.supabaseService.syncGamificationProgress(userId).catch((err) => {
+      const gamification = await this.data.gamification.syncGamificationProgress(userId).catch((err) => {
         logger.warn('Failed to sync gamification after duel completion', { userId, err });
         return undefined;
       });
@@ -778,7 +780,7 @@ export class ChallengeService {
     const myProfile = await this.fetchProfileBasics(userId);
     const otherPart = allParticipants?.find(p => p.user_id === otherUserId);
     if (!otherPart?.finished_at) {
-      await this.supabaseService.createNotification(otherUserId, {
+      await this.data.notifications.createNotification(otherUserId, {
         type: 'challenge_opponent_finished',
         message: `${myProfile.name} finished their duel attempt. Your turn!`,
         link: `challenge:${challengeId}`,
@@ -826,7 +828,7 @@ export class ChallengeService {
 
     const quitterProfile = await this.fetchProfileBasics(userId);
 
-    await this.supabaseService.createNotification(winnerId, {
+    await this.data.notifications.createNotification(winnerId, {
       type: 'challenge_result',
       message: `${quitterProfile.name} left the duel. You win by default!`,
       link: `challenge:${challengeId}`,

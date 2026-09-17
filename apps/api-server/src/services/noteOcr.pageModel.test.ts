@@ -7,7 +7,7 @@
  * blob — and a failure while storing pages cannot touch it. Smart Notes and
  * quiz generation read that blob, so this is what keeps them unchanged.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 jest.mock('./pdfPageOcr', () => ({
   ocrPdfPagesFromBuffer: jest.fn(),
@@ -37,13 +37,15 @@ function makeService() {
   const updateNoteAttachment = jest.fn(async () => ({}) as never);
   return {
     service: {
-      updateNoteAttachment,
-      getNoteAttachment: jest.fn(async () => ({ id: 'att-1', metadata: {} })),
-      downloadNoteFile: jest.fn(async () => ({
-        buffer: Buffer.from('%PDF-1.4'),
-        contentType: 'application/pdf',
-      })),
-    } as unknown as SupabaseService,
+      notes: {
+        updateNoteAttachment,
+        getNoteAttachment: jest.fn(async () => ({ id: 'att-1', metadata: {} })),
+        downloadNoteFile: jest.fn(async () => ({
+          buffer: Buffer.from('%PDF-1.4'),
+          contentType: 'application/pdf',
+        })),
+      },
+    } as unknown as DataLayer,
     updateNoteAttachment,
   };
 }

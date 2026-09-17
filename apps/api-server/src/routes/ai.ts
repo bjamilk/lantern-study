@@ -528,7 +528,7 @@ router.post(
         res.status(401).json({ error: 'Authentication required' });
         return;
       }
-      const factory = getStudyPackFactoryService(legacyService());
+      const factory = getStudyPackFactoryService(dataLayer);
       const { noteIds, folderId, courseId, title } = req.body || {};
       const { draftId } = await factory.createDraft(userId, {
         noteIds: Array.isArray(noteIds) ? noteIds.map(String) : undefined,
@@ -578,7 +578,7 @@ router.get('/study-pack/semester-proposals', async (req: AuthenticatedRequest, r
   if (!userId) return;
   const academicYear =
     typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
-  const { academicYear: year, proposals } = await getStudyPackFactoryService(legacyService()).proposeSemester(
+  const { academicYear: year, proposals } = await getStudyPackFactoryService(dataLayer).proposeSemester(
     userId,
     academicYear,
   );
@@ -603,7 +603,7 @@ router.get('/study-pack/semester-proposals', async (req: AuthenticatedRequest, r
 router.get('/study-pack/drafts', async (req: AuthenticatedRequest, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const data = await getStudyPackFactoryService(legacyService()).listDrafts(userId);
+  const data = await getStudyPackFactoryService(dataLayer).listDrafts(userId);
   res.json({ success: true, data });
 });
 
@@ -612,7 +612,7 @@ router.get('/study-pack/drafts/:id', async (req: AuthenticatedRequest, res: Resp
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   try {
-    const draft = await getStudyPackFactoryService(legacyService()).getDraft(userId, req.params.id);
+    const draft = await getStudyPackFactoryService(dataLayer).getDraft(userId, req.params.id);
     res.json({ success: true, data: draft });
   } catch (error: any) {
     if (error instanceof PublicError) {
@@ -627,7 +627,7 @@ router.get('/study-pack/drafts/:id', async (req: AuthenticatedRequest, res: Resp
 router.delete('/study-pack/drafts/:id', async (req: AuthenticatedRequest, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await getStudyPackFactoryService(legacyService()).deleteDraft(userId, req.params.id);
+  await getStudyPackFactoryService(dataLayer).deleteDraft(userId, req.params.id);
   res.json({ success: true });
 });
 

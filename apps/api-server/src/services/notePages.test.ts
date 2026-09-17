@@ -9,7 +9,7 @@
  * survives a later text-only pass, and — most importantly — that an unapplied
  * migration degrades to "this document has no pages yet" instead of throwing.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 jest.mock('./noteFiles', () => {
   const actual = jest.requireActual('./noteFiles');
@@ -110,25 +110,33 @@ function makeStore(options: { failWith?: PgError } = {}) {
 function makeService(
   store: ReturnType<typeof makeStore>,
   overrides: Partial<Record<string, unknown>> = {}
-): SupabaseService {
+): DataLayer {
+  // The same stubs the flat `SupabaseService` stand-in carried, regrouped under
+  // the `DataLayer` namespace that owns each one. `overrides` still names the
+  // method, not the namespace, so every call site is unchanged.
   return {
     getClient: () => ({ from: store.from }),
-    getNoteAttachment: jest.fn(async () => ({
-      id: ATTACHMENT_ID,
-      noteId: NOTE_ID,
-      type: 'pdf',
-      metadata: { storagePath: 'user-1/1234-lecture.pdf' },
-    })),
-    downloadNoteFile: jest.fn(async () => ({
-      buffer: Buffer.from('%PDF-1.4'),
-      contentType: 'application/pdf',
-    })),
-    uploadNoteFile: jest.fn(async ({ storagePath }: { storagePath: string }) => ({
-      path: storagePath,
-    })),
-    signStorageDisplayUrls: jest.fn(async () => new Map<number, string>()),
-    ...overrides,
-  } as unknown as SupabaseService;
+    notes: {
+      getNoteAttachment: jest.fn(async () => ({
+        id: ATTACHMENT_ID,
+        noteId: NOTE_ID,
+        type: 'pdf',
+        metadata: { storagePath: 'user-1/1234-lecture.pdf' },
+      })),
+      downloadNoteFile: jest.fn(async () => ({
+        buffer: Buffer.from('%PDF-1.4'),
+        contentType: 'application/pdf',
+      })),
+      uploadNoteFile: jest.fn(async ({ storagePath }: { storagePath: string }) => ({
+        path: storagePath,
+      })),
+      ...overrides,
+    },
+    storageAcl: {
+      signStorageDisplayUrls: jest.fn(async () => new Map<number, string>()),
+      ...overrides,
+    },
+  } as unknown as DataLayer;
 }
 
 beforeEach(() => {
@@ -247,7 +255,7 @@ describe('degrading when the migration is not applied', () => {
       pages: [],
       backfilled: 0,
     });
-    expect(service.downloadNoteFile).not.toHaveBeenCalled();
+    expect(service.notes.downloadNoteFile).not.toHaveBeenCalled();
   });
 });
 
@@ -311,7 +319,7 @@ describe('ensurePages', () => {
 
     const result = await ensurePages(service, { noteId: NOTE_ID, attachmentId: ATTACHMENT_ID });
     expect(result.backfilled).toBe(0);
-    expect(service.downloadNoteFile).not.toHaveBeenCalled();
+    expect(service.notes.downloadNoteFile).not.toHaveBeenCalled();
     expect(extractMock).not.toHaveBeenCalled();
   });
 
@@ -464,6 +472,6 @@ describe('signPageImages', () => {
       { attachmentId: ATTACHMENT_ID, pageIndex: 0, text: 'a', charCount: 1, imagePath: null },
     ]);
     expect(signed.size).toBe(0);
-    expect(service.signStorageDisplayUrls).not.toHaveBeenCalled();
+    expect(service.storageAcl.signStorageDisplayUrls).not.toHaveBeenCalled();
   });
 });

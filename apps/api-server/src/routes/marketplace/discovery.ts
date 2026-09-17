@@ -77,7 +77,7 @@ router.post(
 
     try {
       const { notifySellerFavoriteMilestone } = await import('../../services/marketplaceFavoriteMilestones');
-      await notifySellerFavoriteMilestone(supabaseService, listingId);
+      await notifySellerFavoriteMilestone(dataLayer, listingId);
     } catch (e) {
       logger.warn('Favorite milestone notification failed', e);
     }

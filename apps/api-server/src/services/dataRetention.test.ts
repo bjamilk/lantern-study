@@ -1,5 +1,5 @@
 import { purgeExpiredProductEvents, runDataRetentionPurge } from './dataRetention';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 
 jest.mock('./accountLifecycle', () => ({
   purgeScheduledAccountDeletions: jest.fn(async () => 3),
@@ -18,7 +18,7 @@ describe('runDataRetentionPurge', () => {
       getClient: () => ({
         from: () => emptyChain,
       }),
-    } as unknown as SupabaseService;
+    } as unknown as DataLayer;
 
     const result = await runDataRetentionPurge(supabaseService);
 
@@ -56,7 +56,7 @@ describe('purgeExpiredProductEvents', () => {
           return chain;
         },
       }),
-    } as unknown as SupabaseService;
+    } as unknown as DataLayer;
 
     const before = Date.now();
     const count = await purgeExpiredProductEvents(supabaseService);
@@ -84,7 +84,7 @@ describe('purgeExpiredProductEvents', () => {
       getClient: () => ({
         from: () => chain,
       }),
-    } as unknown as SupabaseService;
+    } as unknown as DataLayer;
 
     await expect(purgeExpiredProductEvents(supabaseService)).resolves.toBe(0);
   });

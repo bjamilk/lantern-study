@@ -90,7 +90,7 @@ import {
   type JobSavedSearch,
   type JobSearchFilters,
 } from "@lantern/shared/jobs";
-import { SupabaseService } from "./supabase";
+import type { DataLayer } from "./data";
 import { detectImageMime } from "../utils/fileValidation";
 import { logger } from "../utils/logger";
 import {
@@ -635,10 +635,10 @@ function companyLogoPublicUrl(filePath: string): string {
 }
 
 export class JobsBoardService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly data: DataLayer) {}
 
   private client() {
-    return this.supabase.getClient();
+    return this.data.getClient();
   }
 
   async listPostings(filters: {
@@ -1720,7 +1720,7 @@ export class JobsBoardService {
 
     const dmBody = `💼 Application for: "${posting.title}"\n\n${message}`;
     try {
-      await this.supabase.sendDirectMessage(applicantId, posterId, dmBody, {
+      await this.data.directMessages.sendDirectMessage(applicantId, posterId, dmBody, {
         bypassPrivacy: true,
       });
     } catch (dmErr) {
@@ -1732,7 +1732,7 @@ export class JobsBoardService {
     }
 
     const applicantName = profile?.name || profile?.username || "An applicant";
-    await this.supabase.createNotification(posterId, {
+    await this.data.notifications.createNotification(posterId, {
       type: "job_application",
       message: `${applicantName} applied to "${posting.title}"`,
       link: `/marketplace/employer/jobs/${postingId}`,
@@ -2039,7 +2039,7 @@ export class JobsBoardService {
     body: string,
   ) {
     try {
-      await this.supabase.sendDirectMessage(fromUserId, toUserId, body, {
+      await this.data.directMessages.sendDirectMessage(fromUserId, toUserId, body, {
         bypassPrivacy: true,
       });
     } catch (dmErr) {
@@ -2171,7 +2171,7 @@ export class JobsBoardService {
     }
 
     const title = posting?.title || "a job";
-    await this.supabase.createNotification(app.applicant_id, {
+    await this.data.notifications.createNotification(app.applicant_id, {
       type: "job_interview",
       message: `Interview invitation for "${title}" — choose a time`,
       link: `/marketplace/applications`,
@@ -2228,7 +2228,7 @@ export class JobsBoardService {
     if (error) throw error;
 
     const title = posting?.title || "a job";
-    await this.supabase.createNotification(row.applicant_id, {
+    await this.data.notifications.createNotification(row.applicant_id, {
       type: "job_interview",
       message: `New interview times for "${title}"`,
       link: `/marketplace/applications`,
@@ -2290,7 +2290,7 @@ export class JobsBoardService {
 
     const title = posting?.title || "a job";
     const employerId = row.created_by;
-    await this.supabase.createNotification(employerId, {
+    await this.data.notifications.createNotification(employerId, {
       type: "job_interview_response",
       message:
         action === "accept"
@@ -2337,7 +2337,7 @@ export class JobsBoardService {
 
     if (status === "cancelled") {
       const title = posting?.title || "a job";
-      await this.supabase.createNotification(row.applicant_id, {
+      await this.data.notifications.createNotification(row.applicant_id, {
         type: "job_interview",
         message: `The interview for "${title}" was cancelled`,
         link: `/marketplace/applications`,
@@ -2518,7 +2518,7 @@ export class JobsBoardService {
 
     const offer = mapOffer(data);
     const title = posting?.title || "a job";
-    await this.supabase.createNotification(app.applicant_id, {
+    await this.data.notifications.createNotification(app.applicant_id, {
       type: "job_offer",
       message: `You have an offer for "${title}" — respond to accept or decline`,
       link: `/marketplace/applications`,
@@ -2553,7 +2553,7 @@ export class JobsBoardService {
     if (error) throw error;
 
     const title = posting?.title || "a job";
-    await this.supabase.createNotification(row.applicant_id, {
+    await this.data.notifications.createNotification(row.applicant_id, {
       type: "job_offer",
       message: `The offer for "${title}" was withdrawn`,
       link: `/marketplace/applications`,
@@ -2632,7 +2632,7 @@ export class JobsBoardService {
 
     const title = posting?.title || "a job";
     const employerId = row.created_by;
-    await this.supabase.createNotification(employerId, {
+    await this.data.notifications.createNotification(employerId, {
       type: "job_offer_response",
       message:
         action === "accept"
@@ -2740,7 +2740,7 @@ export class JobsBoardService {
     if (upErr) throw upErr;
 
     if (!opts?.asApplicant && app.applicant_id) {
-      await this.supabase.createNotification(app.applicant_id, {
+      await this.data.notifications.createNotification(app.applicant_id, {
         type: "job_application_status",
         message: `Your application for "${posting?.title || "a job"}" is now: ${status}`,
         link: `/marketplace/applications`,
@@ -2847,7 +2847,7 @@ export class JobsBoardService {
       const applicantId = (row as { applicant_id?: string }).applicant_id;
       const previous = (row as { status?: string }).status;
       if (!applicantId || previous === status) continue;
-      await this.supabase.createNotification(applicantId, {
+      await this.data.notifications.createNotification(applicantId, {
         type: "job_application_status",
         message: `Your application for "${posting.title}" is now: ${status}`,
         link: `/marketplace/applications`,
@@ -3119,7 +3119,7 @@ export class JobsBoardService {
       throw httpError("This application has no resume", 404);
     }
 
-    const url = await this.supabase.createSignedStorageUrl(
+    const url = await this.data.storageAcl.createSignedStorageUrl(
       RESUME_BUCKET,
       app.resume_path,
       RESUME_SIGNED_URL_TTL_SECONDS,
@@ -3962,8 +3962,8 @@ export class JobsBoardService {
 let jobsBoardService: JobsBoardService | null = null;
 
 export function getJobsBoardService(
-  supabase: SupabaseService,
+  data: DataLayer,
 ): JobsBoardService {
-  if (!jobsBoardService) jobsBoardService = new JobsBoardService(supabase);
+  if (!jobsBoardService) jobsBoardService = new JobsBoardService(data);
   return jobsBoardService;
 }

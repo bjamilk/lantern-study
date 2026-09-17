@@ -90,7 +90,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const overview = await getLibrarySearchService(legacyService()).getOverview(userId);
+    const overview = await getLibrarySearchService(dataLayer).getOverview(userId);
     res.json({ success: true, data: overview });
   })
 );
@@ -115,7 +115,7 @@ router.get(
     );
 
     try {
-      const results = await getLibrarySearchService(legacyService()).search(userId, {
+      const results = await getLibrarySearchService(dataLayer).search(userId, {
         q,
         courseId,
         topicId,

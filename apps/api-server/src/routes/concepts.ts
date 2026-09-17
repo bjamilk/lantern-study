@@ -87,7 +87,7 @@ router.get(
     const cacheKey = `${CONCEPT_SEARCH_CACHE_PREFIX}${courseId || 'all'}:${q.toLowerCase()}:${limit}`;
     const concepts = await cacheService.cached(
       cacheKey,
-      () => getConceptsService(legacyService()).searchConcepts({ q, courseId, limit }),
+      () => getConceptsService(dataLayer).searchConcepts({ q, courseId, limit }),
       { ttl: CONCEPT_SEARCH_CACHE_TTL_SECONDS }
     );
 
@@ -106,7 +106,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const { concept, created } = await getConceptsService(legacyService()).findOrCreateConcept(userId, {
+      const { concept, created } = await getConceptsService(dataLayer).findOrCreateConcept(userId, {
         name: req.body?.name,
         courseId: req.body?.courseId ?? null,
         parentId: req.body?.parentId ?? null,
@@ -136,7 +136,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const link = await getConceptsService(legacyService()).linkConcept(userId, req.params.conceptId, {
+      const link = await getConceptsService(dataLayer).linkConcept(userId, req.params.conceptId, {
         targetType: req.body?.targetType,
         targetId: req.body?.targetId,
         confidence: req.body?.confidence ?? null,

@@ -38,7 +38,7 @@ import {
   isValidCourseSemester,
   isValidJoinCode,
 } from '@lantern/shared/academic';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { PublicError } from '../utils/safeError';
 import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
 import { logger } from '../utils/logger';
@@ -138,18 +138,20 @@ function profileFromEmbed(raw: unknown): { name: string; username: string | null
 }
 
 export class ClassSectionsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private data: DataLayer) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.data.getClient();
   }
 
   private courses() {
-    return getAcademicCoursesService(this.supabaseService);
+    // TRANSITIONAL (M2d): `getAcademicCoursesService` still takes the `SupabaseService` facade whole.
+    return getAcademicCoursesService(this.data.legacyService);
   }
 
   private topics() {
-    return getCourseTopicsService(this.supabaseService);
+    // TRANSITIONAL (M2d): `getCourseTopicsService` still takes the `SupabaseService` facade whole.
+    return getCourseTopicsService(this.data.legacyService);
   }
 
   private async withSectionSelect(
@@ -809,7 +811,7 @@ export class ClassSectionsService {
       .maybeSingle();
     if (sectionError) throw sectionError;
 
-    const note = await this.supabaseService.createNote(userId, {
+    const note = await this.data.notes.createNote(userId, {
       title: String(data.title || 'Lecturer notes'),
       body: String(data.body_snapshot || ''),
       courseId: section?.course_id ? String(section.course_id) : null,
@@ -994,7 +996,7 @@ export class ClassSectionsService {
     const students = roster.filter((m) => m.role === 'student');
     await Promise.allSettled(
       students.slice(0, 100).map((student) =>
-        this.supabaseService.createNotification(student.userId, {
+        this.data.notifications.createNotification(student.userId, {
           message: `${section.title}: ${title}`,
           type: 'class_assignment',
           link: `class:${classId}`,
@@ -1066,7 +1068,7 @@ export class ClassSectionsService {
         : assignment.kind === 'deck'
           ? 'card_reviewed'
           : 'resource_opened';
-    await recordLearningEvent(this.supabaseService, {
+    await recordLearningEvent(this.data, {
       userId,
       eventType,
       courseId: section.course.id,
@@ -1411,8 +1413,8 @@ export class ClassSectionsService {
 
 let service: ClassSectionsService | null = null;
 
-export function getClassSectionsService(supabaseService: SupabaseService): ClassSectionsService {
-  if (!service) service = new ClassSectionsService(supabaseService);
+export function getClassSectionsService(data: DataLayer): ClassSectionsService {
+  if (!service) service = new ClassSectionsService(data);
   return service;
 }
 

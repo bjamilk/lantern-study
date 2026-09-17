@@ -196,7 +196,7 @@ router.post('/conversations', async (req: Request, res: Response) => {
     // Only attach a note the user owns (same trust boundary as message send).
     let trustedNoteId: string | null = null;
     if (noteContextId) {
-      const trusted = await buildTrustedCompanionContext(legacyService(), userId, {
+      const trusted = await buildTrustedCompanionContext(dataLayer, userId, {
         noteId: noteContextId,
       });
       trustedNoteId = trusted.noteId || null;
@@ -414,7 +414,7 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
 
   try {
     const { groupName, messages } = await fetchAuthorizedGroupSummaryMessages(
-      legacyService(),
+      dataLayer,
       groupId,
       userId,
       50
@@ -496,7 +496,7 @@ router.post('/attachments', uploadBurstRateLimit, async (req: Request, res: Resp
 
   try {
     const attachment = await createCompanionImageAttachment({
-      supabaseService: legacyService(),
+      layer: dataLayer,
       userId,
       buffer,
       fileName: typeof fileName === 'string' ? fileName : 'image.jpg',
@@ -677,12 +677,12 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
       userId,
       async () => {
         const trustedContext = await buildTrustedCompanionContext(
-          legacyService(),
+          dataLayer,
           userId,
           { ...(context || {}), imageAttachments: undefined }
         );
         trustedContext.imageAttachments = await loadTrustedCompanionImages(
-          legacyService(),
+          dataLayer,
           userId,
           collectImageAttachmentIds(context)
         );
@@ -812,12 +812,12 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
 
   try {
     const trustedContext = await buildTrustedCompanionContext(
-      legacyService(),
+      dataLayer,
       userId,
       { ...(context || {}), imageAttachments: undefined }
     );
     trustedContext.imageAttachments = await loadTrustedCompanionImages(
-      legacyService(),
+      dataLayer,
       userId,
       collectImageAttachmentIds(context)
     );

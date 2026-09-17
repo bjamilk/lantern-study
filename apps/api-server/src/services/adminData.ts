@@ -40,13 +40,13 @@
  * functions here return the whole PostgREST result for that reason — the count
  * is on the result, not in `data`.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { logger } from '../utils/logger';
 
 /** The client, as `any`: the admin surface uses GoTrue admin calls and RPCs
  *  that the typed client does not expose. */
-function db(svc: SupabaseService): any {
-  return svc.getClient();
+function db(layer: DataLayer): any {
+  return layer.getClient();
 }
 
 // ===========================================================================
@@ -128,30 +128,30 @@ export async function setAuthBan(
 
 /** `setAuthBan` for callers that hold the service rather than the client. */
 export function applyAuthBan(
-  svc: SupabaseService,
+  layer: DataLayer,
   userId: string,
   duration: typeof AUTH_BAN_DURATION | 'none'
 ): Promise<boolean> {
-  return setAuthBan(db(svc), userId, duration);
+  return setAuthBan(db(layer), userId, duration);
 }
 
 /** The GoTrue user record: email, app_metadata, created_at. */
-export function getAuthUser(svc: SupabaseService, userId: string): Promise<any> {
-  return db(svc).auth.admin.getUserById(userId);
+export function getAuthUser(layer: DataLayer, userId: string): Promise<any> {
+  return db(layer).auth.admin.getUserById(userId);
 }
 
 /** Write GoTrue `app_metadata` (this is where `is_platform_admin` lives). */
 export function setAuthUserMetadata(
-  svc: SupabaseService,
+  layer: DataLayer,
   userId: string,
   appMetadata: Record<string, unknown>
 ): Promise<any> {
-  return db(svc).auth.admin.updateUserById(userId, { app_metadata: appMetadata });
+  return db(layer).auth.admin.updateUserById(userId, { app_metadata: appMetadata });
 }
 
 /** Revoke every session the user holds. Throws — callers log and continue. */
-export function signOutEverywhere(svc: SupabaseService, userId: string): Promise<any> {
-  return db(svc).auth.admin.signOut(userId, 'global');
+export function signOutEverywhere(layer: DataLayer, userId: string): Promise<any> {
+  return db(layer).auth.admin.signOut(userId, 'global');
 }
 
 /**
@@ -159,8 +159,8 @@ export function signOutEverywhere(svc: SupabaseService, userId: string): Promise
  * the page scan stops at 1000 users, which is the bug the
  * `admin_search_users_by_email` RPC exists to fix.
  */
-export function listAuthUsers(svc: SupabaseService, page: number, perPage: number): Promise<any> {
-  return db(svc).auth.admin.listUsers({ page, perPage });
+export function listAuthUsers(layer: DataLayer, page: number, perPage: number): Promise<any> {
+  return db(layer).auth.admin.listUsers({ page, perPage });
 }
 
 /**
@@ -169,11 +169,11 @@ export function listAuthUsers(svc: SupabaseService, page: number, perPage: numbe
  * not been applied and falls back to the page scan above.
  */
 export function searchUsersByEmail(
-  svc: SupabaseService,
+  layer: DataLayer,
   searchQuery: string,
   resultLimit: number
 ): Promise<any> {
-  return db(svc).rpc('admin_search_users_by_email', {
+  return db(layer).rpc('admin_search_users_by_email', {
     search_query: searchQuery,
     result_limit: resultLimit,
   });
@@ -184,13 +184,13 @@ export function searchUsersByEmail(
 // ===========================================================================
 
 /** One profile by id, in the list/search projection. Absent → data null. */
-export function getUserForAdminList(svc: SupabaseService, userId: string): Promise<any> {
-  return db(svc).from('profiles').select(ADMIN_USER_COLUMNS).eq('id', userId).maybeSingle();
+export function getUserForAdminList(layer: DataLayer, userId: string): Promise<any> {
+  return db(layer).from('profiles').select(ADMIN_USER_COLUMNS).eq('id', userId).maybeSingle();
 }
 
 /** The list/search projection for a set of ids (email-search result hydration). */
-export function getUsersForAdminList(svc: SupabaseService, userIds: string[]): Promise<any> {
-  return db(svc).from('profiles').select(ADMIN_USER_COLUMNS).in('id', userIds);
+export function getUsersForAdminList(layer: DataLayer, userIds: string[]): Promise<any> {
+  return db(layer).from('profiles').select(ADMIN_USER_COLUMNS).in('id', userIds);
 }
 
 /**
@@ -201,10 +201,10 @@ export function getUsersForAdminList(svc: SupabaseService, userIds: string[]): P
  * also owns the UUID and email branches that never reach this query.
  */
 export function listUsersPage(
-  svc: SupabaseService,
+  layer: DataLayer,
   opts: { escapedSearch?: string; offset: number; limit: number }
 ): Promise<any> {
-  let query = db(svc)
+  let query = db(layer)
     .from('profiles')
     .select(ADMIN_USER_COLUMNS, { count: 'exact' })
     .order('created_at', { ascending: false })
@@ -219,16 +219,16 @@ export function listUsersPage(
 }
 
 /** The full profile the single-user drawer renders. */
-export function getUserDetail(svc: SupabaseService, userId: string): Promise<any> {
-  return db(svc).from('profiles').select(ADMIN_USER_DETAIL_COLUMNS).eq('id', userId).maybeSingle();
+export function getUserDetail(layer: DataLayer, userId: string): Promise<any> {
+  return db(layer).from('profiles').select(ADMIN_USER_DETAIL_COLUMNS).eq('id', userId).maybeSingle();
 }
 
 /**
  * The settings blob only. `.single()`, not `.maybeSingle()`: both callers treat
  * a missing row as "User not found", and the status route checks `fetchErr`.
  */
-export function getUserSettings(svc: SupabaseService, userId: string): Promise<any> {
-  return db(svc).from('profiles').select('settings').eq('id', userId).single();
+export function getUserSettings(layer: DataLayer, userId: string): Promise<any> {
+  return db(layer).from('profiles').select('settings').eq('id', userId).single();
 }
 
 /**
@@ -241,21 +241,21 @@ export function getUserSettings(svc: SupabaseService, userId: string): Promise<a
  * Callers pass the whole next blob, so they must merge onto the stored one.
  */
 export function setUserSettings(
-  svc: SupabaseService,
+  layer: DataLayer,
   userId: string,
   settings: Record<string, unknown>
 ): Promise<any> {
-  return db(svc).from('profiles').update({ settings }).eq('id', userId);
+  return db(layer).from('profiles').update({ settings }).eq('id', userId);
 }
 
 /** `id, name, username` for a set of ids — actor labels, owner labels. */
-export function getProfileSummaries(svc: SupabaseService, userIds: string[]): Promise<any> {
-  return db(svc).from('profiles').select(PROFILE_SUMMARY_COLUMNS).in('id', userIds);
+export function getProfileSummaries(layer: DataLayer, userIds: string[]): Promise<any> {
+  return db(layer).from('profiles').select(PROFILE_SUMMARY_COLUMNS).in('id', userIds);
 }
 
 /** Newest sign-ups, for the activity feed. */
-export function listRecentUsers(svc: SupabaseService, limit: number): Promise<any> {
-  return db(svc)
+export function listRecentUsers(layer: DataLayer, limit: number): Promise<any> {
+  return db(layer)
     .from('profiles')
     .select('id, name, username, created_at')
     .order('created_at', { ascending: false })
@@ -272,17 +272,17 @@ export function listRecentUsers(svc: SupabaseService, limit: number): Promise<an
 // ===========================================================================
 
 export function grantPlatformAdmin(
-  svc: SupabaseService,
+  layer: DataLayer,
   userId: string,
   grantedBy: string
 ): Promise<any> {
-  return db(svc)
+  return db(layer)
     .from('platform_admins')
     .upsert({ user_id: userId, granted_by: grantedBy }, { onConflict: 'user_id' });
 }
 
-export function revokePlatformAdmin(svc: SupabaseService, userId: string): Promise<any> {
-  return db(svc).from('platform_admins').delete().eq('user_id', userId);
+export function revokePlatformAdmin(layer: DataLayer, userId: string): Promise<any> {
+  return db(layer).from('platform_admins').delete().eq('user_id', userId);
 }
 
 // ===========================================================================
@@ -310,10 +310,10 @@ export type DashboardCounts = {
 };
 
 export async function getDashboardCounts(
-  svc: SupabaseService,
+  layer: DataLayer,
   window: { todayStart: string; last7d: string; last24h: string }
 ): Promise<DashboardCounts> {
-  const client = db(svc);
+  const client = db(layer);
   const { todayStart, last7d, last24h } = window;
 
   const [
@@ -365,7 +365,7 @@ export async function getDashboardCounts(
 
 /** Per-user counts for the single-user drawer. */
 export async function getUserCounts(
-  svc: SupabaseService,
+  layer: DataLayer,
   userId: string,
   last7d: string
 ): Promise<{
@@ -374,7 +374,7 @@ export async function getUserCounts(
   deckCount: number | null;
   aiEvents7d: number | null;
 }> {
-  const client = db(svc);
+  const client = db(layer);
   const [
     { count: groupCount },
     { count: listingCount },
@@ -393,8 +393,8 @@ export async function getUserCounts(
  * Distinct study_activity users since a date, capped at 10k rows — the same
  * definition the Analytics tab's WAU/DAU family uses.
  */
-export function listRecentStudyActivityUsers(svc: SupabaseService, sinceYmd: string): Promise<any> {
-  return db(svc)
+export function listRecentStudyActivityUsers(layer: DataLayer, sinceYmd: string): Promise<any> {
+  return db(layer)
     .from('study_activity')
     .select('user_id')
     .gte('activity_date', sinceYmd)
@@ -408,10 +408,10 @@ export function listRecentStudyActivityUsers(svc: SupabaseService, sinceYmd: str
 
 /** One page of listings for the moderation table, newest first. */
 export function listListingsForAdmin(
-  svc: SupabaseService,
+  layer: DataLayer,
   opts: { status?: string; offset: number; limit: number }
 ): Promise<any> {
-  let query = db(svc)
+  let query = db(layer)
     .from('marketplace_listings')
     .select(
       'id, title, price, category, status, created_at, views_count, user_id, seller:profiles!marketplace_listings_user_id_fkey(id, name)',
@@ -425,8 +425,8 @@ export function listListingsForAdmin(
 }
 
 /** Enough of a listing to decide a moderation action and notify its seller. */
-export function getListingForModeration(svc: SupabaseService, listingId: string): Promise<any> {
-  return db(svc)
+export function getListingForModeration(layer: DataLayer, listingId: string): Promise<any> {
+  return db(layer)
     .from('marketplace_listings')
     .select('id, status, user_id, title')
     .eq('id', listingId)
@@ -434,11 +434,11 @@ export function getListingForModeration(svc: SupabaseService, listingId: string)
 }
 
 export function setListingStatus(
-  svc: SupabaseService,
+  layer: DataLayer,
   listingId: string,
   status: string
 ): Promise<any> {
-  return db(svc).from('marketplace_listings').update({ status }).eq('id', listingId);
+  return db(layer).from('marketplace_listings').update({ status }).eq('id', listingId);
 }
 
 /**
@@ -448,11 +448,11 @@ export function setListingStatus(
  * failure to annotate it.
  */
 export function setListingUnderReview(
-  svc: SupabaseService,
+  layer: DataLayer,
   listingId: string,
   fields: { reason: string; at: string; by: string }
 ): any {
-  return db(svc)
+  return db(layer)
     .from('marketplace_listings')
     .update({
       rights_status: 'under_review',
@@ -464,8 +464,8 @@ export function setListingUnderReview(
 }
 
 /** Newest listings, for the activity feed. */
-export function listRecentListings(svc: SupabaseService, limit: number): Promise<any> {
-  return db(svc)
+export function listRecentListings(layer: DataLayer, limit: number): Promise<any> {
+  return db(layer)
     .from('marketplace_listings')
     .select('id, title, created_at, user_id, status')
     .order('created_at', { ascending: false })
@@ -477,8 +477,8 @@ export function listRecentListings(svc: SupabaseService, limit: number): Promise
 // ===========================================================================
 
 /** Newest marketplace reports, for the activity feed. */
-export function listRecentMarketplaceReports(svc: SupabaseService, limit: number): Promise<any> {
-  return db(svc)
+export function listRecentMarketplaceReports(layer: DataLayer, limit: number): Promise<any> {
+  return db(layer)
     .from('marketplace_reports')
     .select('id, reason, created_at, reporter_id')
     .order('created_at', { ascending: false })
@@ -486,8 +486,8 @@ export function listRecentMarketplaceReports(svc: SupabaseService, limit: number
 }
 
 /** What a report points at — used to decide which caches a takedown clears. */
-export function getReportTarget(svc: SupabaseService, reportId: string): Promise<any> {
-  return db(svc)
+export function getReportTarget(layer: DataLayer, reportId: string): Promise<any> {
+  return db(layer)
     .from('content_reports')
     .select('target_type, target_id')
     .eq('id', reportId)
@@ -501,11 +501,11 @@ export function getReportTarget(svc: SupabaseService, reportId: string): Promise
  * the caller can tell "no such report" (404) from a write failure (500).
  */
 export function resolveReport(
-  svc: SupabaseService,
+  layer: DataLayer,
   reportId: string,
   fields: { note: string | null; resolvedBy: string; resolvedAt: string }
 ): Promise<any> {
-  return db(svc)
+  return db(layer)
     .from('content_reports')
     .update({
       status: 'resolved',
@@ -523,10 +523,10 @@ export function resolveReport(
 // ===========================================================================
 
 export function listGroupsForAdmin(
-  svc: SupabaseService,
+  layer: DataLayer,
   opts: { escapedSearch?: string; offset: number; limit: number }
 ): Promise<any> {
-  let query = db(svc)
+  let query = db(layer)
     .from('groups')
     .select('id, name, description, is_archived, created_at, last_message_time', { count: 'exact' })
     .order('created_at', { ascending: false })
@@ -537,18 +537,18 @@ export function listGroupsForAdmin(
 
 /** Soft removal: a group is archived, never deleted, so it can be restored. */
 export function setGroupArchived(
-  svc: SupabaseService,
+  layer: DataLayer,
   groupId: string,
   isArchived: boolean
 ): Promise<any> {
-  return db(svc).from('groups').update({ is_archived: isArchived }).eq('id', groupId);
+  return db(layer).from('groups').update({ is_archived: isArchived }).eq('id', groupId);
 }
 
 export function listMessagesForAdmin(
-  svc: SupabaseService,
+  layer: DataLayer,
   opts: { groupId?: string; offset: number; limit: number }
 ): Promise<any> {
-  let query = db(svc)
+  let query = db(layer)
     .from('messages')
     .select(
       'id, group_id, sender_id, text, timestamp, type, sender:profiles!messages_sender_id_fkey(id, name, username)',
@@ -561,15 +561,15 @@ export function listMessagesForAdmin(
 }
 
 /** The one hard delete in the console: a message leaves no tombstone. */
-export function deleteMessage(svc: SupabaseService, messageId: string): Promise<any> {
-  return db(svc).from('messages').delete().eq('id', messageId);
+export function deleteMessage(layer: DataLayer, messageId: string): Promise<any> {
+  return db(layer).from('messages').delete().eq('id', messageId);
 }
 
 export function listDecksForAdmin(
-  svc: SupabaseService,
+  layer: DataLayer,
   opts: { escapedSearch?: string; offset: number; limit: number }
 ): Promise<any> {
-  let query = db(svc)
+  let query = db(layer)
     .from('decks')
     .select(
       'id, name, description, user_id, created_at, removed_by_admin_at, owner:profiles!decks_user_id_fkey(id, name, username)',
@@ -583,13 +583,13 @@ export function listDecksForAdmin(
 }
 
 /** Card ids only — the console counts them per deck rather than reading cards. */
-export function listFlashcardDeckIds(svc: SupabaseService, deckIds: string[]): Promise<any> {
-  return db(svc).from('flashcards').select('deck_id').in('deck_id', deckIds);
+export function listFlashcardDeckIds(layer: DataLayer, deckIds: string[]): Promise<any> {
+  return db(layer).from('flashcards').select('deck_id').in('deck_id', deckIds);
 }
 
 /** Soft removal, so a student can appeal: the deck row survives. */
-export function removeDeck(svc: SupabaseService, deckId: string, removedAt: string): Promise<any> {
-  return db(svc).from('decks').update({ removed_by_admin_at: removedAt }).eq('id', deckId);
+export function removeDeck(layer: DataLayer, deckId: string, removedAt: string): Promise<any> {
+  return db(layer).from('decks').update({ removed_by_admin_at: removedAt }).eq('id', deckId);
 }
 
 /**
@@ -597,8 +597,8 @@ export function removeDeck(svc: SupabaseService, deckId: string, removedAt: stri
  * `count: 'exact'` so the console can say "showing 50 of N" — the hard cap used
  * to be invisible, indistinguishable from a complete list.
  */
-export function listOfflineBundles(svc: SupabaseService): Promise<any> {
-  return db(svc)
+export function listOfflineBundles(layer: DataLayer): Promise<any> {
+  return db(layer)
     .from('offline_bundles')
     .select('id, user_id, display_name, group_name, updated_at, created_at', { count: 'exact' })
     .order('updated_at', { ascending: false })
@@ -610,8 +610,8 @@ export function listOfflineBundles(svc: SupabaseService): Promise<any> {
 // ===========================================================================
 
 /** Raw AI events since a timestamp, newest first. */
-export function listAiEvents(svc: SupabaseService, since: string, limit: number): Promise<any> {
-  return db(svc)
+export function listAiEvents(layer: DataLayer, since: string, limit: number): Promise<any> {
+  return db(layer)
     .from('ai_analytics')
     .select('event, created_at, user_id')
     .gte('created_at', since)
@@ -620,8 +620,8 @@ export function listAiEvents(svc: SupabaseService, since: string, limit: number)
 }
 
 /** AI events since a timestamp, for the per-user leaderboard. Unordered. */
-export function listAiEventsByUser(svc: SupabaseService, since: string, limit: number): Promise<any> {
-  return db(svc)
+export function listAiEventsByUser(layer: DataLayer, since: string, limit: number): Promise<any> {
+  return db(layer)
     .from('ai_analytics')
     .select('user_id, event, created_at')
     .gte('created_at', since)
@@ -629,8 +629,8 @@ export function listAiEventsByUser(svc: SupabaseService, since: string, limit: n
 }
 
 /** Newest AI events, for the activity feed. */
-export function listRecentAiEvents(svc: SupabaseService, limit: number): Promise<any> {
-  return db(svc)
+export function listRecentAiEvents(layer: DataLayer, limit: number): Promise<any> {
+  return db(layer)
     .from('ai_analytics')
     .select('id, event, created_at, user_id')
     .order('created_at', { ascending: false })
@@ -644,8 +644,8 @@ export function listRecentAiEvents(svc: SupabaseService, limit: number): Promise
  * NULL for cache replays, so `.not('token_estimate', 'is', null)` is what makes
  * this genuine spend rather than phantom.
  */
-export function listAiTokenEstimates(svc: SupabaseService, since: string, limit: number): Promise<any> {
-  return db(svc)
+export function listAiTokenEstimates(layer: DataLayer, since: string, limit: number): Promise<any> {
+  return db(layer)
     .from('ai_inference_log')
     .select('token_estimate')
     .gte('created_at', since)
@@ -654,8 +654,8 @@ export function listAiTokenEstimates(svc: SupabaseService, since: string, limit:
 }
 
 /** The per-feature, per-provider inference rows behind `GET /ai-tokens`. */
-export function listAiInferenceRows(svc: SupabaseService, since: string, limit: number): Promise<any> {
-  return db(svc)
+export function listAiInferenceRows(layer: DataLayer, since: string, limit: number): Promise<any> {
+  return db(layer)
     .from('ai_inference_log')
     .select('feature, provider, token_estimate, created_at')
     .gte('created_at', since)
@@ -664,8 +664,8 @@ export function listAiInferenceRows(svc: SupabaseService, since: string, limit: 
 }
 
 /** The raw product-event stream behind `GET /events`. */
-export function listProductEvents(svc: SupabaseService, since: string, limit: number): Promise<any> {
-  return db(svc)
+export function listProductEvents(layer: DataLayer, since: string, limit: number): Promise<any> {
+  return db(layer)
     .from('product_events')
     .select('event, surface, user_id, created_at')
     .gte('created_at', since)
@@ -679,11 +679,11 @@ export function listProductEvents(svc: SupabaseService, since: string, limit: nu
  * this, so an admin who hits a 500 has still left a trail.
  */
 export function listCompanionMessages(
-  svc: SupabaseService,
+  layer: DataLayer,
   userId: string,
   limit: number
 ): Promise<any> {
-  return db(svc)
+  return db(layer)
     .from('ai_companion_messages')
     .select('id, role, content, created_at')
     .eq('user_id', userId)
@@ -700,8 +700,8 @@ export function listCompanionMessages(
  * `error.code === '42P01'` to degrade to `tableReady: false` rather than
  * breaking the console on an environment where the migration has not run.
  */
-export function listAuditEntries(svc: SupabaseService, limit: number): Promise<any> {
-  return db(svc)
+export function listAuditEntries(layer: DataLayer, limit: number): Promise<any> {
+  return db(layer)
     .from('admin_audit_log')
     .select('id, actor_id, action, target_type, target_id, metadata, reason, created_at')
     .order('created_at', { ascending: false })

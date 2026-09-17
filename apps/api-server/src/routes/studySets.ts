@@ -156,7 +156,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getStudySetsService(legacyService()).list(userId);
+    const data = await getStudySetsService(dataLayer).list(userId);
     res.json({ success: true, data });
   })
 );
@@ -167,7 +167,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getStudySetsService(legacyService()).resume(userId);
+    const data = await getStudySetsService(dataLayer).resume(userId);
     res.json({ success: true, data });
   })
 );
@@ -178,7 +178,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getStudySetsService(legacyService()).listFolders(userId);
+    const data = await getStudySetsService(dataLayer).listFolders(userId);
     res.json({ success: true, data });
   })
 );
@@ -192,7 +192,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(legacyService()).createFolder(userId, req.body || {});
+      const data = await getStudySetsService(dataLayer).createFolder(userId, req.body || {});
       res.status(201).json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -210,7 +210,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      await getStudySetsService(legacyService()).removeFolder(userId, String(req.params.folderId));
+      await getStudySetsService(dataLayer).removeFolder(userId, String(req.params.folderId));
       res.json({ success: true });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -228,7 +228,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(legacyService()).create(userId, req.body || {});
+      const data = await getStudySetsService(dataLayer).create(userId, req.body || {});
       res.status(201).json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -246,7 +246,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(legacyService()).get(userId, String(req.params.setId));
+      const data = await getStudySetsService(dataLayer).get(userId, String(req.params.setId));
       res.json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -271,7 +271,7 @@ router.patch(
     // a storage object belonging to someone else.
     const { coverPath, ...patch } = body;
     try {
-      const data = await getStudySetsService(legacyService()).update(userId, setId, patch);
+      const data = await getStudySetsService(dataLayer).update(userId, setId, patch);
       if (coverPath === null) {
         const { previousPath } = await dataLayer.uploads.setStudySetCoverPath(setId, userId, null);
         await dataLayer.uploads.deleteCoverObject(previousPath);
@@ -354,7 +354,7 @@ router.post(
     try {
       // Throws a PublicError ("Study set not found") for a set this account
       // does not own — answered below before a byte is stored.
-      await getStudySetsService(legacyService()).get(userId, setId);
+      await getStudySetsService(dataLayer).get(userId, setId);
       // Probe the COLUMN before storing bytes: on a database without the
       // migration this answers 503 without ever leaving an orphan object.
       await legacyService().assertCoverColumn?.('study-set');
@@ -447,7 +447,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(legacyService()).touchStudied(userId, String(req.params.setId));
+      const data = await getStudySetsService(dataLayer).touchStudied(userId, String(req.params.setId));
       res.json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -465,7 +465,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(legacyService()).getPlan(userId, String(req.params.setId));
+      const data = await getStudySetsService(dataLayer).getPlan(userId, String(req.params.setId));
       res.json({ success: true, data });
     } catch (err) {
       if (handlePublicError(err, res)) return;
@@ -483,7 +483,7 @@ router.put(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(legacyService()).replacePlan(
+      const data = await getStudySetsService(dataLayer).replacePlan(
         userId,
         String(req.params.setId),
         req.body || {}
@@ -507,7 +507,7 @@ router.patch(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getStudySetsService(legacyService()).updateTopicStatus(
+      const data = await getStudySetsService(dataLayer).updateTopicStatus(
         userId,
         String(req.params.setId),
         String(req.params.topicId),
@@ -530,7 +530,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      await getStudySetsService(legacyService()).remove(userId, String(req.params.setId));
+      await getStudySetsService(dataLayer).remove(userId, String(req.params.setId));
       res.json({ success: true });
     } catch (err) {
       if (handlePublicError(err, res)) return;

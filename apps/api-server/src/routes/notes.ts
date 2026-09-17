@@ -491,7 +491,7 @@ async function startPresentationPreviewJob(params: {
   buffer?: Buffer;
   extractedText?: string;
 }): Promise<void> {
-  void runPresentationPreviewJob(legacyService(), params).catch((err) => {
+  void runPresentationPreviewJob(dataLayer, params).catch((err) => {
     logger.error('Presentation preview job unhandled error', {
       noteId: params.noteId,
       attachmentId: params.attachmentId,
@@ -647,7 +647,7 @@ async function startNoteOcrJob(params: {
     // Avoid huge Redis payloads — worker re-downloads from storage.
   };
   const outcome = await runSyncOrEnqueue('notes.ocr.extract', payload, params.userId, () =>
-    runNoteOcrJob(legacyService(), {
+    runNoteOcrJob(dataLayer, {
       ...params,
       buffer: params.buffer,
     }),
@@ -2080,7 +2080,7 @@ router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Requ
     { noteId: note.id, attachmentId: attachment.id, videoId, meta: attachmentMeta },
     userId,
     () =>
-      runYoutubeTranscriptJob(legacyService(), {
+      runYoutubeTranscriptJob(dataLayer, {
         noteId: note.id,
         attachmentId: attachment.id,
         videoId,
@@ -2484,14 +2484,14 @@ router.get('/:noteId/attachments/:attachmentId/pages', asyncHandler(async (req: 
   // already have rows, so on a document's first open it must run AFTER the
   // backfill or the first walk-through would come back with no pictures and
   // only the second would have them.
-  let result = await ensurePages(legacyService(), {
+  let result = await ensurePages(dataLayer, {
     noteId: req.params.noteId,
     attachmentId: req.params.attachmentId,
   });
 
   const wantsImages = req.query.images === '1' || req.query.images === 'true';
   if (wantsImages && result.available && result.pages.length > 0) {
-    const render = await ensurePageImages(legacyService(), {
+    const render = await ensurePageImages(dataLayer, {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
     }).catch((err) => {
@@ -2503,14 +2503,14 @@ router.get('/:noteId/attachments/:attachmentId/pages', asyncHandler(async (req: 
       return { available: true, rendered: 0 };
     });
     if (render.rendered > 0) {
-      const refreshed = await getPages(legacyService(), req.params.attachmentId);
+      const refreshed = await getPages(dataLayer, req.params.attachmentId);
       if (refreshed.available && refreshed.pages.length > 0) {
         result = { ...result, pages: refreshed.pages };
       }
     }
   }
   const signed = result.pages.length
-    ? await signPageImages(legacyService(), result.pages)
+    ? await signPageImages(dataLayer, result.pages)
     : new Map<number, string>();
 
   res.json({
@@ -2579,7 +2579,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
   }
 
   const regenerate = req.body?.regenerate === true;
-  const target = await resolveNarrationTarget(legacyService(), {
+  const target = await resolveNarrationTarget(dataLayer, {
     noteId: req.params.noteId,
     attachmentId: req.params.attachmentId,
     userId,
@@ -2611,7 +2611,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
   if (target.reuse) {
     // Rule 2: charge once. A retry gets the script (or the run in flight) that
     // already exists, and no credit is reserved on the way.
-    const bundle = await getNarrationBundle(legacyService(), {
+    const bundle = await getNarrationBundle(dataLayer, {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
       userId,
@@ -2625,7 +2625,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
 
   // Take the row before the credit middleware runs. Whoever wins this write
   // owns the run; everyone else is reuse, at cost 0.
-  const claim = await claimNarrationRun(legacyService(), {
+  const claim = await claimNarrationRun(dataLayer, {
     attachmentId: req.params.attachmentId,
     userId,
     previous: target.existing,
@@ -2653,7 +2653,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
     // Another request for this same document claimed the row between our read
     // and our write. That run is the answer to this one, and this one pays
     // nothing — the same contract as any other repeat request.
-    const bundle = await getNarrationBundle(legacyService(), {
+    const bundle = await getNarrationBundle(dataLayer, {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
       userId,
@@ -2675,7 +2675,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
   // locked out of their own document until the stale window passes.
   res.on('finish', () => {
     if (narrationReq.narrationClaimConsumed) return;
-    void releaseNarrationClaim(legacyService(), {
+    void releaseNarrationClaim(dataLayer, {
       attachmentId: req.params.attachmentId,
       userId,
       previous: claim.previous,
@@ -2724,7 +2724,7 @@ router.post(
 
     // The claim already wrote `queued`; this rewrites it with what the charge
     // actually cost, so a client polling GET sees the real price.
-    await markNarrationStatus(legacyService(), {
+    await markNarrationStatus(dataLayer, {
       attachmentId: req.params.attachmentId,
       userId,
       version,
@@ -2747,7 +2747,7 @@ router.post(
       async () => {
         try {
           await buildNarrationScript(
-            legacyService(),
+            dataLayer,
             {
               noteId: req.params.noteId,
               attachmentId: req.params.attachmentId,
@@ -2758,7 +2758,7 @@ router.post(
             }
           );
         } catch (err) {
-          await markNarrationFailed(legacyService(), {
+          await markNarrationFailed(dataLayer, {
             attachmentId: req.params.attachmentId,
             userId,
             version,
@@ -2766,7 +2766,7 @@ router.post(
           });
           throw err;
         }
-        const bundle = await getNarrationBundle(legacyService(), {
+        const bundle = await getNarrationBundle(dataLayer, {
           noteId: req.params.noteId,
           attachmentId: req.params.attachmentId,
           userId,
@@ -2779,7 +2779,7 @@ router.post(
     );
 
     if (outcome.mode === 'async') {
-      await markNarrationStatus(legacyService(), {
+      await markNarrationStatus(dataLayer, {
         attachmentId: req.params.attachmentId,
         userId,
         version,
@@ -2819,7 +2819,7 @@ router.get(
     }
 
     const includeImages = req.query.images !== '0' && req.query.images !== 'false';
-    const result = await getNarrationBundle(legacyService(), {
+    const result = await getNarrationBundle(dataLayer, {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
       userId,
@@ -3500,7 +3500,7 @@ router.post(
       return;
     }
 
-    const page = await getPageText(legacyService(), {
+    const page = await getPageText(dataLayer, {
       noteId: req.params.noteId,
       attachmentId,
       pageIndex,
@@ -3709,7 +3709,7 @@ router.post(
       },
       userId,
       () =>
-        runYoutubeTranscriptJob(legacyService(), {
+        runYoutubeTranscriptJob(dataLayer, {
           noteId: note.id,
           attachmentId: attachment!.id,
           videoId,

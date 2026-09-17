@@ -114,7 +114,7 @@ export async function getAuthUserInfoForUserIds(
     const entries = await Promise.all(
       uncached.map(async (userId) => {
         try {
-          const { data, error } = await adminData.getAuthUser(supabaseService, userId);
+          const { data, error } = await adminData.getAuthUser(dataLayer, userId);
           if (error) return [userId, {}] as const;
           const info = {
             email: data?.user?.email,

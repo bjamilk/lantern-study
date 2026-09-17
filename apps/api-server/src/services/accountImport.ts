@@ -1,5 +1,5 @@
 import { verifyAccountExportSignature } from './accountExportSign';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { getAccountLifecycle } from './accountLifecycle';
 import { logger } from '../utils/logger';
 
@@ -59,7 +59,7 @@ export interface ImportAccountResult {
 }
 
 export async function importAccountArchive(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   targetUserId: string,
   exportDoc: {
     format: string;
@@ -81,7 +81,7 @@ export async function importAccountArchive(
     (typeof exportDoc.sourceEmail === 'string' && exportDoc.sourceEmail) ||
     (typeof profile.email === 'string' ? profile.email : null);
 
-  const lifecycle = await getAccountLifecycle(supabaseService, targetUserId);
+  const lifecycle = await getAccountLifecycle(layer, targetUserId);
   const targetEmail = lifecycle?.email ?? null;
 
   if (
@@ -104,7 +104,7 @@ export async function importAccountArchive(
 
   const folderIdMap = new Map<string, string>();
   for (const folder of asArray(archive.noteFolders)) {
-    const created = await supabaseService.createNoteFolder(targetUserId, {
+    const created = await layer.notes.createNoteFolder(targetUserId, {
       name: String(folder.name || 'Imported folder'),
       color: typeof folder.color === 'string' ? folder.color : undefined,
     });
@@ -117,7 +117,7 @@ export async function importAccountArchive(
     const folderId =
       oldFolderId != null ? folderIdMap.get(String(oldFolderId)) : undefined;
 
-    await supabaseService.createNote(targetUserId, {
+    await layer.notes.createNote(targetUserId, {
       title: String(note.title || 'Imported note'),
       body: String(note.body || ''),
       summary: typeof note.summary === 'string' ? note.summary : undefined,
@@ -140,7 +140,7 @@ export async function importAccountArchive(
 
   for (const deckRow of asArray(archive.decks)) {
     const payload = deckImportPayload(deckRow);
-    const imported = await supabaseService.importDeck(payload, targetUserId);
+    const imported = await layer.decks.importDeck(payload, targetUserId);
     result.decks += 1;
     result.flashcards += payload.flashcards.length;
     void imported;
@@ -148,7 +148,7 @@ export async function importAccountArchive(
 
   const safeSettings = stripPrivilegedFromSettings(profile.settings);
   if (Object.keys(safeSettings).length > 0) {
-    const { data: targetProfile } = await supabaseService
+    const { data: targetProfile } = await layer
       .getClient()
       .from('profiles')
       .select('settings')
@@ -160,7 +160,7 @@ export async function importAccountArchive(
       ...safeSettings,
     };
     delete merged.test_presets;
-    await supabaseService.updateUser(targetUserId, { settings: merged });
+    await layer.users.updateUser(targetUserId, { settings: merged });
   }
 
   logger.info('Account backup imported', {

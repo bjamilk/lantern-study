@@ -55,7 +55,9 @@ function service(options: {
   };
   const stub = {
     getClient: () => client,
-    readMessageReactions: async () => ({ reactions: options.reactions ?? { [HEART]: 1 } }),
+    groupMessages: {
+      readMessageReactions: async () => ({ reactions: options.reactions ?? { [HEART]: 1 } }),
+    },
   } as any;
   return { stub, inserted, filters };
 }

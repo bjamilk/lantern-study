@@ -10,7 +10,7 @@ import {
 } from "@lantern/shared/jobs";
 import { shouldSendEmailNotifications } from "@lantern/shared/settings";
 import { isAlertMailConfigured, sendJobAlertEmail } from "./alertMail";
-import type { SupabaseService } from "./supabase";
+import type { DataLayer } from "./data";
 import { logger } from "../utils/logger";
 
 export const JOB_ALERT_NOTIFICATION_TYPE = "job_alert";
@@ -19,9 +19,9 @@ export const JOB_ALERT_NOTIFICATION_TYPE = "job_alert";
 const POSTING_SCAN_LIMIT = 50;
 
 export async function processJobSavedSearchAlerts(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): Promise<number> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const { data: searches, error } = await db
     .from("job_saved_searches")
     .select("id, user_id, name, filters, last_checked_at, created_at")
@@ -78,7 +78,7 @@ export async function processJobSavedSearchAlerts(
 
     if (matches.length) {
       const alreadyNotified = await notifiedPostingIds(
-        supabaseService,
+        layer,
         search.user_id,
         search.id,
       );
@@ -86,7 +86,7 @@ export async function processJobSavedSearchAlerts(
       for (const posting of fresh) {
         // createNotification handles the in-app policy and, now that
         // job_alert is push-enabled, the Expo push delivery too.
-        const notification = await supabaseService.createNotification(
+        const notification = await layer.notifications.createNotification(
           search.user_id,
           {
             type: JOB_ALERT_NOTIFICATION_TYPE,
@@ -98,7 +98,7 @@ export async function processJobSavedSearchAlerts(
         if (notification) sent += 1;
       }
       if (fresh.length) {
-        await maybeEmailDigest(supabaseService, search, fresh);
+        await maybeEmailDigest(layer, search, fresh);
       }
     }
 
@@ -123,7 +123,7 @@ export async function processJobSavedSearchAlerts(
  * once per search.
  */
 async function maybeEmailDigest(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   search: { id: string; user_id: string; name: string },
   fresh: Array<{
     id: string;
@@ -135,7 +135,7 @@ async function maybeEmailDigest(
 ): Promise<void> {
   if (!isAlertMailConfigured()) return;
   try {
-    const db = supabaseService.getClient();
+    const db = layer.getClient();
     const { data: profile } = await db
       .from("profiles")
       .select("settings")
@@ -179,11 +179,11 @@ async function maybeEmailDigest(
  * enough: a posting can be edited or re-published after the window moved.
  */
 async function notifiedPostingIds(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string,
   savedSearchId: string,
 ): Promise<Set<string>> {
-  const { data } = await supabaseService
+  const { data } = await layer
     .getClient()
     .from("notifications")
     .select("data")

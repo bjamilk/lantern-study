@@ -70,7 +70,7 @@ function makeService(staffRow: unknown = null) {
   };
   return new ClassSectionsService({
     getClient: () => db,
-    createNotification: jest.fn(async () => null),
+    notifications: { createNotification: jest.fn(async () => null) },
   } as any);
 }
 

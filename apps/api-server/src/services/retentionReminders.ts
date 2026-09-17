@@ -6,7 +6,7 @@
  */
 import { isCardDue } from '@lantern/shared/utils/srs';
 import { shouldSendWeeklyDigest } from '@lantern/shared/settings';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { isAlertMailConfigured, sendWeeklySummaryEmail } from './alertMail';
 import { logger } from '../utils/logger';
 
@@ -29,11 +29,11 @@ export function utcWeekKey(now: Date = new Date()): string {
 }
 
 async function claimReminder(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string,
   key: string,
 ): Promise<boolean> {
-  const { error } = await supabaseService
+  const { error } = await layer
     .getClient()
     .from('retention_reminders_sent')
     .insert({ user_id: userId, reminder_key: key });
@@ -50,9 +50,9 @@ export interface StudyReminderSweepResult {
 }
 
 export async function processStudyReminders(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): Promise<StudyReminderSweepResult> {
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const day = utcDayKey();
   const nowIso = new Date().toISOString();
   const result: StudyReminderSweepResult = { dueCards: 0, streakAtRisk: 0 };
@@ -98,14 +98,14 @@ export async function processStudyReminders(
     const risk = atRisk.has(userId);
     if (!due && !risk) continue;
     const key = `study:${day}`;
-    if (!(await claimReminder(supabaseService, userId, key))) continue;
+    if (!(await claimReminder(layer, userId, key))) continue;
 
     const parts: string[] = [];
     if (due > 0) {
       parts.push(`${due} card${due === 1 ? '' : 's'} due`);
     }
     if (risk) parts.push('your streak is at risk');
-    const notification = await supabaseService.createNotification(userId, {
+    const notification = await layer.notifications.createNotification(userId, {
       type: STUDY_REMINDER_NOTIFICATION_TYPE,
       message: parts.join(' · ').replace(/^./, (c) => c.toUpperCase()),
       link: '/flashcards',
@@ -124,11 +124,11 @@ export async function processStudyReminders(
 }
 
 export async function processWeeklySummary(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
 ): Promise<{ sent: number }> {
   if (!isAlertMailConfigured()) return { sent: 0 };
 
-  const db = supabaseService.getClient();
+  const db = layer.getClient();
   const week = utcWeekKey();
   const { data: profiles, error } = await db
     .from('profiles')
@@ -144,7 +144,7 @@ export async function processWeeklySummary(
     if (!shouldSendWeeklyDigest(profile.settings)) continue;
     const userId = String(profile.id);
     const key = `weekly:${week}`;
-    if (!(await claimReminder(supabaseService, userId, key))) continue;
+    if (!(await claimReminder(layer, userId, key))) continue;
 
     const { data: authUser } = await db.auth.admin.getUserById(userId);
     const to = authUser?.user?.email;
@@ -169,21 +169,21 @@ export async function processWeeklySummary(
   return { sent };
 }
 
-export function startRetentionJobs(supabaseService: SupabaseService): void {
+export function startRetentionJobs(layer: DataLayer): void {
   if (process.env.ENABLE_MARKETPLACE_JOBS !== 'true') {
     logger.info('Retention reminder jobs disabled (set ENABLE_MARKETPLACE_JOBS=true)');
     return;
   }
   const runStudy = async () => {
     try {
-      await processStudyReminders(supabaseService);
+      await processStudyReminders(layer);
     } catch (err) {
       logger.error('Study reminder job failed', err);
     }
   };
   const runWeekly = async () => {
     try {
-      await processWeeklySummary(supabaseService);
+      await processWeeklySummary(layer);
     } catch (err) {
       logger.error('Weekly summary job failed', err);
     }

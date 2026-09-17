@@ -2,7 +2,7 @@ import {
   isPlaceholderExtractedText,
   MIN_NOTE_STUDY_CONTENT_CHARS,
 } from '@lantern/shared/utils/noteStudyContent';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import {
   PDF_OCR_TIMEOUT_MS,
   MAX_OCR_PDF_PAGES,
@@ -95,13 +95,13 @@ function errorMessage(err: unknown): string {
  * previewStoragePath / previewUrl written by a concurrent preview job.
  */
 async function resolveAttachmentMeta(
-  supabaseService: SupabaseService,
+  data: DataLayer,
   noteId: string,
   attachmentId: string,
   jobMeta: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   try {
-    const current = await supabaseService.getNoteAttachment(noteId, attachmentId);
+    const current = await data.notes.getNoteAttachment(noteId, attachmentId);
     if (current?.metadata && typeof current.metadata === 'object') {
       const existing = current.metadata as Record<string, unknown>;
       return {
@@ -143,12 +143,12 @@ function sanitizeMetaForOcr(meta: Record<string, unknown>): Record<string, unkno
  * Caps pages/slides and aborts on timeout to protect worker memory.
  */
 export async function runNoteOcrJob(
-  supabaseService: SupabaseService,
+  data: DataLayer,
   params: NoteOcrJobParams
 ): Promise<NoteOcrJobResult> {
   const { noteId, attachmentId, storagePath, fileName, sourceKind } = params;
   const mergedMeta = await resolveAttachmentMeta(
-    supabaseService,
+    data,
     noteId,
     attachmentId,
     params.meta
@@ -169,13 +169,13 @@ export async function runNoteOcrJob(
   };
 
   try {
-    await supabaseService.updateNoteAttachment(attachmentId, {
+    await data.notes.updateNoteAttachment(attachmentId, {
       metadata: processingMeta,
     });
 
     let buffer = params.buffer;
     if (!buffer) {
-      const downloaded = await supabaseService.downloadNoteFile(storagePath);
+      const downloaded = await data.notes.downloadNoteFile(storagePath);
       buffer = downloaded.buffer;
     }
 
@@ -232,7 +232,7 @@ export async function runNoteOcrJob(
       // is what gets written to extracted_text, exactly as before. Failures are
       // swallowed inside persistPagesAfterPdfOcr — OCR succeeding is the thing
       // the student paid for and it must not be undone by a page write.
-      await persistPagesAfterPdfOcr(supabaseService, attachmentId, buffer, raster.pages, {
+      await persistPagesAfterPdfOcr(data, attachmentId, buffer, raster.pages, {
         noteId,
       });
     }
@@ -242,12 +242,12 @@ export async function runNoteOcrJob(
       const message =
         'Local OCR found no readable text. The file may be blank, too low-resolution, or unsupported.';
       const latestMeta = await resolveAttachmentMeta(
-        supabaseService,
+        data,
         noteId,
         attachmentId,
         processingMeta
       );
-      await supabaseService.updateNoteAttachment(attachmentId, {
+      await data.notes.updateNoteAttachment(attachmentId, {
         extractedText: `[OCR failed: ${fileName}]`,
         metadata: {
           ...sanitizeMetaForOcr(latestMeta),
@@ -271,12 +271,12 @@ export async function runNoteOcrJob(
       trimmed.length >= MIN_NOTE_STUDY_CONTENT_CHARS ? 'ok' : 'needs_ocr';
 
     const latestMeta = await resolveAttachmentMeta(
-      supabaseService,
+      data,
       noteId,
       attachmentId,
       processingMeta
     );
-    await supabaseService.updateNoteAttachment(attachmentId, {
+    await data.notes.updateNoteAttachment(attachmentId, {
       extractedText: trimmed,
       metadata: {
         ...sanitizeMetaForOcr(latestMeta),
@@ -321,12 +321,12 @@ export async function runNoteOcrJob(
       error: message,
     });
     const latestMeta: Record<string, unknown> = await resolveAttachmentMeta(
-      supabaseService,
+      data,
       noteId,
       attachmentId,
       processingMeta
     ).catch(() => ({ ...processingMeta } as Record<string, unknown>));
-    await supabaseService
+    await data.notes
       .updateNoteAttachment(attachmentId, {
         extractedText: `[OCR failed: ${message.slice(0, 120)}]`,
         metadata: {

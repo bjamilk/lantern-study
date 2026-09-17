@@ -60,6 +60,8 @@ import {
 } from "../../services/aiService";
 import { upsertSmartNotesSection } from "@lantern/shared/utils/smartNotes";
 import { SupabaseService } from "../../services/supabase";
+import { createDataLayer, type DataLayer } from "../../services/data";
+import { createDataLayerHost } from "../../services/dataLayerHost";
 import { parseApkgBuffer } from "../../services/apkgImport";
 import { runPresentationPreviewJob } from "../../services/presentationPreview";
 import { runYoutubeTranscriptJob } from "../../services/youtubeNote";
@@ -107,9 +109,22 @@ import {
 // ---------------------------------------------------------------------------
 
 let supabaseService: SupabaseService;
+/**
+ * The worker's own composition root. `server.ts` builds one for the API
+ * process; this process has no server, so it builds its own over the same
+ * service-role facade rather than taking a second injection point — which also
+ * keeps the two processor suites that inject a bare `{ getClient }` stub
+ * working unchanged: the layer they get is bound to that same stub client.
+ */
+let dataLayer: DataLayer;
 
 export function initializeWorkerServices(supabase: SupabaseService): void {
   supabaseService = supabase;
+  dataLayer = createDataLayer({
+    client: supabase.getClient(),
+    supabaseUrl: process.env.SUPABASE_URL || "",
+    host: createDataLayerHost(supabase),
+  });
 }
 
 async function recordInference(
@@ -408,16 +423,14 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       // AI uses to have a photo read and then told "I'm not seeing an image
       // here". The ids are all that is believed; the text is read back from
       // the table for rows this user owns, exactly as the HTTP path does.
-      const trustedContext = await buildTrustedCompanionContext(
-        supabaseService,
+      const trustedContext = await buildTrustedCompanionContext(dataLayer,
         userId,
         {
           ...((context || {}) as Parameters<typeof buildTrustedCompanionContext>[2]),
           imageAttachments: undefined,
         },
       );
-      trustedContext.imageAttachments = await loadTrustedCompanionImages(
-        supabaseService,
+      trustedContext.imageAttachments = await loadTrustedCompanionImages(dataLayer,
         userId,
         collectCompanionImageAttachmentIds(context),
       );
@@ -592,8 +605,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       progress.ref({ type: "note", id: noteId, route: `/notes/${noteId}` });
       try {
         // Throws on total failure → the worker wrapper refunds the AI charge.
-        await buildNarrationScript(
-          supabaseService,
+        await buildNarrationScript(dataLayer,
           { noteId, attachmentId, userId, version, creditCost, title },
           {
             stage: (stage) => progress.stage(stage),
@@ -603,7 +615,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
         // The job's result is the WHOLE deck, not a summary of it: a client
         // that waited on this job renders what comes back, and a summary would
         // leave the player with nothing to speak until it fetched again.
-        const bundle = await getNarrationBundle(supabaseService, {
+        const bundle = await getNarrationBundle(dataLayer, {
           noteId,
           attachmentId,
           userId,
@@ -613,7 +625,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
         // The row must say "failed" even though the throw is what refunds:
         // a student who comes back to the screen has to see why, not a
         // deck stuck at "writing".
-        await markNarrationFailed(supabaseService, {
+        await markNarrationFailed(dataLayer, {
           attachmentId,
           userId,
           version: version || 1,
@@ -638,7 +650,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       progress.ref({ type: "studyPack", id: draftId, route: `/study-packs/drafts/${draftId}` });
       // Throws on total failure → the worker wrapper refunds the AI charge.
       return withJobHeartbeat(job, progress, "generating", () =>
-        getStudyPackFactoryService(supabaseService).generate(draftId),
+        getStudyPackFactoryService(dataLayer).generate(draftId),
       );
     }
     default:
@@ -688,7 +700,7 @@ async function processFileJob(job: Job, progress: JobProgress): Promise<unknown>
       extractedText?: string;
     };
     await progress.stage("reading");
-    await runPresentationPreviewJob(supabaseService, {
+    await runPresentationPreviewJob(dataLayer, {
       noteId,
       attachmentId,
       storagePath,
@@ -707,7 +719,7 @@ async function processFileJob(job: Job, progress: JobProgress): Promise<unknown>
       meta?: Record<string, unknown>;
     };
     await progress.stage("reading");
-    const result = await runYoutubeTranscriptJob(supabaseService, {
+    const result = await runYoutubeTranscriptJob(dataLayer, {
       noteId,
       attachmentId,
       videoId,
@@ -734,7 +746,7 @@ async function processFileJob(job: Job, progress: JobProgress): Promise<unknown>
       bufferBase64?: string;
     };
     await progress.stage("reading");
-    const result = await runNoteOcrJob(supabaseService, {
+    const result = await runNoteOcrJob(dataLayer, {
       noteId,
       attachmentId,
       storagePath,
@@ -780,31 +792,31 @@ async function processExportJob(job: Job, progress: JobProgress): Promise<unknow
 async function processCronJob(job: Job, _progress: JobProgress): Promise<unknown> {
   if (job.name === "cron.dataRetention") {
     // Shared with in-process retention: AI log purges + overdue paused-account hard deletes.
-    return runDataRetentionPurge(supabaseService);
+    return runDataRetentionPurge(dataLayer);
   }
   if (job.name === "cron.marketplaceAlerts") {
-    const saved = await processSavedSearchAlerts(supabaseService);
-    const checkout = await processAbandonedCheckoutReminders(supabaseService);
-    const offers = await processStaleOfferReminders(supabaseService);
-    const reviews = await processReviewReminders(supabaseService);
+    const saved = await processSavedSearchAlerts(dataLayer);
+    const checkout = await processAbandonedCheckoutReminders(dataLayer);
+    const offers = await processStaleOfferReminders(dataLayer);
+    const reviews = await processReviewReminders(dataLayer);
     return { saved, checkout, offers, reviews };
   }
   if (job.name === "cron.jobAlerts") {
-    const jobAlerts = await processJobSavedSearchAlerts(supabaseService);
+    const jobAlerts = await processJobSavedSearchAlerts(dataLayer);
     return { jobAlerts };
   }
   if (job.name === "cron.jobReminders") {
-    return processJobDeadlineReminders(supabaseService);
+    return processJobDeadlineReminders(dataLayer);
   }
   if (job.name === "cron.studyReminders") {
-    return processStudyReminders(supabaseService);
+    return processStudyReminders(dataLayer);
   }
   if (job.name === "cron.examReminders") {
     const { processExamReminders } = await import("../../services/examReminders");
-    return processExamReminders(supabaseService);
+    return processExamReminders(dataLayer);
   }
   if (job.name === "cron.weeklySummary") {
-    return processWeeklySummary(supabaseService);
+    return processWeeklySummary(dataLayer);
   }
   throw new Error(`Unknown cron job: ${job.name}`);
 }

@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@lantern/shared/accountLifecycle';
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
 import { cacheService } from './cache';
 import { invalidateBanCache } from './adminAudit';
 import { deleteUserAccountFully } from './userDataLifecycle';
@@ -15,10 +15,10 @@ export interface AccountLifecycleRow {
 }
 
 export async function getAccountLifecycle(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string
 ): Promise<AccountLifecycleRow | null> {
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from('profiles')
     .select('id, deactivated_at, deletion_scheduled_at, settings')
@@ -30,7 +30,7 @@ export async function getAccountLifecycle(
 
   let email: string | null = null;
   try {
-    const { data: authData } = await supabaseService.getClient().auth.admin.getUserById(userId);
+    const { data: authData } = await layer.getClient().auth.admin.getUserById(userId);
     email = authData?.user?.email ?? null;
   } catch {
     email = null;
@@ -75,11 +75,11 @@ export function isDeactivatedLifecycleRoute(method: string, path: string, userId
 }
 
 export async function scheduleAccountDeletion(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string,
   graceDays = ACCOUNT_DELETION_GRACE_DAYS
 ): Promise<{ deletionScheduledAt: string; deactivatedAt: string }> {
-  const row = await getAccountLifecycle(supabaseService, userId);
+  const row = await getAccountLifecycle(layer, userId);
   if (!row) throw new Error('User not found');
 
   const now = new Date();
@@ -99,7 +99,7 @@ export async function scheduleAccountDeletion(
     account_status: 'deactivated',
   };
 
-  const { error } = await supabaseService
+  const { error } = await layer
     .getClient()
     .from('profiles')
     .update({
@@ -121,10 +121,10 @@ export async function scheduleAccountDeletion(
 }
 
 export async function reactivateAccount(
-  supabaseService: SupabaseService,
+  layer: DataLayer,
   userId: string
 ): Promise<boolean> {
-  const row = await getAccountLifecycle(supabaseService, userId);
+  const row = await getAccountLifecycle(layer, userId);
   if (!row || !isAccountDeactivated(row)) {
     return false;
   }
@@ -141,7 +141,7 @@ export async function reactivateAccount(
   delete mergedSettings.deactivated_at;
   delete mergedSettings.deletion_scheduled_at;
 
-  const { error } = await supabaseService
+  const { error } = await layer
     .getClient()
     .from('profiles')
     .update({
@@ -198,10 +198,10 @@ export async function verifyUserPassword(
 }
 
 export async function purgeScheduledAccountDeletions(
-  supabaseService: SupabaseService
+  layer: DataLayer
 ): Promise<number> {
   const now = new Date().toISOString();
-  const { data, error } = await supabaseService
+  const { data, error } = await layer
     .getClient()
     .from('profiles')
     .select('id')
@@ -220,7 +220,8 @@ export async function purgeScheduledAccountDeletions(
       // than a bare boolean. A partial run still counts — the account is gone —
       // but it is logged at error level with the failing buckets so support can
       // finish the storage cleanup by hand.
-      const result = await deleteUserAccountFully(supabaseService, row.id);
+      // TRANSITIONAL (M2d): `deleteUserAccountFully` still takes the `SupabaseService` facade whole.
+      const result = await deleteUserAccountFully(layer.legacyService, row.id);
       if (result.found) count += 1;
       if (result.found && !result.ok) {
         logger.error('Scheduled account deletion partially completed', {
