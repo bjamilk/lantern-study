@@ -117,6 +117,8 @@ import {
   getNarrationCreditCost,
   getSmartNotesCreditCost,
 } from '@lantern/shared/utils/aiCredits';
+// TRANSITIONAL (M2b): every function here takes the `SupabaseService` whole — called with
+// `legacyService()` (13 sites, the largest cluster in this file).
 import {
   NARRATION_IMAGE_URL_TTL_SECONDS,
   buildNarrationScript,
@@ -184,6 +186,7 @@ import {
 import { type AiJobCharge, runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted, stampAiChargeOnJob, aiChargeFromRes } from '../queue/respondAsync';
 import { isVersionConflictError } from '../utils/versionConflict';
+// TRANSITIONAL (M2b): takes the `SupabaseService` whole — called with `legacyService()` (1 site).
 import { runPresentationPreviewJob } from '../services/presentationPreview';
 import {
   assertPdfSize,
@@ -220,8 +223,13 @@ import {
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/youtube';
 import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
+// TRANSITIONAL (M2b): takes the `SupabaseService` whole — called with `legacyService()` (2 sites).
 import { runYoutubeTranscriptJob } from '../services/youtubeNote';
+// TRANSITIONAL (M2b): `runNoteOcrJob` takes the `SupabaseService` whole — called with
+// `legacyService()` (1 site). The other two exports are pure.
 import { ocrPlaceholder, runNoteOcrJob, shouldAutoEnqueueOcr } from '../services/noteOcr';
+// TRANSITIONAL (M2b): every export here takes the `SupabaseService` whole — called with
+// `legacyService()` (5 sites).
 import {
   ensurePageImages,
   ensurePages,
@@ -233,6 +241,8 @@ import { logger } from '../utils/logger';
 import { processImageForUpload } from '../services/imageProcessing';
 import { storageThumbPath } from '@lantern/shared/utils/storageUrl';
 import { isFlashcardTypeMix } from '@lantern/shared/flashcards';
+// TRANSITIONAL (M2b): `recordLearningEvent` takes the `SupabaseService` whole — called with
+// `legacyService()` (4 sites). `surfaceFromRequest` is pure.
 import { recordLearningEvent, surfaceFromRequest } from '../services/learningEvents';
 
 const router = Router();
