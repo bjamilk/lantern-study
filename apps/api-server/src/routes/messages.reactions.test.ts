@@ -36,9 +36,6 @@ jest.mock('../middleware/auth', () => ({
     next();
   },
 }));
-jest.mock('../services/supabase', () => ({
-  SupabaseService: class {},
-}));
 jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
@@ -136,11 +133,13 @@ describe('reaction routes (the Favorite payload)', () => {
     const mod = require('./messages');
     mod.initializeMessageRoutes(
       {
-        getAuthorizedGroupMessage,
-        getAuthorizedDmMessage,
-        readMessageReactions,
-        countDistinctReactionEmoji,
+        groups: { getAuthorizedGroupMessage, getAuthorizedDmMessage },
+        groupMessages: { readMessageReactions, countDistinctReactionEmoji },
         getClient: () => fakeClient(),
+        // `addMessageReaction` / `removeMessageReaction` still take the whole
+        // facade, so the route reaches them through `legacyService`: the same
+        // fake client and the same reaction read, one level down.
+        legacyService: { getClient: () => fakeClient(), readMessageReactions },
       } as any,
       {
         get: async () => null,
