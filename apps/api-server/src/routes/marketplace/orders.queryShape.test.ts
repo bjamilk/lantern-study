@@ -256,22 +256,28 @@ describe('PATCH /orders/:id — the field update', () => {
     expect(updateOrderStatus).not.toHaveBeenCalled();
   });
 
-  it('KNOWN ISSUE (#108): answers success when the field update FAILED', async () => {
-    // The bare awaited write discards `{error}`, so a failed update is
-    // invisible: the handler carries on to the status transition and reports
-    // success with the order. A seller told their meeting point saved may
-    // have saved nothing. Frozen as-is — R2 moves queries, it does not fix them.
+  it('FIXED (#108): refuses, and does not move the order, when the field update FAILED', async () => {
+    // This froze the old behaviour: the bare awaited write discarded `{error}`,
+    // so the handler carried on to the status transition and reported success —
+    // a seller told their meeting point saved may have saved nothing. The write
+    // is MUST-SUCCEED now, and it runs BEFORE the transition, so a failure
+    // leaves the order exactly as it was rather than half-applied.
+    //
+    // `runRoute` hands anything the handler passes to `next` to the caller as a
+    // rejection, which is exactly what a server fault does here: the route
+    // reports it through the global error handler rather than as a 4xx of its
+    // own, because a failed write is not the seller's mistake.
     const rec = initWith({ data: null, error: { code: '23514', message: 'check violation' } });
 
-    const res = await runRoute('patch', '/orders/:id', {
-      user: { id: SELLER },
-      params: { id: ORDER },
-      body: { action: 'complete', meetingLocation: 'Gate B' },
-    });
+    await expect(
+      runRoute('patch', '/orders/:id', {
+        user: { id: SELLER },
+        params: { id: ORDER },
+        body: { action: 'complete', meetingLocation: 'Gate B' },
+      }),
+    ).rejects.toThrow(/marketplace_orders/);
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(updateOrderStatus).toHaveBeenCalledTimes(1);
+    expect(updateOrderStatus).not.toHaveBeenCalled();
     expect(rec.tables()).toEqual(['from("marketplace_orders")']);
   });
 });

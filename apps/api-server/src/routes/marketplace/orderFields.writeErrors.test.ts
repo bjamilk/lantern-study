@@ -13,6 +13,9 @@
  * neither did, and the order still moves state — the buyer then sees an order
  * that advanced with no collection details on it.
  *
+ * It is MUST-SUCCEED: the field write runs BEFORE the status transition, so
+ * failing there leaves the order exactly as it was rather than half-applied.
+ *
  * Driven over the real router with the real replay store behind it, because the
  * answer the seller gets is the thing under test, not the promise.
  */
@@ -44,6 +47,7 @@ import http from 'http';
 import ordersRouter from './orders';
 import { initializeMarketplaceContext } from './context';
 import { setIdempotencyClient } from '../../middleware/idempotency';
+import { errorHandler } from '../../middleware/errorHandler';
 
 const ORDER_ID = 'ord_1';
 
@@ -169,6 +173,10 @@ describe('PATCH /orders/:id when the field write fails', () => {
     const app = express();
     app.use(express.json());
     app.use('/api/v1/marketplace', ordersRouter);
+    // The route deliberately rethrows a SERVER fault rather than answering it
+    // as a 4xx, so the production error handler has to be mounted for the
+    // status the seller actually receives to be observable here.
+    app.use(errorHandler as any);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
         base = `http://127.0.0.1:${(server.address() as any).port}`;
@@ -213,17 +221,56 @@ describe('PATCH /orders/:id when the field write fails', () => {
     expect(mockUpdateOrderStatus).toHaveBeenCalled();
   });
 
-  it('TODAY: answers success and moves the order even though nothing saved', async () => {
-    // The seller is told their meeting point and note saved. Neither did, and
-    // the order is now `shipped` with no collection details on it.
+  it('does NOT answer success when nothing saved', async () => {
     fieldWriteFails = true;
     const res = await patch({
       action: 'mark_shipped',
       meetingLocation: 'Gate 3',
       sellerNote: 'Ask for Ade at the kiosk',
     });
-    expect(res.status).toBe(200);
-    expect(res.json).toEqual(expect.objectContaining({ success: true }));
-    expect(mockUpdateOrderStatus).toHaveBeenCalled();
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.json.success).not.toBe(true);
+  });
+
+  it('does NOT move the order, so nothing is half-applied', async () => {
+    // The field write runs before the status transition, so failing there
+    // leaves the order exactly as it was rather than advanced without its
+    // collection details.
+    fieldWriteFails = true;
+    await patch({ action: 'mark_shipped', meetingLocation: 'Gate 3' });
+    expect(mockUpdateOrderStatus).not.toHaveBeenCalled();
+  });
+
+  it('leaks neither the PostgREST message nor the table name IN PRODUCTION', async () => {
+    // Outside production the handler deliberately returns the real message, so
+    // the only honest place to assert this is with NODE_ENV set. The message
+    // `WriteFailedError` carries is written for logs and alerting, not for the
+    // seller, and this is what keeps the two apart.
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      fieldWriteFails = true;
+      const res = await patch({ action: 'mark_shipped', meetingLocation: 'Gate 3' });
+      const body = JSON.stringify(res.json);
+      expect(body).not.toContain('serialize access');
+      expect(body).not.toContain('marketplace_orders');
+      expect(body).not.toContain('40001');
+    } finally {
+      process.env.NODE_ENV = previous;
+    }
+  });
+
+  it('frees the action for a retry with a new key rather than replaying the failure', async () => {
+    // A handler that throws marks its idempotency key failed for 10 minutes
+    // (services/idempotency.ts), which is the designed answer: nothing was
+    // applied, so there is nothing to replay, and the client retries with a new
+    // key. What must NOT happen is the failure being cached as the result.
+    fieldWriteFails = true;
+    await patch({ action: 'mark_shipped', meetingLocation: 'Gate 3' });
+    fieldWriteFails = false;
+    keyStore = [];
+    const retry = await patch({ action: 'mark_shipped', meetingLocation: 'Gate 3' });
+    expect(retry.status).toBe(200);
+    expect(retry.json).toEqual(expect.objectContaining({ success: true }));
   });
 });
