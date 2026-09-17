@@ -3042,3 +3042,206 @@ export async function createPurchaseNotification(
     link: `/marketplace/transactions/${transactionId}`,
   });
 }
+
+// ============ ROUTE ESCAPES (monolith lane R2, PR 3) ============
+//
+// The 27 chains `routes/marketplace/*` still built by hand. Moved VERBATIM; the
+// routes keep every decision — the status codes, the 404-not-403 on an offer a
+// caller is not party to, the digital-listing refusal, the ownership checks, and
+// all response shaping.
+//
+// THE OWNER PREDICATE IS THE ACCESS CONTROL. The API holds the service-role
+// client, which BYPASSES RLS, so a buyer id or seller id is a REQUIRED parameter
+// on every function that touches a caller-owned row, applied inside it.
+//
+// Four functions here deliberately look a row up BY ID ALONE, because the caller
+// authorizes afterwards in a way SQL cannot express. Each says so on itself, and
+// each is named in the pull request that moved it.
+
+// ---- saved searches (routes/marketplace/discovery.ts) ----------------------
+
+/** Create a saved search owned by the caller. Returns the stored row. */
+export async function createSavedSearch(
+  supabase: DataClient,
+  userId: string,
+  name: string,
+  filters: unknown,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("saved_searches")
+    .insert({
+      user_id: userId,
+      name,
+      filters,
+      notify: true,
+    })
+    .select("*")
+    .single();
+}
+
+/** Every saved search the caller owns, newest first. */
+export async function listSavedSearches(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("saved_searches")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+}
+
+/**
+ * Delete one of the caller's saved searches. The `userId` filter is the whole
+ * guard: without it anybody could delete anybody's saved search by id.
+ */
+export async function deleteSavedSearch(
+  supabase: DataClient,
+  userId: string,
+  id: string,
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from("saved_searches")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  return { error };
+}
+
+/** Patch one of the caller's saved searches (notify and/or name). */
+export async function updateSavedSearch(
+  supabase: DataClient,
+  userId: string,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("saved_searches")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+}
+
+// ---- the public shop page (routes/marketplace/seller.ts) -------------------
+//
+// A shop page is PUBLIC, so `userId` here identifies WHOSE shop is being shown,
+// not who is asking. What decides visibility is the listing `status` the route
+// filters on afterwards, and the `isOwner` check that gates the private stats.
+
+/** The seller's public profile card. */
+export async function getSellerProfileCard(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("profiles")
+    .select("id, name, avatar_url, created_at")
+    .eq("id", userId)
+    .single();
+}
+
+/**
+ * Every listing the seller has, in any status. The caller splits them into
+ * active / reserved / sold and decides which a visitor may see — a non-owner
+ * gets the shop shelf, the owner gets everything.
+ */
+export async function listSellerListings(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("marketplace_listings")
+    .select("id, title, price, images, category, location, status, views_count, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+}
+
+/** Reviews for a set of listings, newest first, with the reviewer's card. */
+export async function listReviewsForListings(
+  supabase: DataClient,
+  listingIds: string[],
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("marketplace_reviews")
+    .select(
+      "id, listing_id, reviewer_id, rating, comment, created_at, reviewer:profiles!marketplace_reviews_reviewer_id_fkey(id, name, avatar_url)",
+    )
+    .in("listing_id", listingIds)
+    .order("created_at", { ascending: false });
+}
+
+/**
+ * How many favourites those listings have, as a HEAD count — no rows come back.
+ * Dropping `head: true` turns a badge on the seller dashboard into a full scan.
+ */
+export async function countFavoritesForListings(
+  supabase: DataClient,
+  listingIds: string[],
+): Promise<{ count: number | null; error: any }> {
+  const { count, error } = await supabase
+    .from("marketplace_favorites")
+    .select("id", { count: "exact", head: true })
+    .in("listing_id", listingIds);
+  return { count, error };
+}
+
+/** The same, for inquiries. */
+export async function countInquiriesForListings(
+  supabase: DataClient,
+  listingIds: string[],
+): Promise<{ count: number | null; error: any }> {
+  const { count, error } = await supabase
+    .from("marketplace_inquiries")
+    .select("id", { count: "exact", head: true })
+    .in("listing_id", listingIds);
+  return { count, error };
+}
+
+// ---- digital listing meta (routes/marketplace/listings.ts) -----------------
+
+/** Question count and version for a question-bank listing. */
+export async function getQuestionBankMeta(
+  supabase: DataClient,
+  listingId: string,
+): Promise<{ data: { question_count: number; version: number } | null; error: any }> {
+  return await supabase
+    .from("marketplace_question_banks")
+    .select("question_count, version")
+    .eq("listing_id", listingId)
+    .maybeSingle();
+}
+
+/** Contents and version for a study-pack listing. */
+export async function getStudyPackMeta(
+  supabase: DataClient,
+  listingId: string,
+): Promise<{ data: { counts: unknown; version: number } | null; error: any }> {
+  return await supabase
+    .from("marketplace_study_packs")
+    .select("counts, version")
+    .eq("listing_id", listingId)
+    .maybeSingle();
+}
+
+/**
+ * Whether THIS viewer owns the digital product on a listing.
+ *
+ * `viewerId` is required, and the caller must not call this at all for a
+ * signed-out visitor: without the predicate the listing page would tell every
+ * visitor they already own a paid question bank, and the "Download" affordance
+ * follows `owned`.
+ */
+export async function getDigitalEntitlement(
+  supabase: DataClient,
+  listingId: string,
+  viewerId: string,
+): Promise<{ data: { id: string } | null; error: any }> {
+  return await supabase
+    .from("marketplace_question_bank_entitlements")
+    .select("id")
+    .eq("listing_id", listingId)
+    .eq("user_id", viewerId)
+    .maybeSingle();
+}

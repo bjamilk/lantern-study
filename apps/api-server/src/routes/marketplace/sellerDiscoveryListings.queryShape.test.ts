@@ -110,11 +110,17 @@ function initWith(resolve?: ResolveResult, layer: Record<string, unknown> = {}) 
   initializeMarketplaceRoutes(
     {
       getClient: () => rec.client,
-      marketplace: { ...bindDataModule(marketplaceData, rec.client), ...((layer.marketplace as object) ?? {}) },
       notifications: { createNotification: jest.fn(async () => ({ id: 'n1' })) },
       users: {},
       readState: { getAllDMUnreadCounts: jest.fn(async () => ({})) },
       ...layer,
+      // AFTER `...layer`: the real module bound to the recorder, with this
+      // test's stubs merged on top. Spreading `layer` last would replace the
+      // whole namespace and the moved functions would be undefined.
+      marketplace: {
+        ...bindDataModule(marketplaceData, rec.client),
+        ...((layer.marketplace as object) ?? {}),
+      },
     } as any,
     { get: jest.fn(async () => null), set: jest.fn(async () => {}), delete: jest.fn(async () => {}) } as any,
   );
