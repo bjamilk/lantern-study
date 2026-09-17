@@ -128,6 +128,21 @@ export interface FeatureTipsSettings {
   checklist?: Record<string, boolean>;
 }
 
+/**
+ * "Has ever opened this surface", for the Home getting-started checklist.
+ *
+ * Three booleans and nothing else. They belong to the ACCOUNT, not the device:
+ * a student who opened their Library on their phone should not be told to go
+ * and open it again on a laptop (#68). They are MONOTONIC — false → true only
+ * — so every merge in the app ORs rather than replaces, and an offline client
+ * that has not read the profile yet cannot un-tick what another device ticked.
+ */
+export interface OnboardingVisitedSettings {
+  library: boolean;
+  marketplace: boolean;
+  offline: boolean;
+}
+
 export interface UserSettings {
   notifications: NotificationSettings;
   study: StudySettings;
@@ -137,6 +152,7 @@ export interface UserSettings {
   sync: SyncSettings;
   marketplace?: MarketplaceSettings;
   featureTips?: FeatureTipsSettings;
+  onboardingVisited?: OnboardingVisitedSettings;
   flashcardGeneration?: FlashcardGenerationSettings;
   version: number;
   updatedAt: string;
@@ -227,6 +243,11 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     checklistDismissed: false,
     checklist: {},
   },
+  onboardingVisited: {
+    library: false,
+    marketplace: false,
+    offline: false,
+  },
   flashcardGeneration: {
     count: DEFAULT_FLASHCARD_GENERATION_OPTIONS.count,
     typeMix: DEFAULT_FLASHCARD_GENERATION_OPTIONS.typeMix,
@@ -302,7 +323,48 @@ export function normalizeUserSettings(raw: unknown): UserSettings {
   // Normalize feature tips shape (version bump, dismissed map, checklist).
   const tipsRaw = (record.featureTips ?? merged.featureTips) as unknown;
   merged.featureTips = normalizeFeatureTipsSettings(tipsRaw);
+  // Same treatment for the checklist's visited flags: the deep merge above
+  // would have carried any junk sub-key straight through, and this blob is
+  // written by clients.
+  merged.onboardingVisited = normalizeOnboardingVisited(
+    record.onboardingVisited ?? merged.onboardingVisited
+  );
   return merged;
+}
+
+/**
+ * Exactly three booleans, whatever came in. Unknown sub-keys are dropped
+ * rather than merged, so this key cannot be used to smuggle anything into the
+ * settings blob.
+ */
+export function normalizeOnboardingVisited(raw: unknown): OnboardingVisitedSettings {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { library: false, marketplace: false, offline: false };
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    library: record.library === true,
+    marketplace: record.marketplace === true,
+    offline: record.offline === true,
+  };
+}
+
+/**
+ * OR two sets of visited flags. The ONE merge rule for this key: a flag that
+ * is true anywhere stays true, so neither the device nor the profile can
+ * un-tick the other, in whichever order they arrive.
+ */
+export function mergeOnboardingVisited(
+  a: unknown,
+  b: unknown
+): OnboardingVisitedSettings {
+  const left = normalizeOnboardingVisited(a);
+  const right = normalizeOnboardingVisited(b);
+  return {
+    library: left.library || right.library,
+    marketplace: left.marketplace || right.marketplace,
+    offline: left.offline || right.offline,
+  };
 }
 
 function normalizeFeatureTipsSettings(raw: unknown): FeatureTipsSettings {
