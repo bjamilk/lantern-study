@@ -8,6 +8,8 @@ import {
   parseStudyDraftNumber,
   normalizeUserSettings,
   mergeSettingsCategory,
+  mergeOnboardingVisited,
+  normalizeOnboardingVisited,
 } from './index';
 
 describe('settingsPatch', () => {
@@ -229,6 +231,86 @@ describe('remembered flashcard generation options', () => {
     expect(diffSettingsPatch(before, after).flashcardGeneration).toEqual({
       count: 30,
       typeMix: 'cloze',
+    });
+  });
+});
+
+/**
+ * The Home checklist's "has ever opened" flags (#68). They belong to the
+ * account, so every layer that touches them has to be monotonic — this is the
+ * layer that makes it true no matter what a client sends.
+ */
+describe('onboardingVisited', () => {
+  it('normalizes to exactly three booleans and drops everything else', () => {
+    expect(
+      normalizeOnboardingVisited({
+        library: true,
+        marketplace: 'yes',
+        somethingElse: true,
+      })
+    ).toEqual({ library: true, marketplace: false, offline: false });
+    expect(normalizeOnboardingVisited(null)).toEqual({
+      library: false,
+      marketplace: false,
+      offline: false,
+    });
+    expect(normalizeOnboardingVisited(['library'])).toEqual({
+      library: false,
+      marketplace: false,
+      offline: false,
+    });
+  });
+
+  it('merges by OR, in either order', () => {
+    const a = { library: true, marketplace: false, offline: false };
+    const b = { library: false, marketplace: true, offline: false };
+    expect(mergeOnboardingVisited(a, b)).toEqual({
+      library: true,
+      marketplace: true,
+      offline: false,
+    });
+    expect(mergeOnboardingVisited(b, a)).toEqual(mergeOnboardingVisited(a, b));
+  });
+
+  it('applies a patch monotonically: a false can never un-tick a stored true', () => {
+    const base = applySettingsPatch(normalizeUserSettings({}), {
+      onboardingVisited: { library: true },
+    });
+    expect(base.onboardingVisited).toEqual({
+      library: true,
+      marketplace: false,
+      offline: false,
+    });
+
+    const next = applySettingsPatch(base, {
+      onboardingVisited: { library: false, offline: true },
+    });
+    expect(next.onboardingVisited).toEqual({
+      library: true,
+      marketplace: false,
+      offline: true,
+    });
+  });
+
+  it('leaves the flags alone when the patch does not mention them', () => {
+    const base = applySettingsPatch(normalizeUserSettings({}), {
+      onboardingVisited: { offline: true },
+    });
+    const next = applySettingsPatch(base, { appearance: { theme: 'dark' } });
+    expect(next.onboardingVisited).toEqual({
+      library: false,
+      marketplace: false,
+      offline: true,
+    });
+  });
+
+  it('is carried by diffSettingsPatch when it changes', () => {
+    const previous = normalizeUserSettings({});
+    const next = applySettingsPatch(previous, { onboardingVisited: { library: true } });
+    expect(diffSettingsPatch(previous, next).onboardingVisited).toEqual({
+      library: true,
+      marketplace: false,
+      offline: false,
     });
   });
 });

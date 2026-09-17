@@ -28,6 +28,12 @@ const SETTINGS_CATEGORY_KEYS = [
   'sync',
   'marketplace',
   'featureTips',
+  // Non-privileged: three booleans saying which onboarding surfaces the
+  // student has ever opened (#68). `applySettingsPatch` shape-checks it to
+  // exactly those three, drops every unknown sub-key, and ORs rather than
+  // replaces — so it can neither smuggle a privileged key nor un-tick a
+  // surface another device already recorded.
+  'onboardingVisited',
   'flashcardGeneration',
 ] as const;
 

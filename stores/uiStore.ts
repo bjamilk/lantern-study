@@ -36,6 +36,14 @@
  *    shared record rather than living in the unscoped top level. It records
  *    "has ever opened", so nothing ever clears an entry — not even sign-out,
  *    which is why it must never hold anything but these booleans.
+ *  - That record is the OFFLINE-FIRST CACHE of the account's real copy, which
+ *    lives in `profile.settings.onboardingVisited`. This store stays pure —
+ *    it does no network — so the account half is in
+ *    `utils/onboardingVisited.ts`: `recordSurfaceVisit` writes here first and
+ *    pushes afterwards, and `syncOnboardingVisitedFromSettings` ORs the
+ *    profile's copy back in on sign-in. Both directions are monotonic, which
+ *    is why `markSurfaceVisited` reports whether it actually changed anything
+ *    (no first visit, no write) and why `mergeVisitedSurfaces` only ever adds.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -70,6 +78,13 @@ export interface StudyRoomJoin {
  * never observe the student standing on any of them (issue #68).
  */
 export type VisitedSurface = 'library' | 'marketplace' | 'offline';
+
+/** Every surface, for the merges that have to walk all three. */
+export const VISITED_SURFACES: readonly VisitedSurface[] = [
+  'library',
+  'marketplace',
+  'offline',
+];
 
 /** Which checklist surface an app mode counts as, or `null` for none. */
 export function visitedSurfaceForMode(mode: AppMode): VisitedSurface | null {
@@ -113,7 +128,13 @@ interface UIState {
    * Home onboarding checklist.
    */
   visitedSurfaces: VisitedSurfaceRecord;
-  markSurfaceVisited: (userId: string | null | undefined, mode: AppMode) => void;
+  /** Returns true only when this call recorded a surface that was not set. */
+  markSurfaceVisited: (userId: string | null | undefined, mode: AppMode) => boolean;
+  /** OR the account's stored flags into this device's cache (never removes). */
+  mergeVisitedSurfaces: (
+    userId: string | null | undefined,
+    remote: Partial<Record<VisitedSurface, boolean>>
+  ) => void;
   
   // Selected Chat
   selectedChat: ChatItem | null;
@@ -353,15 +374,33 @@ export const useUIStore = create<UIState>()(
       visitedSurfaces: {},
       markSurfaceVisited: (userId, mode) => {
         const surface = visitedSurfaceForMode(mode);
-        if (!userId || !surface) return;
+        if (!userId || !surface) return false;
         const current = get().visitedSurfaces;
-        if (current[userId]?.[surface]) return;
+        if (current[userId]?.[surface]) return false;
         set({
           visitedSurfaces: {
             ...current,
             [userId]: { ...current[userId], [surface]: true },
           },
         });
+        return true;
+      },
+      mergeVisitedSurfaces: (userId, remote) => {
+        if (!userId) return;
+        const current = get().visitedSurfaces;
+        const mine = current[userId] ?? {};
+        const merged = { ...mine };
+        let changed = false;
+        for (const surface of VISITED_SURFACES) {
+          // OR only: the profile may add a surface this device has not seen,
+          // and can never take one away.
+          if (remote[surface] === true && !merged[surface]) {
+            merged[surface] = true;
+            changed = true;
+          }
+        }
+        if (!changed) return;
+        set({ visitedSurfaces: { ...current, [userId]: merged } });
       },
       setAppMode: (mode) => {
         if (isEphemeralAppMode(mode)) {
