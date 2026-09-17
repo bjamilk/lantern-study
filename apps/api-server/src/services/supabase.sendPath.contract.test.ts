@@ -41,7 +41,7 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
+import * as chatSendData from './data/chatSend';
 import { cacheService } from './cache';
 import { setSchemaCapabilities } from './schemaCapabilities';
 import { COMMUNITY_MODERATION_COPY } from '@lantern/shared/network';
@@ -50,8 +50,6 @@ const GROUP = '44444444-4444-4444-8444-444444444444';
 const SENDER = '11111111-1111-4111-8111-111111111111';
 const COMMUNITY = '77777777-7777-4777-8777-777777777777';
 const PARENT = '22222222-2222-4222-8222-222222222222';
-
-const proto = SupabaseService.prototype as any;
 
 type Q = { table: string; ops: string[]; payload: any };
 
@@ -150,7 +148,16 @@ function harness(opts: HarnessOptions = {}) {
   return { self, trace, queries };
 }
 
-const send = (self: any, ...args: any[]) => proto.sendMessage.apply(self, args);
+/**
+ * HARNESS (monolith lane M3, Phase B): this was
+ * `proto.sendMessage.apply(self, args)`. The body is `data/chatSend.sendMessage`
+ * and always was — the facade only forwarded `(this.supabase, {deps…}, …args)`,
+ * and `self` carries exactly those deps. All 18 cases, their fixtures and their
+ * assertions are unchanged; the mutation check (move the mute gate after
+ * mention resolution → 7 of 18 must fail) was re-run against this harness.
+ */
+const send = (self: any, ...args: any[]) =>
+  (chatSendData.sendMessage as any)(self.supabase, self, ...args);
 const future = () => new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
 beforeEach(() => {

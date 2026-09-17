@@ -7,6 +7,16 @@
  * one transaction; without it (migrations here are hand-applied) the deck row
  * is deleted again on any card failure.
  */
+import * as offlineBundlesData from './data/offlineBundles';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as decksData from './data/decks';
 jest.mock("./cache", () => ({
   cacheService: {
     get: jest.fn(async () => null),
@@ -23,7 +33,6 @@ jest.mock("../utils/logger", () => ({
 }));
 
 import { DeckWithCardsError, validateDeckCards } from "./deckWithCards";
-import { SupabaseService } from "./supabase";
 
 type Call = { table: string; ops: Array<{ fn: string; args: any[] }> };
 
@@ -85,8 +94,16 @@ function fakeSelf(outcomes: Outcomes) {
     },
   };
 
-  const self: any = Object.create(SupabaseService.prototype);
-  self.supabase = client;
+  // Was `Object.create(SupabaseService.prototype)`, which silently inherited
+  // every facade method. The two the code under test actually reads are named
+  // here instead: `getResponseProfile` is the three-line coercion the facade
+  // held privately (`data/index.ts` inlines the same one), and
+  // `resolveArtefactTopic` short-circuits because no deck here names a topic.
+  const self: any = {
+    supabase: client,
+    getResponseProfile: (profile?: string) =>
+      profile === "compact" ? "compact" : "full",
+  };
   self.resolveArtefactTopic = jest.fn(async () => undefined);
   return { self, calls, rpcArgs };
 }
@@ -101,12 +118,7 @@ const twoCards = () => {
 };
 
 const create = (self: any) =>
-  SupabaseService.prototype.createDeckWithCards.call(
-    self,
-    { name: "SDOH", description: "" },
-    twoCards(),
-    "user-1"
-  );
+  decksData.createDeckWithCards((self as any).supabase, self as any, { name: "SDOH", description: "" }, twoCards(), "user-1");
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -195,7 +207,7 @@ describe("createDeckWithCards", () => {
  */
 describe("addCardsToExistingDeck", () => {
   const addTo = (self: any) =>
-    SupabaseService.prototype.addCardsToExistingDeck.call(self, "deck-9", twoCards(), "user-1");
+    decksData.addCardsToExistingDeck((self as any).supabase, self as any, "deck-9", twoCards(), "user-1");
 
   it("inserts the cards into the named deck and returns that deck", async () => {
     const { self, calls } = fakeSelf({});
@@ -280,7 +292,7 @@ describe("deck projections carry where the deck is filed", () => {
   it("getDeck asks for course_id and study_set_id", async () => {
     const { self, calls } = fakeSelf({});
 
-    await SupabaseService.prototype.getDeck.call(self, "deck-1");
+    await decksData.getDeck((self as any).supabase, "deck-1");
 
     const select = selectsFor(calls)[0];
     expect(select).toContain("study_set_id");
@@ -290,7 +302,7 @@ describe("deck projections carry where the deck is filed", () => {
   it("fetchDeckRecord asks for study_set_id", async () => {
     const { self, calls } = fakeSelf({});
 
-    await (SupabaseService.prototype as any).fetchDeckRecord.call(self, "deck-1");
+    await offlineBundlesData.fetchDeckRecord(self.supabase, "deck-1");
 
     expect(selectsFor(calls)[0]).toContain("study_set_id");
   });
@@ -300,7 +312,7 @@ describe("deck projections carry where the deck is filed", () => {
       const { self, calls } = fakeSelf({ deckSelect: { data: [], error: null } });
       self.getAccessibleDeckIds = jest.fn(async () => ["deck-1"]);
 
-      await SupabaseService.prototype.getDecks.call(self, "user-1", false, { responseProfile });
+      await decksData.getDecks((self as any).supabase, self as any, "user-1", false, { responseProfile });
 
       const selects = selectsFor(calls);
       expect(selects.length).toBeGreaterThan(0);

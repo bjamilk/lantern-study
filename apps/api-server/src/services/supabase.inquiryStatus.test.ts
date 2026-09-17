@@ -5,10 +5,18 @@
  * "verified purchase" review without ever buying. updateInquiryStatus now lets
  * only the seller assert 'purchased'; buyers keep open/negotiating/closed.
  *
- * Drives the prototype method against a stubbed `this` so the huge service is
- * never constructed.
+ * Drives the data-module function against a stubbed client, so nothing but the
+ * guard under test runs.
  */
-import { SupabaseService } from './supabase';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as marketplaceData from './data/marketplace';
 
 function chain(result: { data: unknown; error: unknown }) {
   const api: any = {};
@@ -30,8 +38,8 @@ function fakeService(inquiry: Record<string, unknown> | null) {
 
 const INQUIRY = { buyer_id: 'buyer-1', seller_id: 'seller-1' };
 
-const call = (self: unknown, status: string, userId: string) =>
-  SupabaseService.prototype.updateInquiryStatus.call(self as any, 'inq-1', status, userId);
+const call = (self: any, status: string, userId: string) =>
+  marketplaceData.updateInquiryStatus(self.supabase, 'inq-1', status, userId);
 
 describe('updateInquiryStatus purchase attestation', () => {
   it("rejects a buyer setting status='purchased' with 403", async () => {

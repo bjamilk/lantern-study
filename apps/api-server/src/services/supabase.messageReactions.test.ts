@@ -16,6 +16,16 @@
  * plus the pre-migration fallback for each, because the founder hand-applies
  * migrations and the API always deploys first.
  */
+import * as storageAclData from './data/storageAcl';
+import * as mappersData from './data/mappers';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
 jest.mock('./cache', () => ({
   cacheService: {
     cached: async (_key: string, fn: () => Promise<unknown>) => fn(),
@@ -29,7 +39,8 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
+import * as chatSendData from './data/chatSend';
+import * as directMessagesData from './data/directMessages';
 import { setSchemaCapabilities } from './schemaCapabilities';
 
 const GROUP = '44444444-4444-4444-8444-444444444444';
@@ -40,7 +51,6 @@ const THEM = '22222222-2222-4222-8222-222222222222';
 const HEART = '❤️';
 const FIRE = '🔥';
 
-const proto = SupabaseService.prototype as any;
 
 /** Chain stub: records every `.select(...)` string, resolves to fixed rows. */
 function makeChain(
@@ -97,16 +107,16 @@ describe('getGroupThread', () => {
 
     const self: any = {
       supabase,
-      normalizeMessageRecord: proto.normalizeMessageRecord,
-      parseMessageContent: proto.parseMessageContent,
-      normalizeStorageUrl: proto.normalizeStorageUrl,
+      normalizeMessageRecord: function (this: any, row: any) { return mappersData.normalizeMessageRecord(this, row); },
+      parseMessageContent: mappersData.parseMessageContent,
+      normalizeStorageUrl: function (this: any, url: string) { return storageAclData.normalizeStorageUrl(this.supabaseUrl, url); },
       attachReplyPreviewsBatch: jest.fn(async (rows: any[]) => rows),
       attachThreadReplyCounts: jest.fn(async (rows: any[]) => rows),
     };
 
     return {
       selects,
-      run: () => proto.getGroupThread.call(self, GROUP, ROOT) as Promise<any[]>,
+      run: () => chatSendData.getGroupThread((self as any).supabase, self as any, GROUP, ROOT) as Promise<any[]>,
     };
   }
 
@@ -169,7 +179,7 @@ describe('getDirectMessages', () => {
 
     return {
       selects,
-      run: () => proto.getDirectMessages.call(self, ME, THEM, {}) as Promise<any[]>,
+      run: () => directMessagesData.getDirectMessages((self as any).supabase, self as any, ME, THEM, {}) as Promise<any[]>,
     };
   }
 

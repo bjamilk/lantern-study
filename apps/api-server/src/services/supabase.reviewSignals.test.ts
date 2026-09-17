@@ -5,8 +5,16 @@
  * votes table and rating columns may simply not exist yet, and a browse or
  * review read must never fail because of that.
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): the first two describes used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)` and now call the data module
+ * that owns each body, with the same stand-in passed as the `deps` literal —
+ * which is what the facade's inline arrows read off `this` anyway. The third
+ * describe moved onto a real `createDataLayer(...)` in Phase A. Every `it`
+ * title, every `expect` and every fixture is byte-identical.
+ */
 import { createDataLayer } from "./data";
-import { SupabaseService } from "./supabase";
+import * as marketplaceData from "./data/marketplace";
 
 type ChainResult = { data?: unknown; error?: unknown; count?: number | null };
 
@@ -47,13 +55,22 @@ function queuedFrom(tables: Record<string, ChainResult[]>) {
   };
 }
 
-const proto: any = SupabaseService.prototype;
-
+/**
+ * The rating-column circuit breaker as the facade held it: a per-instance
+ * timestamp plus the two accessors that read and set it. The accessors used to
+ * be borrowed off `SupabaseService.prototype`; these are the same three lines,
+ * and the layer's own copy (`createRatingColumnCircuitBreaker`) is what the
+ * third describe below exercises.
+ */
 function withRatingGuards(self: any) {
   self.ratingColumnsBrokenUntil = 0;
-  self.ratingColumnsAvailable = proto.ratingColumnsAvailable;
-  self.isMissingRatingColumn = proto.isMissingRatingColumn;
-  self.noteRatingColumnsMissing = proto.noteRatingColumnsMissing;
+  self.ratingColumnsAvailable = function () {
+    return Date.now() >= this.ratingColumnsBrokenUntil;
+  };
+  self.isMissingRatingColumn = marketplaceData.isMissingRatingColumn;
+  self.noteRatingColumnsMissing = function () {
+    this.ratingColumnsBrokenUntil = Date.now() + 10 * 60 * 1000;
+  };
   return self;
 }
 
@@ -79,16 +96,28 @@ const REVIEW_ROWS = [
 ];
 
 describe("getMarketplaceReviews signals", () => {
-  const call = (self: unknown, viewerId?: string) =>
-    SupabaseService.prototype.getMarketplaceReviews.call(
-      self as any,
+  const call = (self: any, viewerId?: string) =>
+    marketplaceData.getMarketplaceReviews(
+      self.supabase,
+      self,
       "listing-1",
       viewerId,
     );
 
   it("attaches helpful counts, viewer state and verified-purchase flags", async () => {
     const self = {
-      attachMarketplaceReviewSignals: proto.attachMarketplaceReviewSignals,
+      attachMarketplaceReviewSignals: function (
+        lid: string,
+        reviews: any[],
+        viewerId?: string,
+      ) {
+        return marketplaceData.attachMarketplaceReviewSignals(
+          (this as any).supabase,
+          lid,
+          reviews,
+          viewerId,
+        );
+      },
       supabase: {
         from: queuedFrom({
           marketplace_reviews: [{ data: REVIEW_ROWS, error: null }],
@@ -127,7 +156,18 @@ describe("getMarketplaceReviews signals", () => {
 
   it("omits helpful fields entirely when the votes table is missing", async () => {
     const self = {
-      attachMarketplaceReviewSignals: proto.attachMarketplaceReviewSignals,
+      attachMarketplaceReviewSignals: function (
+        lid: string,
+        reviews: any[],
+        viewerId?: string,
+      ) {
+        return marketplaceData.attachMarketplaceReviewSignals(
+          (this as any).supabase,
+          lid,
+          reviews,
+          viewerId,
+        );
+      },
       supabase: {
         from: queuedFrom({
           marketplace_reviews: [{ data: REVIEW_ROWS, error: null }],
@@ -151,7 +191,18 @@ describe("getMarketplaceReviews signals", () => {
   it("still returns plain reviews when every signal lookup fails", async () => {
     const boom = { code: "500", message: "boom" };
     const self = {
-      attachMarketplaceReviewSignals: proto.attachMarketplaceReviewSignals,
+      attachMarketplaceReviewSignals: function (
+        lid: string,
+        reviews: any[],
+        viewerId?: string,
+      ) {
+        return marketplaceData.attachMarketplaceReviewSignals(
+          (this as any).supabase,
+          lid,
+          reviews,
+          viewerId,
+        );
+      },
       supabase: {
         from: queuedFrom({
           marketplace_reviews: [{ data: REVIEW_ROWS, error: null }],
@@ -176,13 +227,13 @@ describe("setMarketplaceReviewVote", () => {
   };
 
   const call = (
-    self: unknown,
+    self: any,
     voterId: string,
     helpful: boolean,
     listingId = "listing-1",
   ) =>
-    SupabaseService.prototype.setMarketplaceReviewVote.call(
-      self as any,
+    marketplaceData.setMarketplaceReviewVote(
+      self.supabase,
       listingId,
       "rev-1",
       voterId,

@@ -8,7 +8,15 @@
  * the client filter can find them. Typed notes (non-empty body) are left alone
  * to keep both the DB read and the payload small.
  */
-import { SupabaseService } from "./supabase";
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as notesData from './data/notes';
 
 type Op = { fn: string; args: any[] };
 type Call = { table: string; ops: Op[]; terminal: string };
@@ -70,13 +78,13 @@ function runGetNotes(
   const { client, calls } = fakeDb(resolve);
   const self = {
     supabase: client,
-    mapNote: (SupabaseService.prototype as any).mapNote,
+    mapNote: notesData.mapNote,
     getNoteOwnerPresentation: jest.fn(),
-    attachNoteSearchText: (SupabaseService.prototype as any).attachNoteSearchText,
+    attachNoteSearchText: function (this: any, notes: any[]) { return notesData.attachNoteSearchText(this.supabase, notes); },
   };
   return {
     calls,
-    result: SupabaseService.prototype.getNotes.call(self as any, "u1", options),
+    result: notesData.getNotes((self as any).supabase, self as any, "u1", options),
   };
 }
 

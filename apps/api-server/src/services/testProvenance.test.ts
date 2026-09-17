@@ -6,7 +6,8 @@
  * `config` — which every client did differently, and mobile did not do at all.
  * `buildTestProvenance` is the single answer, and these pin its precedence.
  */
-import { SupabaseService, buildAttemptTally, buildTestProvenance, mapTestListRow } from "./supabase";
+import { buildAttemptTally, buildTestProvenance, mapTestListRow } from "./supabase";
+import * as testsData from "./data/tests";
 
 describe("buildTestProvenance", () => {
   it("names the note a quiz was generated from", () => {
@@ -130,7 +131,12 @@ describe("resolveTestSessionForCaller", () => {
           }),
         }),
       },
-      resolveTestSessionForCaller: SupabaseService.prototype.resolveTestSessionForCaller,
+      // The body lives in `data/tests.ts`; the facade only forwarded
+      // `(this.supabase, {deps…}, …)`, and this stand-in carries those deps —
+      // so the method keeps its name and the assertions below are untouched.
+      resolveTestSessionForCaller: function (this: any, testId: string, userId: string) {
+        return testsData.resolveTestSessionForCaller(this.supabase, this, testId, userId);
+      },
     }) as any;
 
   it("answers for the owner", async () => {

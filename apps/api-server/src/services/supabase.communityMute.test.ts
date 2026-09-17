@@ -5,6 +5,14 @@
  * `assertNotMutedInCommunity` is module-level inside supabase.ts, so the
  * only way to prove it runs is through the two writes that call it.
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
 jest.mock('./cache', () => ({
   cacheService: {
     cached: jest.fn(async (_key: string, fn: () => Promise<unknown>) => fn()),
@@ -19,7 +27,8 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
+import * as boardActionsData from './data/boardActions';
+import * as chatSendData from './data/chatSend';
 import { setSchemaCapabilities } from './schemaCapabilities';
 import { COMMUNITY_MODERATION_COPY } from '@lantern/shared/network';
 
@@ -50,7 +59,6 @@ function makeDb(handler: (q: Q) => any) {
   return { db: { from }, calls };
 }
 
-const proto = SupabaseService.prototype as any;
 
 function harness(opts: { mutedUntil: string | null; isBoard: boolean }) {
   const { db, calls } = makeDb((q) => {
@@ -84,7 +92,7 @@ describe('community mutes on the write paths', () => {
     setSchemaCapabilities({ communityMemberMute: true });
     const { self } = harness({ mutedUntil: future(), isBoard: false });
     await expect(
-      proto.sendMessage.call(self, GROUP, VIEWER, 'hello', undefined, {}),
+      chatSendData.sendMessage((self as any).supabase, self as any, GROUP, VIEWER, 'hello', undefined, {}),
     ).rejects.toMatchObject({ statusCode: 403, message: COMMUNITY_MODERATION_COPY.mutedTitle });
   });
 
@@ -92,18 +100,18 @@ describe('community mutes on the write paths', () => {
     setSchemaCapabilities({ communityMemberMute: true });
     const board = harness({ mutedUntil: future(), isBoard: true });
     await expect(
-      proto.sendMessage.call(board.self, GROUP, VIEWER, 'post', undefined, { subject: 'Hi' }),
+      chatSendData.sendMessage((board.self as any).supabase, board.self as any, GROUP, VIEWER, 'post', undefined, { subject: 'Hi' }),
     ).rejects.toMatchObject({ statusCode: 403 });
     const repost = harness({ mutedUntil: future(), isBoard: true });
     await expect(
-      proto.createBoardRepost.call(repost.self, GROUP, VIEWER, GROUP, ''),
+      boardActionsData.createBoardRepost((repost.self as any).supabase, repost.self as any, GROUP, VIEWER, GROUP, ''),
     ).rejects.toMatchObject({ statusCode: 403 });
   });
 
   it('an expired mute is not a mute — the write proceeds to its ordinary checks', async () => {
     setSchemaCapabilities({ communityMemberMute: true });
     const { self, calls } = harness({ mutedUntil: past(), isBoard: true });
-    const result = await proto.createBoardRepost.call(self, GROUP, VIEWER, GROUP, '');
+    const result = await boardActionsData.createBoardRepost((self as any).supabase, self as any, GROUP, VIEWER, GROUP, '');
     expect(result).toEqual({ status: 'not_found' });
     expect(calls.some((c) => c.table === 'community_members')).toBe(true);
   });
@@ -111,7 +119,7 @@ describe('community mutes on the write paths', () => {
   it('asks the database nothing while the migration is unapplied', async () => {
     setSchemaCapabilities({ communityMemberMute: false });
     const { self, calls } = harness({ mutedUntil: future(), isBoard: true });
-    const result = await proto.createBoardRepost.call(self, GROUP, VIEWER, GROUP, '');
+    const result = await boardActionsData.createBoardRepost((self as any).supabase, self as any, GROUP, VIEWER, GROUP, '');
     expect(result).toEqual({ status: 'not_found' });
     expect(calls.some((c) => c.table === 'community_members')).toBe(false);
   });

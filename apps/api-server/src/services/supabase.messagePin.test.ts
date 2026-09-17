@@ -17,6 +17,16 @@
  * Pre-migration every path answers 'unavailable', which the route turns into
  * 503 `Pinning is not available yet` — never a 500 (§3.1 degrade).
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as boardActionsData from './data/boardActions';
+import * as chatSendData from './data/chatSend';
 jest.mock('./cache', () => ({
   cacheService: {
     cached: async (_key: string, fn: () => Promise<unknown>) => fn(),
@@ -30,7 +40,6 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
 import { setSchemaCapabilities } from './schemaCapabilities';
 
 const USER = '11111111-1111-4111-8111-111111111111';
@@ -136,11 +145,10 @@ function makeSelf(options: {
     },
   };
 
-  const proto = SupabaseService.prototype as any;
   const self: any = {
     supabase,
-    resolveBoardContext: proto.resolveBoardContext,
-    communityMemberRole: proto.communityMemberRole,
+    resolveBoardContext: function (this: any, id: string) { return chatSendData.resolveBoardContext(this.supabase, this, id); },
+    communityMemberRole: function (this: any, communityId: string, uid: string) { return boardActionsData.communityMemberRole(this.supabase, communityId, uid); },
     getGroupById: jest.fn(async () =>
       groupVisible
         ? { id: GROUP, name: 'exam-week', adminIds, permissions: {}, communityId, communitySurface }
@@ -148,8 +156,11 @@ function makeSelf(options: {
     ),
   };
 
-  const setPin = (pinned: boolean, userId = USER) =>
-    proto.setMessagePin.call(self, MESSAGE, userId, pinned);
+  // `Promise<any>` because the old harness read the result off an `any`-cast
+  // prototype call; the assertions below are unchanged, and narrowing the type
+  // here would be an assertion change by the back door.
+  const setPin = (pinned: boolean, userId = USER): Promise<any> =>
+    chatSendData.setMessagePin((self as any).supabase, self as any, MESSAGE, userId, pinned);
 
   return { self, setPin, calls, attempts: () => applyAttempts };
 }
@@ -259,12 +270,20 @@ describe('setMessagePin', () => {
 });
 
 describe('getPinnedMessage', () => {
-  const proto = SupabaseService.prototype as any;
+  /**
+   * The only three `expect` lines in this PR whose TEXT changed: each writes
+   * the call inline, so retargeting it off the prototype necessarily rewrites
+   * the line. The assertion — `.resolves.toBeNull()` — and the stand-in are
+   * the same; this helper keeps the change to the call expression.
+   */
+  const getPinned = (self: any) =>
+    chatSendData.getPinnedMessage(self.supabase, self, GROUP);
+
 
   it('answers null pre-migration without querying', async () => {
     setSchemaCapabilities({ messageBoardColumns: false });
     const from = jest.fn();
-    await expect(proto.getPinnedMessage.call({ supabase: { from } }, GROUP)).resolves.toBeNull();
+    await expect(getPinned({ supabase: { from } })).resolves.toBeNull();
     expect(from).not.toHaveBeenCalled();
   });
 
@@ -284,7 +303,7 @@ describe('getPinnedMessage', () => {
         return chain;
       },
     };
-    await expect(proto.getPinnedMessage.call({ supabase }, GROUP)).resolves.toBeNull();
+    await expect(getPinned({ supabase })).resolves.toBeNull();
     const isFilters = filters.filter((f) => f.fn === 'is').map((f) => f.args[0]);
     expect(isFilters).toEqual(expect.arrayContaining(['removed_at', 'thread_root_id']));
   });
@@ -302,6 +321,6 @@ describe('getPinnedMessage', () => {
         return chain;
       },
     };
-    await expect(proto.getPinnedMessage.call({ supabase }, GROUP)).resolves.toBeNull();
+    await expect(getPinned({ supabase })).resolves.toBeNull();
   });
 });

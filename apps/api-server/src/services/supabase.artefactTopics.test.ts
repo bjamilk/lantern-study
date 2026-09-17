@@ -12,7 +12,7 @@
  *     records — and, while 20260826120000 is unapplied, its absence degrades to
  *     "no topics" instead of 42703-ing a screen that works today.
  */
-import { SupabaseService } from './supabase';
+import { createDataLayer } from './data';
 import { PublicError } from '../utils/safeError';
 
 type Result = { data: unknown; error?: unknown };
@@ -70,11 +70,27 @@ const client = {
   },
 };
 
-// ONE service for the whole file: getCourseTopicsService memoises the first
-// service it is handed, so every test has to drive the same client.
-const service: any = Object.create(SupabaseService.prototype);
-service.supabase = client;
-service.getClient = () => client;
+// ONE layer for the whole file: getCourseTopicsService memoises the first host
+// it is handed, so every test has to drive the same client.
+//
+// HARNESS (monolith lane M3, Phase B): this used to be
+// `Object.create(SupabaseService.prototype)` with the client hung off it. It
+// is a real `createDataLayer(...)` over the SAME fake client now, and `service`
+// is four arrows into it — kept under that name and shape so the two
+// assertions on `service.updateNote` below do not have to change.
+const layer = createDataLayer({
+  client: client as never,
+  supabaseUrl: 'https://example.supabase.co',
+  host: { legacyService: undefined } as never,
+});
+const service: any = {
+  supabase: client,
+  getClient: () => client,
+  createNote: (...args: any[]) => (layer.notes.createNote as any)(...args),
+  updateNote: (...args: any[]) => (layer.notes.updateNote as any)(...args),
+  getDecks: (...args: any[]) => (layer.decks.getDecks as any)(...args),
+  updateDeck: (...args: any[]) => (layer.decks.updateDeck as any)(...args),
+};
 
 const COURSE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER_COURSE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -117,14 +133,14 @@ beforeEach(() => {
   responders = {};
   calls = [];
   perTable = new Map();
-  service.resolveNoteAccess = jest.fn(async () => ({
+  (layer.notes as any).resolveNoteAccess = jest.fn(async () => ({
     noteId: NOTE,
     ownerId: USER,
     accessRole: 'owner',
     canEdit: true,
     isOwner: true,
   }));
-  service.verifyDeckAccess = jest.fn(async () => true);
+  (layer.offlineBundles as any).verifyDeckAccess = jest.fn(async () => true);
 });
 
 describe('createNote — the topic is validated before the insert', () => {

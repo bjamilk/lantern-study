@@ -12,6 +12,15 @@
  *    the listed rows without the field (the card falls back rather than showing
  *    a zero that would read as "nobody upvoted this").
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as groupMessagesData from './data/groupMessages';
 jest.mock('./cache', () => ({
   cacheService: {
     cached: jest.fn(async (_key: string, fn: () => Promise<unknown>) => fn()),
@@ -26,7 +35,6 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
 
 const AUTHOR = 'author-1';
 const QUESTION = 'q1';
@@ -59,13 +67,12 @@ function makeSelf(result: Result) {
       return chain;
     },
   };
-  const proto = SupabaseService.prototype as any;
   return {
     calls,
     countOne: (messageId: string, authorId: string | null) =>
-      proto.countPeerUpvotesForMessage.call({ supabase }, messageId, authorId) as Promise<number>,
+      groupMessagesData.countPeerUpvotesForMessage(({ supabase } as any).supabase, messageId, authorId) as Promise<number>,
     attach: (rows: any[]) =>
-      proto.attachPeerUpvotes.call({ supabase }, rows) as Promise<any[]>,
+      groupMessagesData.attachPeerUpvotes(({ supabase } as any).supabase, rows) as Promise<any[]>,
   };
 }
 

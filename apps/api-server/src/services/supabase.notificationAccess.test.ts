@@ -11,6 +11,15 @@
  * supabase tests use — a pass-through cache cannot reproduce this bug, which
  * is exactly why it went unnoticed.
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as notificationsData from './data/notifications';
 const store = new Map<string, unknown>();
 jest.mock('./cache', () => ({
   cacheService: {
@@ -34,7 +43,6 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import { SupabaseService } from './supabase';
 
 const OWNER = '11111111-1111-4111-8111-111111111111';
 const ATTACKER = '22222222-2222-4222-8222-222222222222';
@@ -59,10 +67,9 @@ function makeSelf() {
       return chain;
     },
   };
-  const proto = SupabaseService.prototype as any;
   const self: any = { supabase };
   return {
-    get: (userId?: string) => proto.getNotificationById.call(self, NOTIFICATION, userId),
+    get: (userId?: string) => notificationsData.getNotificationById((self as any).supabase, NOTIFICATION, userId),
     reads: () => reads,
   };
 }
