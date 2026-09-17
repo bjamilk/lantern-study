@@ -6,7 +6,16 @@
  * search RPC — so an unstripped write is a free, indefinite, top-of-search
  * boost. quantity/listing_kind/bundle_items were also unvalidated on update.
  */
-import { SupabaseService } from './supabase';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as marketplaceData from './data/marketplace';
+import { resolveArtefactTopic } from './data/academic';
 import { PublicError, clientErrorMessage } from '../utils/safeError';
 
 function makeInsertCapture() {
@@ -36,17 +45,22 @@ function makeUpdateCapture() {
 
 // None of these listings names a topic, so the real resolver short-circuits.
 const createCall = (self: any, data: Record<string, unknown>) =>
-  SupabaseService.prototype.createMarketplaceListing.call(
+  marketplaceData.createMarketplaceListing(
+    self.supabase,
     {
-      resolveArtefactTopic: (SupabaseService.prototype as any).resolveArtefactTopic,
+      // The REAL resolver, as before — it was borrowed off the prototype, and
+      // the prototype only delegated here. `resolveTopicForArtefact` is never
+      // reached: none of these listings names a topic, so it short-circuits.
+      resolveArtefactTopic: (input: any) =>
+        resolveArtefactTopic(undefined as never, input),
       ...self,
     } as any,
     data,
     'user-1',
   );
 
-const updateCall = (self: unknown, updates: Record<string, unknown>) =>
-  SupabaseService.prototype.updateMarketplaceListing.call(self as any, 'l1', updates);
+const updateCall = (self: any, updates: Record<string, unknown>) =>
+  marketplaceData.updateMarketplaceListing(self.supabase, self, 'l1', updates);
 
 describe('createMarketplaceListing mass-assignment guard', () => {
   it('strips client-supplied boost keys from category_specific_fields', async () => {

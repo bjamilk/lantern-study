@@ -6,9 +6,17 @@
  * is the backstop for direct PostgREST writes; these tests cover the API layer
  * and pin the migration's shape.
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { SupabaseService } from './supabase';
+import * as marketplaceData from './data/marketplace';
 
 jest.mock('./marketplaceFavoriteAlerts', () => ({
   notifyListingBackAvailable: jest.fn(async () => undefined),
@@ -47,6 +55,11 @@ function service(db: ReturnType<typeof makeDb>, row: Record<string, unknown>) {
     supabase: db,
     getMarketplaceListingById: jest.fn(async () => row),
     maybeLogManualSoldBudget: jest.fn(async () => undefined),
+    // The facade built this dep as an arrow into `marketplaceFavoriteAlerts`,
+    // which against this stand-in read no rows and swallowed its own failure
+    // (`notifyListingBackAvailable` is try-wrapped and returns void). Stubbed
+    // here so the same nothing happens, visibly.
+    notifyListingBackAvailable: jest.fn(async () => undefined),
     toListingCardRecords: (rows: unknown[]) => rows,
   };
 }
@@ -59,11 +72,11 @@ const listing = (status: string) => ({
   title: 'Anatomy notes',
 });
 
-const setStatus = (self: unknown, status: string, userId = OWNER) =>
-  SupabaseService.prototype.updateListingStatus.call(self as any, 'listing-1', status, userId);
+const setStatus = (self: any, status: string, userId = OWNER) =>
+  marketplaceData.updateListingStatus(self.supabase, self, 'listing-1', status, userId);
 
-const edit = (self: unknown, updates: Record<string, unknown>, options?: { actorIsAdmin?: boolean }) =>
-  SupabaseService.prototype.updateMarketplaceListing.call(self as any, 'listing-1', updates, options);
+const edit = (self: any, updates: Record<string, unknown>, options?: { actorIsAdmin?: boolean }) =>
+  marketplaceData.updateMarketplaceListing(self.supabase, self, 'listing-1', updates, options);
 
 describe('updateListingStatus (seller status endpoint)', () => {
   it('refuses to relist a listing moderation removed', async () => {
@@ -176,7 +189,8 @@ describe('getListingsBySeller', () => {
   it('shows moderation takedowns on the Inactive shelf instead of hiding them', async () => {
     const row = listing('removed_by_admin');
     const db = makeDb(row);
-    await SupabaseService.prototype.getListingsBySeller.call(service(db, row) as any, OWNER, 'inactive');
+    const self: any = service(db, row);
+    await marketplaceData.getListingsBySeller(self.supabase, self, OWNER, 'inactive');
     expect(db.ins).toEqual([
       { column: 'status', values: ['inactive', 'suspended_by_admin', 'removed_by_admin'] },
     ]);

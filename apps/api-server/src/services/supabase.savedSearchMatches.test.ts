@@ -7,7 +7,15 @@
  * listings and the job never notified. A peek returns the same count without
  * touching last_checked_at; a non-peek call still marks-as-seen.
  */
-import { SupabaseService } from './supabase';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as marketplaceData from './data/marketplace';
 
 function makeDb(search: Record<string, unknown>, listings: unknown[]) {
   const savedSearchUpdates: Array<{ payload: Record<string, unknown> }> = [];
@@ -38,8 +46,8 @@ function makeDb(search: Record<string, unknown>, listings: unknown[]) {
   return { supabase: { from }, savedSearchUpdates, gtCalls };
 }
 
-const call = (self: unknown, opts: { peek?: boolean }) =>
-  SupabaseService.prototype.getSavedSearchMatches.call(self as any, 'user-1', 'ss-1', opts);
+const call = (self: any, opts: { peek?: boolean }) =>
+  marketplaceData.getSavedSearchMatches(self.supabase, 'user-1', 'ss-1', opts);
 
 const SEARCH = {
   id: 'ss-1',

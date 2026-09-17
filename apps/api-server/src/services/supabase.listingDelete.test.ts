@@ -5,9 +5,17 @@
  * deleteMarketplaceListingSafely blocks while any order is open (409), archives
  * when only terminal orders remain, and hard-deletes only when there are none.
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { SupabaseService } from './supabase';
+import * as marketplaceData from './data/marketplace';
 
 function makeDb(orderStatuses: Array<{ status: string }>) {
   const updates: Array<{ table: string; payload: Record<string, unknown> }> = [];
@@ -42,8 +50,8 @@ function service(db: ReturnType<typeof makeDb>) {
   };
 }
 
-const call = (self: unknown) =>
-  SupabaseService.prototype.deleteMarketplaceListingSafely.call(self as any, 'listing-1');
+const call = (self: any) =>
+  marketplaceData.deleteMarketplaceListingSafely(self.supabase, self, 'listing-1');
 
 describe('deleteMarketplaceListingSafely', () => {
   it('refuses (409) when an order is still open', async () => {

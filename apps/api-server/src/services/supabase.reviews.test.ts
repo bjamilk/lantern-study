@@ -4,7 +4,15 @@
  * with any rating. These tests drive the prototype methods against a stubbed
  * `this`, so the 9k-line service never has to be constructed.
  */
-import { SupabaseService } from "./supabase";
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as marketplaceData from "./data/marketplace";
 
 type ChainResult = { data: unknown; error?: unknown };
 
@@ -37,8 +45,8 @@ describe("canUserReviewListing", () => {
     };
   }
 
-  const call = (self: unknown, listingId: string, userId: string) =>
-    SupabaseService.prototype.canUserReviewListing.call(self as any, listingId, userId);
+  const call = (self: any, listingId: string, userId: string) =>
+    marketplaceData.canUserReviewListing(self.supabase, self, listingId, userId);
 
   it("blocks the seller from reviewing their own listing", async () => {
     const self = fakeService({});
@@ -89,9 +97,10 @@ describe("addMarketplaceReview validation", () => {
     };
   }
 
-  const call = (self: unknown, review: { rating: number; comment?: string }) =>
-    SupabaseService.prototype.addMarketplaceReview.call(
-      self as any,
+  const call = (self: any, review: { rating: number; comment?: string }) =>
+    marketplaceData.addMarketplaceReview(
+      self.supabase,
+      self,
       "listing-1",
       "buyer-1",
       review,
