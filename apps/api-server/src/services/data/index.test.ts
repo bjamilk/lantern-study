@@ -21,6 +21,9 @@ jest.mock('./readState');
 jest.mock('./uploads');
 jest.mock('./storageAcl');
 jest.mock('./chatSend');
+jest.mock('./gamification');
+jest.mock('./boardActions');
+jest.mock('./marketplace');
 
 import { createDataLayer, type DataLayerHost } from './index';
 import * as groupsData from './groups';
@@ -28,16 +31,33 @@ import * as notificationsData from './notifications';
 import * as readStateData from './readState';
 import * as uploadsData from './uploads';
 import * as storageAclData from './storageAcl';
+import * as gamificationData from './gamification';
+import * as boardActionsData from './boardActions';
+import * as marketplaceData from './marketplace';
 
 const client = { marker: 'client' } as never;
-const legacyService = { marker: 'facade' };
+const legacyService = { marker: 'facade' } as never;
 
-const host: DataLayerHost = {
+// Only the entries these tests exercise; the rest of the bridge is a jest.fn().
+const host = {
   legacyService,
-  incrementUserStatsAndAwardBadges: jest.fn(async () => undefined),
+  resolveTopicForArtefact: jest.fn(async () => null),
+  normalizeMessageRecord: jest.fn((row: unknown) => row),
+  normalizeListingRecord: jest.fn((l: unknown) => l),
+  normalizeListingRecordAsync: jest.fn(async (l: unknown) => l),
+  ratingColumnsAvailable: jest.fn(() => true),
+  noteRatingColumnsMissing: jest.fn(),
+  signSimilarListingCards: jest.fn(async (l: unknown) => l),
+  calculateTestScore: jest.fn(() => 0),
+  generateTestQuestions: jest.fn(() => []),
+  recordLearningConnection: jest.fn(async () => undefined),
+  createOrderFromBuyNow: jest.fn(async () => ({})),
+  createOrderFromOfferAccept: jest.fn(async () => ({})),
+  consumeBoostCredit: jest.fn(async () => true),
+  notifyListingBackAvailable: jest.fn(async () => undefined),
   deleteUserAccountFully: jest.fn(async () => ({ found: true })),
   exportUserDataArchive: jest.fn(async () => ({})),
-};
+} as unknown as DataLayerHost;
 
 const build = () =>
   createDataLayer({ client, supabaseUrl: 'https://example.supabase.co', host });
@@ -93,15 +113,12 @@ describe('createDataLayer', () => {
     await layer.groups.getGroups({});
     const groupDeps = (groupsData.getGroups as jest.Mock).mock.calls[0][1];
 
-    // Gamification is not bound yet, so it goes through the host seam.
+    // Gamification owns this one, so the dep resolves through that namespace.
     await groupDeps.incrementUserStatsAndAwardBadges('user-1', {});
-    expect(host.incrementUserStatsAndAwardBadges).toHaveBeenCalledWith(
-      'user-1',
-      {},
-    );
+    expect(gamificationData.incrementUserStatsAndAwardBadges).toHaveBeenCalled();
 
-    // The storage ACL is not bound either, but needs only the client and the
-    // project URL, so the layer calls it directly.
+    // The storage ACL takes the project URL as its second positional argument,
+    // which is the binder shape that module gets to itself.
     await layer.uploads.uploadGroupAvatar({
       groupId: 'group-1',
       fileName: 'a.png',
@@ -117,6 +134,45 @@ describe('createDataLayer', () => {
       'a.png',
       60,
     );
+  });
+
+  it('gives data/storageAcl its own binder shape: client, then the project URL', async () => {
+    const layer = build();
+    await layer.storageAcl.signStorageDisplayUrl('https://example/x.png');
+    expect(storageAclData.signStorageDisplayUrl).toHaveBeenCalledWith(
+      client,
+      'https://example.supabase.co',
+      'https://example/x.png',
+    );
+    // The pure half takes the URL and no client.
+    layer.storageAcl.normalizeStorageUrl('https://example/y.png');
+    expect(storageAclData.normalizeStorageUrl).toHaveBeenCalledWith(
+      'https://example.supabase.co',
+      'https://example/y.png',
+    );
+  });
+
+  it('binds deps first for the functions that issue no query', async () => {
+    const layer = build();
+    await layer.boardActions.enrichBoardViewerState([], 'user-1');
+    const call = (boardActionsData.enrichBoardViewerState as jest.Mock).mock
+      .calls[0];
+    expect(call[0]).not.toBe(client);
+    expect(typeof call[0].repostedByMeAmong).toBe('function');
+    expect(call.slice(1)).toEqual([[], 'user-1']);
+  });
+
+  it('routes a dep with no data-layer home through the host bridge', async () => {
+    const layer = build();
+    await layer.marketplace.getMarketplaceListingById('listing-1');
+    const deps = (marketplaceData.getMarketplaceListingById as jest.Mock).mock
+      .calls[0][1];
+
+    deps.normalizeListingRecord({ id: 'listing-1' });
+    expect(host.normalizeListingRecord).toHaveBeenCalledWith({ id: 'listing-1' });
+    // The per-instance rating-column circuit breaker stays on the instance.
+    deps.ratingColumnsAvailable();
+    expect(host.ratingColumnsAvailable).toHaveBeenCalled();
   });
 
   it('hands out the client and the legacy facade handle unchanged', () => {

@@ -71,6 +71,7 @@ import { CacheService, cacheService as sharedCacheService } from './services/cac
 import { ApiKeyService } from './services/apiKey';
 import { SupabaseService } from './services/supabase';
 import { createDataLayer, type DataLayer } from './services/data';
+import { createDataLayerHost } from './services/dataLayerHost';
 
 // Import middleware
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores, isWebhookRateLimitExempt } from './middleware/rateLimit';
@@ -219,21 +220,7 @@ async function initializeServices() {
     dataLayer = createDataLayer({
       client: supabaseService.getClient(),
       supabaseUrl: dbConfig.url,
-      host: {
-        legacyService: supabaseService,
-        incrementUserStatsAndAwardBadges: (userId, increments) =>
-          supabaseService.incrementUserStatsAndAwardBadges(userId, increments),
-        deleteUserAccountFully: async (userId) =>
-          (await import('./services/userDataLifecycle')).deleteUserAccountFully(
-            supabaseService,
-            userId,
-          ),
-        exportUserDataArchive: async (userId) =>
-          (await import('./services/userDataLifecycle')).exportUserDataArchive(
-            supabaseService,
-            userId,
-          ),
-      },
+      host: createDataLayerHost(supabaseService),
     });
 
     const { setIdempotencyClient } = await import('./middleware/idempotency');
