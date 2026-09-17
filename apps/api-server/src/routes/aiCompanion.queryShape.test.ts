@@ -416,16 +416,39 @@ describe('POST /analytics', () => {
     expect(tablesIn(rec.trace)).toEqual([]);
   });
 
-  it('reports success even when the insert returns an error — see the KNOWN ISSUE', async () => {
-    // KNOWN ISSUE (tracked, found during R2): the handler wraps the insert in
-    // try/catch and logs "AI analytics insert failed (non-critical)", but
-    // PostgREST RESOLVES with `{error}` rather than throwing, so the catch never
-    // runs and a failed insert is reported to the client as `{success: true}`.
-    // Frozen as-is: this lane moves queries, it does not fix them.
-    initWith({ data: null, error: { code: '42P01', message: 'relation does not exist' } });
+  it('answers success:false at 200, and logs, when the insert RESOLVES with an error (#107)', async () => {
+    // PostgREST resolves with `{error}` on a failed write rather than throwing.
+    // Until #107 the route never read it, so a dropped row was answered
+    // `{success: true}` and nothing was logged. Telemetry must not fail the
+    // student's request, so this stays a 200 — but an honest one.
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      initWith({ data: null, error: { code: '42P01', message: 'relation does not exist' } });
 
-    const res = await runRoute('post', '/analytics', { body: { event: 'rail_opened' } });
+      const res = await runRoute('post', '/analytics', { body: { event: 'rail_opened' } });
 
-    expect(res.body).toEqual({ success: true });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ success: false });
+      expect(warn).toHaveBeenCalledWith(
+        'AI analytics insert failed (non-critical):',
+        'relation does not exist'
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('does not log or report failure when the insert succeeds', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      initWith({ data: null, error: null });
+
+      const res = await runRoute('post', '/analytics', { body: { event: 'rail_opened' } });
+
+      expect(res.body).toEqual({ success: true });
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

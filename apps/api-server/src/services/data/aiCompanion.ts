@@ -164,12 +164,11 @@ export async function deleteConversation(
 /**
  * Record one companion UI event for the caller.
  *
- * KNOWN ISSUE (tracked, found during R2): the caller wraps this in try/catch and
- * logs "AI analytics insert failed (non-critical)", but PostgREST RESOLVES with
- * `{error}` rather than throwing, so that catch never runs and a failed insert
- * is reported to the client as `{success: true}`. The `{error}` is returned here
- * so a caller CAN check it; the route is left exactly as it was, because this
- * lane moves queries and does not fix them.
+ * Returns the write's `{error}` and NEVER throws for a database failure:
+ * PostgREST resolves with `{error}` on a failed write. A caller that only wraps
+ * this in try/catch will miss every dropped row — that was issue #107, where
+ * the route answered `{success: true}` for a failed insert. The caller must
+ * read `error`.
  */
 export async function recordAnalyticsEvent(
   supabase: DataClient,
