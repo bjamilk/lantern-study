@@ -13,6 +13,7 @@
  * them and they allow activity sharing.
  */
 import type { DataLayer } from './data';
+import { bestEffortWrite } from './data/writeResult';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -97,7 +98,14 @@ export class StudyPresenceService {
     if (!shares) {
       // Opted out: make sure any row from before they flipped the setting is
       // gone, or they keep appearing in "who is studying now" forever.
-      await this.db.from('study_presence').delete().eq('user_id', userId);
+      // BEST EFFORT (#108). Self-healing: the row carries
+       // `expires_at = now + PRESENCE_TTL_MINUTES`, so a lost delete drops them
+      // off "who is studying now" within ten minutes anyway, and every later
+      // heartbeat re-attempts it.
+      bestEffortWrite(
+        await this.db.from('study_presence').delete().eq('user_id', userId),
+        { table: 'study_presence', op: 'delete', userId, reason: 'opted_out' },
+      );
       return { shared: false };
     }
 
@@ -119,13 +127,13 @@ export class StudyPresenceService {
   }
 
   async clear(userId: string): Promise<void> {
-    try {
-      await this.db.from('study_presence').delete().eq('user_id', userId);
-    } catch (err) {
-      logger.warn('presence clear failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    // BEST EFFORT (#108). The `try/catch` here was dead code — a failed
+    // supabase-js write resolves — so the warning it promised never ran. Same
+    // TTL reasoning as the opt-out delete above.
+    bestEffortWrite(
+      await this.db.from('study_presence').delete().eq('user_id', userId),
+      { table: 'study_presence', op: 'delete', userId, reason: 'explicit_clear' },
+    );
   }
 
   /**

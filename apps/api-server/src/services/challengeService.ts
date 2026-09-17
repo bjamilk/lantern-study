@@ -3,6 +3,7 @@ import {
   shuffleArray,
   scoreDuelAnswers,
 } from '../utils/challengeScoring';
+import { bestEffortWrite } from './data/writeResult';
 import type { GroupChallenge, ChallengeConfig, ChallengeParticipant } from '../types/challenges';
 import type { User } from '../types';
 import type { DataLayer } from './data';
@@ -32,11 +33,16 @@ export class ChallengeService {
 
   private async expireStalePending(): Promise<void> {
     const now = new Date().toISOString();
-    await this.db
-      .from('group_challenges')
-      .update({ status: 'expired' })
-      .eq('status', 'pending')
-      .lt('expires_at', now);
+    // BEST EFFORT (#108): a bulk sweep that runs again on the next call, and
+    // whose result is re-derived from `expires_at` by every read anyway.
+    bestEffortWrite(
+      await this.db
+        .from('group_challenges')
+        .update({ status: 'expired' })
+        .eq('status', 'pending')
+        .lt('expires_at', now),
+      { table: 'group_challenges', op: 'update', reason: 'expire_stale_pending' },
+    );
   }
 
   private async fetchProfileBasics(userId: string) {
@@ -478,7 +484,13 @@ export class ChallengeService {
     if (data.challenger_id !== userId && data.opponent_id !== userId) return null;
 
     if (data.status === 'pending' && new Date(data.expires_at) < new Date()) {
-      await this.db.from('group_challenges').update({ status: 'expired' }).eq('id', challengeId);
+      // BEST EFFORT (#108): the answer below already reports `expired`, which
+      // is derived from `expires_at`, so the reader is told the truth either
+      // way and the next read re-stamps it.
+      bestEffortWrite(
+        await this.db.from('group_challenges').update({ status: 'expired' }).eq('id', challengeId),
+        { table: 'group_challenges', op: 'update', challengeId, reason: 'expire_on_read' },
+      );
       data.status = 'expired';
     }
 

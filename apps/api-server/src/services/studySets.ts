@@ -50,6 +50,7 @@
  * owned (and, for a topic, the unit to belong to that same owned set).
  */
 import { PublicError } from '../utils/safeError';
+import { mustWrite } from './data/writeResult';
 import type { DataLayer } from './data';
 import { isUuid } from './academicCourses';
 import { normalizeCoverRef } from '@lantern/shared/utils/storageUrl';
@@ -711,8 +712,23 @@ export class StudySetsService {
     }
   ): Promise<{ units: StudySetUnitRow[]; topics: StudySetTopicRow[] }> {
     await this.get(userId, setId);
-    await this.db.from('study_set_topics').delete().eq('user_id', userId).eq('study_set_id', setId);
-    await this.db.from('study_set_units').delete().eq('user_id', userId).eq('study_set_id', setId);
+    // MUST SUCCEED (#108), both of them, and BEFORE the inserts below. This is
+    // a replace: the old plan is cleared and the new one written in its place.
+    // A lost UNIT delete leaves the old units beside the new ones — the
+    // student's plan silently DOUBLES, and the response lists only the new
+    // half, so nothing looks wrong until they reload. A lost TOPIC delete
+    // leaves topics hanging off units that are about to go.
+    //
+    // Nothing external has happened here; it is our own two tables. Stopping
+    // leaves the plan exactly as it was.
+    mustWrite(
+      await this.db.from('study_set_topics').delete().eq('user_id', userId).eq('study_set_id', setId),
+      { table: 'study_set_topics', op: 'delete', userId, setId, reason: 'replace_plan_clear' },
+    );
+    mustWrite(
+      await this.db.from('study_set_units').delete().eq('user_id', userId).eq('study_set_id', setId),
+      { table: 'study_set_units', op: 'delete', userId, setId, reason: 'replace_plan_clear' },
+    );
     const unitsIn = Array.isArray(input.units) ? input.units : [];
     const insertedUnits: StudySetUnitRow[] = [];
     for (const [index, unit] of unitsIn.entries()) {
