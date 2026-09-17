@@ -106,6 +106,7 @@
  * mocks is unchanged.
  */
 import type { ConnectionInput as LearningConnectionInput } from "../learningConnections";
+import { bestEffortWrite } from "./writeResult";
 import { logger } from "../../utils/logger";
 import {
   buildMarketplaceBudgetTxIds,
@@ -1760,10 +1761,15 @@ export async function getSavedSearchMatches(
   if (listErr) throw listErr;
 
   if (!options.peek) {
-    await db
-      .from("saved_searches")
-      .update({ last_checked_at: new Date().toISOString() })
-      .eq("id", searchId);
+    // BEST EFFORT (#108): the scan watermark. A lost stamp only widens the next
+    // scan, which re-stamps it.
+    bestEffortWrite(
+      await db
+        .from("saved_searches")
+        .update({ last_checked_at: new Date().toISOString() })
+        .eq("id", searchId),
+      { table: "saved_searches", op: "update", searchId, reason: "scan_watermark" },
+    );
   }
 
   return { count: listings?.length || 0, listings: listings || [] };

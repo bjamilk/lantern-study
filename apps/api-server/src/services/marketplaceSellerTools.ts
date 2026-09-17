@@ -9,6 +9,7 @@ import {
   parseStoredStorageRef,
   toPersistedMarketplaceImageUrl,
 } from '@lantern/shared/utils/storageUrl';
+import { bestEffortWrite } from './data/writeResult';
 import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
@@ -669,12 +670,17 @@ export class MarketplaceSellerToolsService {
           logger.warn('Campaign DM skipped', { buyerId: buyer.buyerId, dmErr });
         }
 
-        await this.db.from('marketplace_campaign_log').insert({
-          seller_id: sellerId,
-          recipient_id: buyer.buyerId,
-          segment: input.segment || null,
-          message_preview: message.slice(0, 120),
-        });
+        // BEST EFFORT (#108): the campaign audit line. The DM and the
+        // notification are the delivery; this only records that they went.
+        bestEffortWrite(
+          await this.db.from('marketplace_campaign_log').insert({
+            seller_id: sellerId,
+            recipient_id: buyer.buyerId,
+            segment: input.segment || null,
+            message_preview: message.slice(0, 120),
+          }),
+          { table: 'marketplace_campaign_log', op: 'insert', sellerId, recipientId: buyer.buyerId },
+        );
         sent += 1;
       } catch (err) {
         skipped += 1;

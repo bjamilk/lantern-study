@@ -159,3 +159,90 @@ now at ZERO. B PR 3 (done): the must-succeed stragglers — `adminAudit`, `apiKe
 must-succeed (the default-address flip); the rest are must-be-SEEN. Then the rest by domain,
 best-effort sites batched. Each PR re-freezes the ratchet baseline
 downward in its own commit, with the before and after counts in the PR body.
+
+
+## Closing (2026-09-17) — #108 is finished
+
+The ratchet's baseline is **0**. Every discarded write error the scan can see is
+gone, across eight pull requests: #112 (helpers, ratchet, buy-now pilot), #114
+(`marketplacePayments.ts`), #115 (`marketplaceOrders.ts` + the order-fields
+route), #116 (the must-succeed stragglers), #118 (jobs), #119 (study) and this
+one (community and misc).
+
+### Final counts by class
+
+Counted by walking the tree for helper calls, not from memory:
+
+| class | call sites | what it does |
+|---|---:|---|
+| **must-succeed** (`mustWrite`) | 16 | throws a typed `WriteFailedError`; nothing external has happened yet |
+| **best-effort, error level** (`bestEffortWrite(…, 'error')`) | 25 | request succeeds; a person may need to repair something |
+| **best-effort, warn level** (`bestEffortWrite`) | 39 | request succeeds; self-healing or cosmetic |
+| **reconcile-later** (`reconcileLaterWrite`) | 11 | money or an external effect already happened; never throws |
+| **deleted** | 1 | `voidOrphanPendingTransaction`, which had no caller |
+| total | 92 | |
+
+That is 91 helper calls for 89 fixed writes plus one deletion: two writes carry
+TWO call sites each, because `finalizeOrderPayout` and `markPaymentPaidOut`
+take a mode — `mustWrite` when a `transfer.success` webhook drives them (so
+Paystack retries) and `reconcileLaterWrite` when the inline caller does (so a
+buyer's confirm-received is not 500'd for a payout that worked).
+
+Nineteen dead `try/catch` blocks were found along the way — code that logged a
+failure it could never observe, because a failed supabase-js write resolves.
+Two writes changed their ANSWER, not just their logging: `ensureCode` returns
+null instead of a referral code the profile does not carry, and
+`PATCH /orders/:id` refuses instead of reporting success for fields that did not
+save.
+
+### Sentry fingerprints, and what to do when one fires
+
+Every one of these means the request SUCCEEDED and a row did not.
+
+| fingerprint | what happened | what to do |
+|---|---|---|
+| `money-moved-write-failed:<table>:<op>` | Paystack moved money — a refund paid, a transfer sent — and the row recording it did not update | reconcile that payment/order against Paystack; #113 tracks the job that should do this automatically |
+| `audit-log-write-failed` | an admin action happened and its audit row did not | recover the action from the admin's own logs; a compliance gap, not an outage |
+| `idempotency-failure-marker-write-failed` | a failed handler's key is stuck at `__processing__` and will answer 409 forever | tell the user to retry with a new key (most clients derive one); clear the row if it recurs |
+| `orphaned-listing-cleanup-failed` | a marketplace listing exists whose study pack or question bank does not — it is PURCHASABLE | take the listing down by hand, urgently |
+| `jobs-application-row-write-failed` | someone applied through an external link and no application row exists | tell the employer; the candidate must re-apply |
+| `jobs-pipeline-stamp-write-failed` | an interview, offer or hire happened and the candidate's stage did not move | set the stage by hand |
+| `jobs-company-owner-membership-write-failed` | a company exists with nobody named its owner | insert the owner membership by hand |
+| `studypack-draft-job-link-failed` | a paid draft does not name its job | find it by user and draft id; refund if it never ran |
+| `studypack-draft-status-write-failed` | a draft is stuck at `generating`, or a generated pack never became `ready` | credits were spent — resolve the draft or refund |
+| `community-membership-write-failed` | a community exists whose creator is not a member or admin of it | insert the admin membership by hand |
+| `referral-code-write-failed` | a referral code was minted and not stored; the user was given nothing | none needed — the next request mints and stores another |
+| `creator-verification-write-failed` | a creator earned a verification level the profile does not record | re-run the check, or set the level by hand |
+| `dm-thread-state-write-failed` | a DM was sent and the thread's preview and REQUEST state did not update | check whether a message request is missing for the recipient |
+| `companion-transcript-write-failed` | an AI companion turn is missing from the transcript | nothing to repair; the student may re-ask |
+| `gotrue-signout-failed` *(warn, no fingerprint)* | the GoTrue global sign-out failed | nothing: `setUserSessionCutoff` runs FIRST and is what revokes the tokens |
+
+### What the guard still cannot see
+
+The ratchet is a floor, not a proof. It reads text, so these shapes pass it:
+
+- **A write behind a value it cannot type.** It knows a helper resolves with
+  `{ error }` only from that helper's own `: Promise<{ error … }>` annotation.
+  An unannotated helper, one typed through an alias, an interface method, or a
+  generic wrapper is invisible — and so is every caller of it.
+- **A promise that leaves the function.** Returned, stored in a variable or an
+  array, or passed as an argument and awaited somewhere else. The `chain`
+  detector catches only the one-file version of this.
+- **`Promise.all([...writes])` and friends.** The elements are expressions, not
+  statements, so no element is a bare awaited statement.
+- **A `void`-ed or floating write.** `void db.from(…).update(…)` and a write
+  with no `await` at all are not awaited statements; the latter is a different
+  bug (an unhandled rejection) that this guard was never aimed at.
+- **An `error` that is read but not acted on.** `const { error } = await …;`
+  followed by `if (error) { /* TODO */ }` counts as checked.
+- **An `error` read only in dead code**, or read in a nested closure the brace
+  walk mis-bounds.
+- **Anything outside the scan.** Only `routes`, `services`, `middleware`,
+  `queue` and `utils` under `apps/api-server/src`, and never a `.test.ts`. The
+  web and mobile apps are not scanned at all.
+
+The honest summary: this lane fixed every discarded write error of the shapes a
+static scan can find, and the guard stops those shapes coming back. A discarded
+write reached through an abstraction the scan cannot follow would still ship
+silently, and the only defence against that one is the convention — read the
+`error`, and say which of the three things you mean.

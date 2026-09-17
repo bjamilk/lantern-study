@@ -17,6 +17,7 @@
  * user's group list with groups they are not in.
  */
 import type { DataLayer } from './data';
+import { bestEffortWrite } from './data/writeResult';
 import type { ActivityFeedHost } from './activityFeed';
 import type { CommunityModerationHost } from './communityModeration';
 
@@ -577,11 +578,16 @@ export class CommunitiesService {
         groupId = adopted;
         // Re-point the community at the lounge it already had. Guarded on null
         // so a concurrent opener that just claimed the pointer still wins.
-        await this.db
-          .from('communities')
-          .update({ lounge_group_id: adopted })
-          .eq('id', communityId)
-          .is('lounge_group_id', null);
+        // BEST EFFORT (#108): a pointer the next `openLounge` re-adopts the
+        // same way, guarded on null so a concurrent opener still wins.
+        bestEffortWrite(
+          await this.db
+            .from('communities')
+            .update({ lounge_group_id: adopted })
+            .eq('id', communityId)
+            .is('lounge_group_id', null),
+          { table: 'communities', op: 'update', communityId, reason: 'adopt_lounge_pointer' },
+        );
       }
     }
 
@@ -625,7 +631,13 @@ export class CommunitiesService {
           .eq('id', communityId)
           .maybeSingle();
         groupId = ((winner as any)?.lounge_group_id as string | null) ?? null;
-        await this.db.from('groups').delete().eq('id', (group as any).id);
+        // BEST EFFORT (#108): tidying up the group this caller lost the race
+        // with. Nothing points at it and it has no members, so a lost delete
+        // leaves invisible litter rather than a broken lounge.
+        bestEffortWrite(
+          await this.db.from('groups').delete().eq('id', (group as any).id),
+          { table: 'groups', op: 'delete', communityId, reason: 'orphan_lounge_group' },
+        );
         if (!groupId) throw new PublicError('Could not open the lounge');
       }
     }
@@ -1206,12 +1218,29 @@ export class CommunitiesService {
     const community = data as unknown as CommunityRow;
     // The creator joins their own community, as a 'joined' member — which is
     // what makes it count for the profile-visibility widening.
-    await this.db
-      .from('community_members')
-      .upsert(
-        { community_id: community.id, user_id: userId, source: 'joined', role: 'admin', opted_out_at: null },
-        { onConflict: 'community_id,user_id' }
-      );
+    // BEST EFFORT at ERROR level (#108): the community row already exists, so
+    // throwing would answer failure for a community that was created and a
+    // retry would make a second one — the same shape as the jobs board's owner
+    // membership. But losing this leaves the creator neither a member nor an
+    // admin of their own community, and it stops counting for the
+    // profile-visibility widening. Someone has to put it back.
+    bestEffortWrite(
+      await this.db
+        .from('community_members')
+        .upsert(
+          { community_id: community.id, user_id: userId, source: 'joined', role: 'admin', opted_out_at: null },
+          { onConflict: 'community_id,user_id' }
+        ),
+      {
+        table: 'community_members',
+        op: 'upsert',
+        communityId: community.id,
+        userId,
+        reason: 'creator_admin_membership',
+      },
+      'error',
+      'community-membership-write-failed',
+    );
     await cacheService.delete(`communities:mine:${userId}`);
     return community;
   }
