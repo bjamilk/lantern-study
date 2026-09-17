@@ -324,14 +324,6 @@ export class MarketplaceOrdersService {
     return data;
   }
 
-  private async voidOrphanPendingTransaction(txnId: string): Promise<void> {
-    await this.db
-      .from('marketplace_transactions')
-      .delete()
-      .eq('id', txnId)
-      .eq('status', 'pending');
-  }
-
   private async findInquiryForDeal(
     listingId: string,
     buyerId: string
