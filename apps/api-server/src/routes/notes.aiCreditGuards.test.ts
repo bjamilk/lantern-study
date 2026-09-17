@@ -61,7 +61,18 @@ import {
 } from '../middleware/aiRateLimit';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { generateDailyQuiz } from '../services/aiService';
-import { SupabaseService } from '../services/supabase';
+
+/**
+ * The real REL-02 predicate, taken from the module that OWNS it. It used to be
+ * borrowed off `SupabaseService.prototype`, which was only ever a way to reach
+ * this same body through the facade; the facade's method is a one-line
+ * delegation here and the route now calls `dataLayer.notes.isNoteQuizProtected`.
+ * `requireActual` because this file mocks several sibling modules — the data
+ * module itself must stay real, since the whole point is to exercise the true
+ * protection rule rather than a stub that always agrees.
+ */
+const notesData = jest.requireActual('../services/data/notes');
+const isNoteQuizProtected = (quiz: unknown) => notesData.isNoteQuizProtected(quiz);
 
 const DENIED = {
   error: 'Daily AI limit reached. Try again tomorrow.',
@@ -85,8 +96,13 @@ const OCR_PARAMS = {
   fallbackText: 'thin extracted text',
 };
 
+/**
+ * The stand-in is the `DataLayer` the route is injected with; the stubs below
+ * sit under the namespace that owns them. The `notes` namespace is returned so
+ * the assertions read `supabase.updateNoteAttachment` as they always did.
+ */
 function initSupabase(overrides: Record<string, unknown> = {}) {
-  const supabase: any = {
+  const notes: any = {
     getNoteAttachment: jest.fn(async () => ({
       id: 'att-1',
       noteId: 'note-1',
@@ -101,8 +117,8 @@ function initSupabase(overrides: Record<string, unknown> = {}) {
     delete: jest.fn(async () => {}),
     deletePattern: jest.fn(async () => {}),
   };
-  initializeNotesRoutes(supabase, cache);
-  return supabase;
+  initializeNotesRoutes({ notes, getClient: () => ({}) } as any, cache);
+  return notes;
 }
 
 beforeEach(() => {
@@ -236,11 +252,11 @@ describe('POST /:noteId/quiz regenerate pre-check', () => {
   };
 
   function initQuizSupabase(existingQuiz: any) {
-    const supabase: any = {
+    const notes: any = {
       getNote: jest.fn(async () => NOTE),
       getNoteAttachments: jest.fn(async () => []),
       getNoteQuiz: jest.fn(async () => existingQuiz),
-      isNoteQuizProtected: SupabaseService.prototype.isNoteQuizProtected,
+      isNoteQuizProtected,
       upsertNoteQuiz: jest.fn(async (_u: string, noteId: string, p: any) => ({
         noteId,
         questions: p.questions,
@@ -249,11 +265,11 @@ describe('POST /:noteId/quiz regenerate pre-check', () => {
         studyGoal: p.studyGoal,
       })),
     };
-    initializeNotesRoutes(supabase, {
+    initializeNotesRoutes({ notes, getClient: () => ({}) } as any, {
       get: jest.fn(async () => null),
       set: jest.fn(async () => {}),
     } as any);
-    return supabase;
+    return notes;
   }
 
   const request = () => ({
@@ -407,16 +423,16 @@ describe('POST /:noteId/ocr stamps the paying pool on the job charge', () => {
   };
 
   function initOcrSupabase() {
-    const supabase: any = {
+    const notes: any = {
       getNote: jest.fn(async () => PDF_NOTE),
       getNoteAttachments: jest.fn(async () => [PDF_ATTACHMENT]),
       updateNoteAttachment: jest.fn(async () => ({ ...PDF_ATTACHMENT })),
     };
-    initializeNotesRoutes(supabase, {
+    initializeNotesRoutes({ notes, getClient: () => ({}) } as any, {
       get: jest.fn(async () => null),
       set: jest.fn(async () => {}),
     } as any);
-    return supabase;
+    return notes;
   }
 
   const request = () => ({ params: { noteId: 'note-1' }, body: {}, user: { id: 'u1' } });

@@ -279,7 +279,7 @@ async function initializeServices() {
     initializeAICompanionRoutes(dataLayer);
     initializeAIRoutes(dataLayer);
     initializeAiBonusUses(supabaseService);
-    initializeNotesRoutes(supabaseService, cacheService);
+    initializeNotesRoutes(dataLayer, cacheService);
     initializeChallengeRoutes(dataLayer, cacheService);
     initializeAuthRoutes(dataLayer, cacheService);
     initializeStorageRoutes(dataLayer);

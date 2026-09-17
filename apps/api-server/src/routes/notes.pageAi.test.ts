@@ -198,8 +198,10 @@ describe('POST /:noteId/generate-questions (one page)', () => {
 
   function initSupabase(attachment: unknown = { id: 'att-1', noteId: 'note-1' }) {
     const supabase: any = {
-      getNote: jest.fn(async () => NOTE),
-      getNoteAttachment: jest.fn(async () => attachment),
+      notes: {
+        getNote: jest.fn(async () => NOTE),
+        getNoteAttachment: jest.fn(async () => attachment),
+      },
       getClient: jest.fn(() => ({})),
     };
     initializeNotesRoutes(supabase, {
