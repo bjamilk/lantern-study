@@ -85,6 +85,50 @@ export function captureException(error: unknown, context?: Record<string, unknow
   }
 }
 
+/**
+ * `captureException` with a scope: a STABLE fingerprint, so every occurrence of
+ * one class of failure groups into a single issue, and searchable tags.
+ *
+ * Added for #108: the writes that fail AFTER money has already moved are
+ * reported, not thrown, and "reported" is only useful if the report is one
+ * issue with a count rather than a thousand lookalikes. Plain
+ * `captureException` puts everything in `extra`, which Sentry does not group or
+ * index.
+ *
+ * Tags are ids and short state names. A tag value is dropped rather than sent
+ * if it looks like an address — tags are indexed and searchable, and this
+ * function is called from the money path.
+ */
+export function captureScopedException(
+  error: unknown,
+  scope: {
+    fingerprint?: string[];
+    tags?: Record<string, string | null | undefined>;
+    extra?: Record<string, unknown>;
+  },
+): void {
+  if (!process.env.SENTRY_DSN) return;
+  try {
+
+    const Sentry = require('@sentry/node');
+    const tags: Record<string, string> = {};
+    for (const [key, value] of Object.entries(scope.tags || {})) {
+      if (value == null) continue;
+      const text = String(value);
+      if (!text || text.includes('@')) continue;
+      tags[key] = text.slice(0, 200);
+    }
+    Sentry.captureException(error, {
+      level: 'error',
+      ...(scope.fingerprint ? { fingerprint: scope.fingerprint } : {}),
+      ...(Object.keys(tags).length ? { tags } : {}),
+      ...(scope.extra ? { extra: scope.extra } : {}),
+    });
+  } catch {
+    // Sentry optional — never let reporting break the request path.
+  }
+}
+
 export function setupSentryExpress(app: import('express').Application): void {
   if (!process.env.SENTRY_DSN) return;
   try {

@@ -121,8 +121,34 @@ so this is a reporting gap, not an integrity one) and `routes/marketplace/orders
 (`updateOrderFieldsAsParty`, **MS** — the handler answers success for a meeting point and
 note that may have saved nothing).
 
+## Decisions (2026-09-17)
+
+Founder decisions on the questions Phase A raised. The classification above stands.
+
+1. **A write that fails after the money already moved** — the `refunded` stamp once Paystack
+   has paid the refund out, the sibling-open release back to `paid`, the post-transfer
+   `payout_transfer_code` stamp. **Do not throw.** Answer the user truthfully (the money did
+   move) and record an ERROR-level event through the logger and Sentry with a STABLE
+   fingerprint, `money-moved-write-failed:<table>:<op>`, tagged with the order and payment
+   ids. Ids only; amounts are fine, addresses and tokens are not. **No paging alert.**
+   A third helper, `reconcileLaterWrite(result, context)`, exists so the three classes are
+   visible at their call sites. A reconciliation job that re-stamps the rows these events
+   name is filed as a follow-up and is NOT built in this lane.
+2. **The orphan `initialized` payment row** after a failed link: leave it, as the pilot does.
+   The follow-up issue notes that reconciliation may later want a `metadata` marker to tell
+   an abandoned row from an open one.
+3. **The sites that are right to throw on the webhook path but are also called inline after
+   a successful transfer** (`finalizeOrderPayout`, `markPaymentPaidOut`): in Phase B the
+   inline callers CATCH and route to `reconcileLaterWrite` semantics, while the webhook path
+   keeps the throw so Paystack retries. Both callers get a test, per site.
+4. **`voidOrphanPendingTransaction`** has no caller: delete it in the orders PR, in its own
+   commit, after a grep over code and tests proves it.
+5. **The never-firing `.then(undefined, handler)`** at `marketplaceOrders.ts:741`: fixed in
+   the orders PR, test-first like the rest.
+
 ## Order of work
 
-A (this PR): helpers + ratchet + the buy-now pilot. B: the rest of `marketplacePayments.ts`,
-then `marketplaceOrders.ts`, one PR per file, every write test-first. Then the rest by
-domain, best-effort sites batched.
+A (this PR): helpers + ratchet + the buy-now pilot. B: the rest of `marketplacePayments.ts`
+(PR 1), then `marketplaceOrders.ts` (PR 2), one PR per file, every write test-first. Then
+the rest by domain, best-effort sites batched. Each later PR re-freezes the ratchet baseline
+downward in its own commit, with the before and after counts in the PR body.

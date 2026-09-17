@@ -12,7 +12,7 @@
  * these in 28 files, 36 in the money services; see
  * `apps/api-server/docs/write-errors-plan.md`.
  *
- * ## The two shapes
+ * ## The three shapes
  *
  * - `mustWrite(result, context)` — continuing after this failure would corrupt
  *   state or strand a user. Throws `WriteFailedError`, which carries the table,
@@ -21,6 +21,11 @@
  * - `bestEffortWrite(result, context)` — failure must not fail the request
  *   (logs, milestones, non-authoritative mirrors). Logs and returns a boolean,
  *   so a caller can still branch on it.
+ * - `reconcileLaterWrite(result, context)` — the money has ALREADY MOVED and
+ *   this write was the record of it. Throwing would be a lie to the user (the
+ *   transfer or the refund did happen) and a retry could move money twice, so
+ *   it reports at error level with a stable Sentry fingerprint and carries on.
+ *   Decided 2026-09-17; see `docs/write-errors-plan.md`.
  *
  * Both take the RESOLVED result, so the call site reads as one statement and
  * the decision is visible at it:
@@ -45,6 +50,7 @@
  * reports on.
  */
 import { logger } from '../../utils/logger';
+import { captureScopedException } from '../../utils/sentry';
 
 /** The half of a PostgREST error we are willing to keep. */
 export type WriteError = {
@@ -145,5 +151,51 @@ export function bestEffortWrite(
   };
   if (level === 'error') logger.error('Database write failed (best-effort)', meta);
   else logger.warn('Database write failed (best-effort)', meta);
+  return false;
+}
+
+/**
+ * The write that should have RECORDED money that has already moved, and did
+ * not. Returns true when it succeeded.
+ *
+ * Neither of the other two answers is right here. Throwing tells the user their
+ * refund or payout failed when Paystack has already paid it, and on a path a
+ * webhook would retry it invites a second transfer; a warn is too quiet for a
+ * row that now disagrees with the money. So: answer the user truthfully, and
+ * leave a report a human can find.
+ *
+ * The Sentry fingerprint is STABLE — `money-moved-write-failed:<table>:<op>` —
+ * so every occurrence of one class groups into one issue with a count, rather
+ * than a thousand lookalikes nobody reads. `orderId` / `paymentId` become tags
+ * (searchable); everything else in `context` becomes `extra`. Amounts are
+ * allowed; addresses and tokens are not, and the tag writer drops anything
+ * containing `@`.
+ *
+ * Deliberately NOT paged (founder decision, 2026-09-17). A follow-up issue
+ * tracks a reconciliation job that re-stamps the rows these events name.
+ */
+export function reconcileLaterWrite(result: WriteResult, context: WriteContext): boolean {
+  const error = result?.error;
+  if (!error) return true;
+  const { table, op } = context;
+  const code = error.code ? String(error.code) : null;
+  logger.error('Database write failed AFTER the money moved; needs reconciliation', {
+    ...context,
+    code,
+    error: trim(error.message),
+  });
+  captureScopedException(
+    new Error(`Write failed after the money moved: ${op} on ${table}${code ? ` (${code})` : ''}`),
+    {
+      fingerprint: [`money-moved-write-failed:${table}:${op}`],
+      tags: {
+        table,
+        op,
+        orderId: context.orderId == null ? undefined : String(context.orderId),
+        paymentId: context.paymentId == null ? undefined : String(context.paymentId),
+      },
+      extra: { ...context, code, error: trim(error.message) },
+    },
+  );
   return false;
 }

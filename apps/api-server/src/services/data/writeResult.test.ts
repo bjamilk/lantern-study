@@ -4,12 +4,17 @@
  * that `mustWrite` throws with the PostgREST code intact, that
  * `bestEffortWrite` never throws, and that neither of them logs a row payload.
  */
-import { bestEffortWrite, mustWrite, WriteFailedError } from './writeResult';
+import { bestEffortWrite, mustWrite, reconcileLaterWrite, WriteFailedError } from './writeResult';
 import { logger } from '../../utils/logger';
+import { captureScopedException } from '../../utils/sentry';
 
 jest.mock('../../utils/logger', () => ({
   logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
+
+jest.mock('../../utils/sentry', () => ({ captureScopedException: jest.fn() }));
+
+const mockCapture = captureScopedException as unknown as jest.Mock;
 
 const mockLogger = logger as unknown as {
   error: jest.Mock;
@@ -113,7 +118,83 @@ describe('bestEffortWrite', () => {
   });
 });
 
-describe('neither helper can leak a row payload', () => {
+describe('reconcileLaterWrite', () => {
+  // The money has already moved. Throwing would tell the user their refund
+  // failed when Paystack has already paid it, and on a retried path could move
+  // money twice; a warn would be too quiet for a row that disagrees with the
+  // money. Founder decision, 2026-09-17.
+  const MONEY = {
+    table: 'marketplace_payments',
+    op: 'update' as const,
+    orderId: 'ord_1',
+    paymentId: 'pay_1',
+    amountKobo: 105_000,
+  };
+
+  it('returns true and reports nothing on success', () => {
+    expect(reconcileLaterWrite({ error: null }, MONEY)).toBe(true);
+    expect(mockCapture).not.toHaveBeenCalled();
+    expect(mockLogger.error).not.toHaveBeenCalled();
+  });
+
+  it('never throws, so the caller can still answer the user truthfully', () => {
+    expect(() => reconcileLaterWrite({ error: { message: 'boom' } }, MONEY)).not.toThrow();
+    expect(reconcileLaterWrite({ error: { message: 'boom' } }, MONEY)).toBe(false);
+  });
+
+  it('logs at error level, never warn', () => {
+    reconcileLaterWrite({ error: { message: 'boom', code: '40001' } }, MONEY);
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Database write failed AFTER the money moved; needs reconciliation',
+      expect.objectContaining({ table: 'marketplace_payments', orderId: 'ord_1', code: '40001' }),
+    );
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+  });
+
+  it('reports with a STABLE fingerprint, so one class is one Sentry issue', () => {
+    reconcileLaterWrite({ error: { message: 'a' } }, MONEY);
+    reconcileLaterWrite({ error: { message: 'a totally different message' } }, MONEY);
+    const [first, second] = mockCapture.mock.calls;
+    expect(first[1].fingerprint).toEqual(['money-moved-write-failed:marketplace_payments:update']);
+    expect(second[1].fingerprint).toEqual(first[1].fingerprint);
+  });
+
+  it('tags the ids a human needs to find the row, and nothing else', () => {
+    reconcileLaterWrite({ error: { message: 'boom' } }, MONEY);
+    expect(mockCapture.mock.calls[0][1].tags).toEqual({
+      table: 'marketplace_payments',
+      op: 'update',
+      orderId: 'ord_1',
+      paymentId: 'pay_1',
+    });
+    // Amounts are allowed, but they belong in extra: a tag is indexed, and an
+    // amount is not something anyone searches by.
+    expect(mockCapture.mock.calls[0][1].extra).toEqual(
+      expect.objectContaining({ amountKobo: 105_000 }),
+    );
+  });
+
+  it('omits a tag whose id is absent rather than sending "undefined"', () => {
+    reconcileLaterWrite(
+      { error: { message: 'boom' } },
+      { table: 'marketplace_orders', op: 'update', orderId: 'ord_1' },
+    );
+    expect(mockCapture.mock.calls[0][1].tags).toEqual({
+      table: 'marketplace_orders',
+      op: 'update',
+      orderId: 'ord_1',
+      paymentId: undefined,
+    });
+  });
+
+  it('carries the PostgREST code into the reported error message', () => {
+    reconcileLaterWrite({ error: { message: 'boom', code: '42703' } }, MONEY);
+    expect(String(mockCapture.mock.calls[0][0])).toContain('42703');
+    expect(String(mockCapture.mock.calls[0][0])).toContain('update on marketplace_payments');
+  });
+});
+
+describe('no helper can leak a row payload', () => {
   // The context type takes ids on purpose; this pins that the helpers log the
   // context they were given and never reach into the result for `data`.
   const secretish = {
@@ -133,5 +214,16 @@ describe('neither helper can leak a row payload', () => {
     const [, meta] = mockLogger.warn.mock.calls[0];
     expect(JSON.stringify(meta)).not.toContain('buyer@example.com');
     expect(JSON.stringify(meta)).not.toContain('sk_live_xyz');
+  });
+
+  it('reconcileLaterWrite neither logs nor REPORTS a field from data', () => {
+    // This one also reaches Sentry, so the same rule has to hold twice.
+    reconcileLaterWrite(secretish, CTX);
+    const [, meta] = mockLogger.error.mock.calls[0];
+    const [, scope] = mockCapture.mock.calls[0];
+    for (const payload of [JSON.stringify(meta), JSON.stringify(scope)]) {
+      expect(payload).not.toContain('buyer@example.com');
+      expect(payload).not.toContain('sk_live_xyz');
+    }
   });
 });
