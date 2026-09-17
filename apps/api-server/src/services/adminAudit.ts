@@ -39,6 +39,10 @@ export type AdminAuditAction =
   // exact map of where the platform is vulnerable to a hand-made repair. Who
   // looked at it, and when, is part of the money trail.
   | 'marketplace_reconcile_view'
+  // The repair itself (#113, Phase B): one row, one original write, applied by
+  // hand. The ACTOR is the admin who asked, never the job — a repair nobody is
+  // named for is not one anybody can answer for.
+  | 'marketplace_reconcile_repair'
   | 'user_delete'
   | 'order_dispute_release_seller'
   | 'order_dispute_refund_buyer'

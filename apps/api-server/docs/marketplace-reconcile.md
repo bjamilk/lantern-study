@@ -141,3 +141,28 @@ for the transfer reference, or no accepted refund for the charge — AND only wh
 holds its claim: the `claim:<reference>` marker on a payment, or no `payout_transfer_code` on an
 order. A 5xx, a timeout, an unreachable host, or a real transfer code already stamped never
 releases anything.
+
+## The Phase B test bar
+
+Every repair is written test-first, against the fake Paystack reader. Per class:
+
+- the repair applies, and only to the row it names;
+- a SECOND apply of the same finding is a no-op that SAYS so — the CAS matches nothing, and
+  that is reported as "already repaired / state moved on", never as a fresh success;
+- the state moving on between the plan and the apply refuses: the apply re-plans from our rows
+  and Paystack and never trusts the client's finding;
+- the class flag being off refuses, naming the flag;
+- Paystack being unreachable at apply time refuses, and writes nothing;
+- a wrong or missing confirmation phrase refuses;
+- the `admin_audit_log` row is written, with the before and after values, the class and the
+  Paystack reference, and with no email, token or payload in it;
+- a cart-shaped row refuses as `needs-human` even when an admin names it explicitly.
+
+The claim-release classes (5, 6, 8) carry two more, because they are the ones that could let a
+second transfer out: a Paystack 5xx or timeout NEVER releases a claim, and a row carrying a real
+transfer code NEVER releases either. Only a positive 404 / no-refund releases.
+
+One assertion covers the whole module rather than a class: the Paystack reader is GET-ONLY. At
+the type level the repair code receives nothing but the reader, and no other Paystack import
+reaches these files; at the test level the fake reader throws on any member other than the three
+reads, so a call that moved money could not even be written.

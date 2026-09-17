@@ -90,6 +90,12 @@ services:
         sync: false
       - key: MARKETPLACE_PAYSTACK_CHECKOUT
         sync: false
+      # Marketplace reconciliation repairs (#113) are deliberately NOT declared
+      # here. Each class has its own MARKETPLACE_RECONCILE_REPAIR_<CLASS> flag
+      # that defaults OFF when the variable is absent, so leaving them out of
+      # the blueprint IS the safe state: one is set by hand, in the dashboard,
+      # for as long as that class is being repaired, and removed afterwards. The
+      # full list is in apps/api-server/.env.example.
       - key: API_KEY_SALT_ROUNDS
         value: "12"
       - key: API_KEY_MAX_PER_USER
@@ -188,6 +194,12 @@ services:
         sync: false
       - key: MARKETPLACE_PAYSTACK_CHECKOUT
         sync: false
+      # Marketplace reconciliation repairs (#113) are deliberately NOT declared
+      # here. Each class has its own MARKETPLACE_RECONCILE_REPAIR_<CLASS> flag
+      # that defaults OFF when the variable is absent, so leaving them out of
+      # the blueprint IS the safe state: one is set by hand, in the dashboard,
+      # for as long as that class is being repaired, and removed afterwards. The
+      # full list is in apps/api-server/.env.example.
       - key: ENABLE_MARKETPLACE_JOBS
         value: "true"
       - key: ENABLE_DATA_RETENTION_JOBS

@@ -135,6 +135,9 @@ const DOCUMENTED_ADDITIONS: string[] = [
   // the pre-split file never had, so it is recorded here, with the full
   // registered chain below, in the commit that adds it.
   'GET /marketplace/reconcile/findings',
+  // #113 Phase B: apply ONE of those findings, by hand, behind a per-class flag
+  // that is off by default.
+  'POST /marketplace/reconcile/apply',
 ];
 
 /**
@@ -143,7 +146,10 @@ const DOCUMENTED_ADDITIONS: string[] = [
  * from the live router: a reviewer should read the middleware chain a new admin
  * route was registered with, not trust it.
  */
-const DOCUMENTED_ADDITION_LINES: string[] = ['GET /marketplace/reconcile/findings [anon#0]'];
+const DOCUMENTED_ADDITION_LINES: string[] = [
+  'GET /marketplace/reconcile/findings [anon#0]',
+  'POST /marketplace/reconcile/apply [anon#0]',
+];
 
 /**
  * Non-route surface entries the refactor is allowed to have added — recorded

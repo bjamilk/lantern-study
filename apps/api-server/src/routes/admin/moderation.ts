@@ -25,6 +25,14 @@
  * and initiates no transfer or refund; it is audited anyway, because the list
  * itself is sensitive.
  *
+ * `POST /marketplace/reconcile/apply` repairs ONE of those findings, by hand:
+ * it re-plans the finding from our rows and Paystack, refuses unless the class
+ * has a repair and its `MARKETPLACE_RECONCILE_REPAIR_<CLASS>` flag is on (all
+ * OFF by default), takes a typed confirmation phrase like the role route, and
+ * applies the ORIGINAL money-path write with its ORIGINAL compare-and-set
+ * filters — so a second apply matches nothing and is reported as a no-op. It
+ * never asks Paystack to move money; the reader it is given is three GETs.
+ *
  * These are the routes registered with `moderationRoute`, so a service
  * `PublicError` keeps its own status instead of becoming a 500.
  *
@@ -43,6 +51,7 @@ import {
   createPaystackReconcileReader,
   planMarketplaceReconcile,
 } from '../../services/marketplaceReconcile';
+import { applyReconcileRepair } from '../../services/marketplaceReconcileRepair';
 import * as adminData from '../../services/adminData';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { logger } from '../../utils/logger';
@@ -226,6 +235,49 @@ router.get('/marketplace/reconcile/findings', adminRoute(async (req: any, res: a
   );
 
   res.json({ success: true, data: report });
+}));
+
+// POST /api/v1/admin/marketplace/reconcile/apply
+//
+// Apply ONE finding from the list above (#113, Phase B). Body:
+// `{ class, orderId | paymentId, confirmationPhrase }` — the finding's IDENTITY
+// and nothing else. The service RE-PLANS it from our rows and Paystack before
+// it writes anything, so a finding payload from a client is never trusted and a
+// stale one is refused.
+//
+// Registered with `moderationRoute`, so the typed 4xx the service raises
+// survives to the console: 400 a wrong phrase or a report-only class, 403 the
+// class flag is off, 404 no such row, 409 the finding no longer holds (a
+// cart-shaped row included), 503 Paystack could not be read. Every one of those
+// writes nothing.
+//
+// Repairs are OFF by default, per class: `MARKETPLACE_RECONCILE_REPAIR_<CLASS>`.
+// There is no cron and no batch — a repeatable job is a later change, per class,
+// once manual repairs have run cleanly.
+router.post('/marketplace/reconcile/apply', moderationRoute(async (req: any, res: any) => {
+  const { class: findingClass, orderId, paymentId, confirmationPhrase } = req.body as {
+    class?: string;
+    orderId?: string;
+    paymentId?: string;
+    confirmationPhrase?: string;
+  };
+
+  const outcome = await applyReconcileRepair(
+    {
+      queries: dataLayer.marketplaceReconcile,
+      paystack: createPaystackReconcileReader(),
+      audit: (params) => logAdminAction(dataLayer, params),
+    },
+    {
+      class: String(findingClass ?? ''),
+      orderId,
+      paymentId,
+      confirmationPhrase,
+      actorId: req.user.id,
+    },
+  );
+
+  res.json({ success: true, data: outcome });
 }));
 
 router.patch('/marketplace/orders/:id/dispute', mappedRoute(respondDisputeError, async (req: any, res: any) => {

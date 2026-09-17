@@ -64,10 +64,7 @@ import {
   verifyPaystackTransaction,
 } from './paystack';
 import { orderPayoutReference } from './marketplacePayments';
-import type {
-  ReconcileOrderRow,
-  ReconcilePaymentRow,
-} from './data/marketplaceReconcile';
+import type { ReconcileOrderRow, ReconcilePaymentRow } from './data/marketplaceReconcile';
 
 // --- The ports ---------------------------------------------------------------
 
@@ -134,7 +131,12 @@ export function createPaystackReconcileReader(): PaystackReconcileReader {
         };
       } catch (err) {
         if (isPaystackNotFound(err)) {
-          return { found: false, status: null, transferCode: null, amountKobo: null };
+          return {
+            found: false,
+            status: null,
+            transferCode: null,
+            amountKobo: null,
+          };
         }
         throw err;
       }
@@ -145,7 +147,11 @@ export function createPaystackReconcileReader(): PaystackReconcileReader {
     async verifyCharge(reference) {
       try {
         const charge = await verifyPaystackTransaction(reference);
-        return { found: true, status: charge.status, amountKobo: charge.amount ?? null };
+        return {
+          found: true,
+          status: charge.status,
+          amountKobo: charge.amount ?? null,
+        };
       } catch (err) {
         if (isPaystackNotFound(err)) return { found: false, status: null, amountKobo: null };
         throw err;
@@ -170,6 +176,11 @@ export type ReconcileQueries = {
   listStuckPayingOrders(w: Window): Read<ReconcileOrderRow[]>;
   listStuckRefundHoldOrders(w: Window): Read<ReconcileOrderRow[]>;
   getPaymentForReconcile(paymentId: string): Read<ReconcilePaymentRow>;
+  /**
+   * Only the apply path reads this one: the scan finds order candidates by
+   * state, but a repair is named by id and must re-read the row it is about.
+   */
+  getOrderForReconcile(orderId: string): Read<ReconcileOrderRow>;
   listCheckoutSiblingOrders(
     checkoutId: string,
   ): Read<Array<{ id: string; status: string; payout_status: string }>>;
@@ -220,6 +231,12 @@ export type ReconcileFinding = {
   ageMinutes: number;
   /** What Paystack answered, in one short phrase. */
   paystackSays: string;
+  /**
+   * The Paystack ID this decision was made from: the refund id, the transfer
+   * code, or the reference that was looked up. An id, never a token — it is
+   * what a repair stamps and what the audit row records.
+   */
+  paystackRef: string | null;
   /**
    * The repair Phase B would apply: the original write and its original CAS
    * filters, as one line. `null` means no repair may be proposed for this
@@ -295,13 +312,7 @@ export type PlanOptions = {
 const ACCEPTED_REFUND_STATES = new Set(['pending', 'processing', 'processed', 'success']);
 
 /** Paystack states in which a transfer has been accepted but not confirmed. */
-const IN_FLIGHT_TRANSFER_STATES = new Set([
-  'pending',
-  'processing',
-  'queued',
-  'received',
-  'otp',
-]);
+const IN_FLIGHT_TRANSFER_STATES = new Set(['pending', 'processing', 'queued', 'received', 'otp']);
 
 const FAILED_TRANSFER_STATES = new Set(['failed', 'reversed', 'abandoned']);
 
@@ -351,6 +362,23 @@ function orderTransferReference(order: ReconcileOrderRow): string {
   return orderPayoutReference(order.id, attempt);
 }
 
+/**
+ * Cart charges are ALWAYS a person's call in the first repairing version
+ * (founder decision, 2026-09-17): one payment row covers several orders, so a
+ * refund on it cannot be attributed and a payout state on it is not one
+ * seller's. The finding is still REPORTED — an admin should see a wedged cart
+ * row — but it carries no proposed repair, and the apply path refuses anything
+ * whose `proposedRepair` is null.
+ */
+function singleOrderOnly(finding: ReconcileFinding, isCart: boolean): ReconcileFinding {
+  if (!isCart) return finding;
+  return {
+    ...finding,
+    proposedRepair: null,
+    note: `${finding.note} This payment row covers a whole cart, so no repair is proposed: a person decides cart charges.`,
+  };
+}
+
 function unreachable(
   orderId: string | null,
   paymentId: string | null,
@@ -363,6 +391,7 @@ function unreachable(
     paymentId,
     ageMinutes,
     paystackSays: 'unreachable',
+    paystackRef: null,
     proposedRepair: null,
     note: `Paystack could not be read (${what}); this row was left exactly as it is.`,
   };
@@ -374,6 +403,7 @@ function needsHuman(
   ageMinutes: number,
   paystackSays: string,
   note: string,
+  paystackRef: string | null = null,
 ): ReconcileFinding {
   return {
     class: 'needs-human',
@@ -381,12 +411,533 @@ function needsHuman(
     paymentId,
     ageMinutes,
     paystackSays,
+    paystackRef,
     proposedRepair: null,
     note,
   };
 }
 
 // --- The planner -------------------------------------------------------------
+
+/**
+ * The per-class classifiers, over the ports and one clock.
+ *
+ * They are a factory rather than closures inside the scan because Phase B needs
+ * exactly the same decision for ONE row: `POST …/reconcile/apply` re-plans the
+ * finding it was asked to repair, from our rows and Paystack, and must reach the
+ * identical verdict the report did. Two copies of a money decision is one copy
+ * too many.
+ */
+export function createReconcileClassifiers(
+  queries: ReconcileQueries,
+  paystack: PaystackReconcileReader,
+  now: Date,
+) {
+  async function classifyRefundingPayment(
+    payment: ReconcilePaymentRow,
+  ): Promise<ReconcileFinding[]> {
+    const age = minutesBetween(now, payment.updated_at);
+    // The state moved on between the query and here: nothing to say.
+    if (payment.status !== 'refunding') return [];
+    const key = chargeKey(payment);
+    if (!key) {
+      return [
+        needsHuman(
+          payment.order_id,
+          payment.id,
+          age,
+          'not asked',
+          'The payment row carries neither a Paystack reference nor a transaction id, so no refund can be looked up.',
+        ),
+      ];
+    }
+
+    let refunds: ReaderRefund[];
+    try {
+      refunds = await paystack.listRefundsForTransaction(key);
+    } catch {
+      return [unreachable(payment.order_id, payment.id, age, 'refund lookup')];
+    }
+    const accepted = refunds.filter((r) => ACCEPTED_REFUND_STATES.has(r.status));
+
+    if (accepted.length === 0) {
+      return [
+        singleOrderOnly(
+          {
+            class: 'refund-claim-not-backed',
+            orderId: payment.order_id,
+            paymentId: payment.id,
+            ageMinutes: age,
+            paystackSays: 'no refund accepted for this charge',
+            paystackRef: key,
+            proposedRepair:
+              "marketplace_payments.update({status: 'paid'}) WHERE id = <paymentId> AND status = 'refunding'",
+            note: 'The refund call never took, and the rollback that should have given the claim back did not run. The row refuses every later refund and the payout until it is released.',
+          },
+          Boolean(payment.checkout_id),
+        ),
+      ];
+    }
+
+    if (!payment.checkout_id) {
+      if (accepted.length > 1) {
+        return [
+          needsHuman(
+            payment.order_id,
+            payment.id,
+            age,
+            `${accepted.length} refunds accepted`,
+            "A single-order charge with more than one accepted refund: which reference belongs on the row is not this job's to decide.",
+          ),
+        ];
+      }
+      return [
+        {
+          class: 'refund-paid-not-stamped',
+          orderId: payment.order_id,
+          paymentId: payment.id,
+          ageMinutes: age,
+          paystackSays: `refund ${accepted[0].status}`,
+          paystackRef: accepted[0].id,
+          proposedRepair:
+            "marketplace_payments.update({status: 'refunded', refund_reference: <paystack refund id>}) WHERE id = <paymentId> AND status = 'refunding'",
+          note: 'Paystack has paid the buyer back and the stamp that records it failed. The buyer already has the money; only our record is wrong.',
+        },
+      ];
+    }
+
+    // A cart: the payment row covers several orders, so which order the refund
+    // belongs to is not readable from the row.
+    const { data: siblings, error } = await queries.listCheckoutSiblingOrders(payment.checkout_id);
+    if (error) {
+      return [
+        needsHuman(
+          payment.order_id,
+          payment.id,
+          age,
+          `refund ${accepted[0].status}`,
+          'The sibling orders of this cart could not be read, and the repair depends on whether one is still open.',
+        ),
+      ];
+    }
+    const open = (siblings ?? []).filter((row) => !['cancelled', 'completed'].includes(row.status));
+    if (open.length >= 2) {
+      // Whichever order was refunded, another is still open, so the original
+      // write was the release back to `paid` — decidable without attribution.
+      return [
+        {
+          class: 'refund-claim-sibling-open',
+          orderId: null,
+          paymentId: payment.id,
+          ageMinutes: age,
+          paystackSays: `refund ${accepted[0].status}`,
+          paystackRef: accepted[0].id,
+          proposedRepair:
+            "marketplace_payments.update({status: 'paid'}) WHERE id = <paymentId> AND status = 'refunding'",
+          note: `This order's share is back with the buyer and ${open.length} sibling orders are still open, so the charge as a whole is not refunded and the claim must go back to 'paid'.`,
+        },
+      ];
+    }
+    return [
+      needsHuman(
+        null,
+        payment.id,
+        age,
+        `refund ${accepted[0].status}`,
+        'A cart refund that cannot be attributed to one order: with fewer than two open siblings, whether the row should read `refunded` or go back to `paid` depends on which order was refunded.',
+      ),
+    ];
+  }
+
+  async function classifyPayoutPendingPayment(
+    payment: ReconcilePaymentRow,
+  ): Promise<ReconcileFinding[]> {
+    const age = minutesBetween(now, payment.updated_at);
+    if (payment.status !== 'payout_pending') {
+      // The one state worth a Paystack call anyway: we say the money is out.
+      if (payment.status === 'paid_out') {
+        return dangerousDirectionForPayment(payment, age);
+      }
+      return [];
+    }
+    const reference = paymentTransferReference(payment);
+    if (!reference) {
+      return [
+        needsHuman(
+          payment.order_id,
+          payment.id,
+          age,
+          'not asked',
+          'No transfer reference can be derived for this payment, so Paystack cannot be asked what happened.',
+        ),
+      ];
+    }
+
+    let transfer: ReaderTransfer;
+    try {
+      transfer = await paystack.getTransferByReference(reference);
+    } catch {
+      return [unreachable(payment.order_id, payment.id, age, 'transfer lookup')];
+    }
+
+    const holdsClaimMarker = claimReference(payment) !== null;
+
+    if (!transfer.found) {
+      if (!holdsClaimMarker) {
+        return [
+          needsHuman(
+            payment.order_id,
+            payment.id,
+            age,
+            'no such transfer',
+            'The row carries a real transfer code but Paystack has no transfer under its reference. Releasing this claim could let a second transfer go out.',
+          ),
+        ];
+      }
+      return [
+        singleOrderOnly(
+          {
+            class: 'payout-claim-not-backed',
+            orderId: payment.order_id,
+            paymentId: payment.id,
+            ageMinutes: age,
+            paystackSays: 'no such transfer',
+            paystackRef: reference,
+            proposedRepair:
+              "marketplace_payments.update({status: 'paid', payout_transfer_code: null}) WHERE id = <paymentId> AND status = 'payout_pending' AND payout_transfer_code = 'claim:<reference>'",
+            note: "The transfer never reached Paystack and the rollback failed. Behind this claim marker the seller can never be paid and the buyer's refund is refused.",
+          },
+          Boolean(payment.checkout_id),
+        ),
+      ];
+    }
+
+    const out: ReconcileFinding[] = [];
+    if (holdsClaimMarker) {
+      out.push(
+        singleOrderOnly(
+          {
+            class: 'payout-transfer-code-not-stamped',
+            orderId: payment.order_id,
+            paymentId: payment.id,
+            ageMinutes: age,
+            paystackSays: `transfer ${transfer.status}`,
+            paystackRef: transfer.transferCode ?? reference,
+            proposedRepair:
+              "marketplace_payments.update({payout_transfer_code: <paystack transfer code>}) WHERE id = <paymentId> AND payout_transfer_code = 'claim:<reference>'",
+            note: 'The transfer exists at Paystack and the stamp that records its code failed, so no transfer webhook can match this row by code.',
+          },
+          Boolean(payment.checkout_id),
+        ),
+      );
+    }
+
+    if (transfer.status === 'success') {
+      out.push(
+        singleOrderOnly(
+          {
+            class: 'payment-payout-succeeded-not-settled',
+            orderId: payment.order_id,
+            paymentId: payment.id,
+            ageMinutes: age,
+            paystackSays: 'transfer success',
+            paystackRef: transfer.transferCode ?? reference,
+            proposedRepair:
+              "marketplace_payments.update({status: 'paid_out', payout_at: <now>}) WHERE id = <paymentId> AND status IN ('payout_pending','paid')",
+            note: 'Paystack paid the seller and the settlement write failed.',
+          },
+          Boolean(payment.checkout_id),
+        ),
+      );
+      return out;
+    }
+    if (FAILED_TRANSFER_STATES.has(String(transfer.status))) {
+      out.push(
+        needsHuman(
+          payment.order_id,
+          payment.id,
+          age,
+          `transfer ${transfer.status}`,
+          "The transfer failed or was reversed. Putting the row back is the transfer.failed webhook's job, because it also burns a payout attempt; this job must not do it.",
+        ),
+      );
+      return out;
+    }
+    if (
+      IN_FLIGHT_TRANSFER_STATES.has(String(transfer.status)) &&
+      age > TRANSFER_PENDING_STALE_MINUTES
+    ) {
+      out.push(
+        needsHuman(
+          payment.order_id,
+          payment.id,
+          age,
+          `transfer ${transfer.status}`,
+          'The transfer has been pending at Paystack for over 72 hours. Nothing here is wedged by us; somebody should chase it.',
+        ),
+      );
+    }
+    return out;
+  }
+
+  async function dangerousDirectionForPayment(
+    payment: ReconcilePaymentRow,
+    age: number,
+  ): Promise<ReconcileFinding[]> {
+    const reference = paymentTransferReference(payment);
+    if (!reference) return [];
+    let transfer: ReaderTransfer;
+    try {
+      transfer = await paystack.getTransferByReference(reference);
+    } catch {
+      return [unreachable(payment.order_id, payment.id, age, 'transfer lookup')];
+    }
+    if (transfer.found && transfer.status === 'success') return [];
+    return [
+      needsHuman(
+        payment.order_id,
+        payment.id,
+        age,
+        transfer.found ? `transfer ${transfer.status}` : 'no such transfer',
+        'The payment says the seller has been paid and Paystack does not agree. Nothing is proposed: this is the direction where a wrong guess moves money.',
+      ),
+    ];
+  }
+
+  async function classifyPayingOrder(order: ReconcileOrderRow): Promise<ReconcileFinding[]> {
+    const age = minutesBetween(now, order.updated_at);
+    if (order.payout_status !== 'paying') {
+      if (order.payout_status === 'paid_out') {
+        return dangerousDirectionForOrder(order, age);
+      }
+      return [];
+    }
+    const reference = orderTransferReference(order);
+
+    let transfer: ReaderTransfer;
+    try {
+      transfer = await paystack.getTransferByReference(reference);
+    } catch {
+      return [unreachable(order.id, order.payment_id, age, 'transfer lookup')];
+    }
+
+    if (!transfer.found) {
+      if (order.payout_transfer_code) {
+        return [
+          needsHuman(
+            order.id,
+            order.payment_id,
+            age,
+            'no such transfer',
+            'The order carries a transfer code but Paystack has no transfer under its reference. Releasing the claim could let a second transfer go out.',
+          ),
+        ];
+      }
+      return [
+        {
+          class: 'order-paying-not-backed',
+          orderId: order.id,
+          paymentId: order.payment_id,
+          ageMinutes: age,
+          paystackSays: 'no such transfer',
+          paystackRef: reference,
+          proposedRepair:
+            "marketplace_orders.update({payout_status: 'pending', payout_failed_reason: <job reason>}) WHERE id = <orderId> AND payout_status = 'paying'",
+          note: 'No transfer was ever made and the claim release failed, so this order can never be claimed again and the seller is never paid.',
+        },
+      ];
+    }
+
+    if (transfer.status === 'success') {
+      return [
+        {
+          class: 'order-paying-transfer-succeeded',
+          orderId: order.id,
+          paymentId: order.payment_id,
+          ageMinutes: age,
+          paystackSays: 'transfer success',
+          paystackRef: transfer.transferCode ?? reference,
+          proposedRepair:
+            "marketplace_orders.update({payout_status: 'paid_out', payout_failed_reason: null}) WHERE id = <orderId> AND payout_status IN ('paying','pending')",
+          note: 'Paystack paid this seller and the settlement write failed. The parent payment row rolls up on a later run, once every sibling has settled.',
+        },
+      ];
+    }
+    if (FAILED_TRANSFER_STATES.has(String(transfer.status))) {
+      return [
+        needsHuman(
+          order.id,
+          order.payment_id,
+          age,
+          `transfer ${transfer.status}`,
+          'The transfer failed or was reversed. Unwinding it burns a payout attempt and belongs to the transfer.failed webhook, not to this job.',
+        ),
+      ];
+    }
+    if (age > TRANSFER_PENDING_STALE_MINUTES) {
+      return [
+        needsHuman(
+          order.id,
+          order.payment_id,
+          age,
+          `transfer ${transfer.status}`,
+          'The transfer has been pending at Paystack for over 72 hours.',
+        ),
+      ];
+    }
+    // Accepted and still in flight: legitimately waiting for transfer.success.
+    return [];
+  }
+
+  async function dangerousDirectionForOrder(
+    order: ReconcileOrderRow,
+    age: number,
+  ): Promise<ReconcileFinding[]> {
+    let transfer: ReaderTransfer;
+    try {
+      transfer = await paystack.getTransferByReference(orderTransferReference(order));
+    } catch {
+      return [unreachable(order.id, order.payment_id, age, 'transfer lookup')];
+    }
+    if (transfer.found && transfer.status === 'success') return [];
+    return [
+      needsHuman(
+        order.id,
+        order.payment_id,
+        age,
+        transfer.found ? `transfer ${transfer.status}` : 'no such transfer',
+        'The order says the seller has been paid and Paystack does not agree. Nothing is proposed: this is the direction where a wrong guess moves money.',
+      ),
+    ];
+  }
+
+  async function classifyRefundHoldOrder(order: ReconcileOrderRow): Promise<ReconcileFinding[]> {
+    const age = minutesBetween(now, order.updated_at);
+    if (order.payout_status !== 'refund_hold') return [];
+    if (!order.payment_id) {
+      return [
+        needsHuman(
+          order.id,
+          null,
+          age,
+          'not asked',
+          'The order holds a refund hold and names no payment, so there is no charge to ask Paystack about.',
+        ),
+      ];
+    }
+    const { data: payment, error } = await queries.getPaymentForReconcile(order.payment_id);
+    if (error || !payment) {
+      return [
+        needsHuman(
+          order.id,
+          order.payment_id,
+          age,
+          'not asked',
+          'The payment row behind this refund hold could not be read.',
+        ),
+      ];
+    }
+    const key = chargeKey(payment);
+    if (!key) {
+      return [
+        needsHuman(
+          order.id,
+          payment.id,
+          age,
+          'not asked',
+          'The payment carries no Paystack reference, so no refund can be looked up.',
+        ),
+      ];
+    }
+
+    let refunds: ReaderRefund[];
+    try {
+      refunds = await paystack.listRefundsForTransaction(key);
+    } catch {
+      return [unreachable(order.id, payment.id, age, 'refund lookup')];
+    }
+    const accepted = refunds.filter((r) => ACCEPTED_REFUND_STATES.has(r.status));
+
+    if (accepted.length === 0) {
+      return [
+        singleOrderOnly(
+          {
+            class: 'order-refund-hold-not-backed',
+            orderId: order.id,
+            paymentId: payment.id,
+            ageMinutes: age,
+            paystackSays: 'no refund accepted for this charge',
+            paystackRef: key,
+            proposedRepair:
+              "marketplace_orders.update({payout_status: 'pending'}) WHERE id = <orderId> AND payout_status = 'refund_hold'",
+            note: 'No refund was ever accepted, and the hold that should have been given back was not. It blocks the payout and refuses every later refund for this order.',
+          },
+          Boolean(payment.checkout_id),
+        ),
+      ];
+    }
+    if (payment.checkout_id) {
+      return [
+        needsHuman(
+          order.id,
+          payment.id,
+          age,
+          `refund ${accepted[0].status}`,
+          'A cart charge with an accepted refund: whether THIS order is the refunded one cannot be read from the rows, and marking the wrong order unpayable would cost a seller their money.',
+        ),
+      ];
+    }
+    return [
+      {
+        class: 'order-refund-hold-refunded',
+        orderId: order.id,
+        paymentId: payment.id,
+        ageMinutes: age,
+        paystackSays: `refund ${accepted[0].status}`,
+        paystackRef: accepted[0].id,
+        proposedRepair:
+          "marketplace_orders.update({payout_status: 'skipped', payout_failed_reason: 'refunded'}) WHERE id = <orderId> AND payout_status = 'refund_hold'",
+        note: 'The buyer has been refunded, so this order must never pay out, and the write that records that failed.',
+      },
+    ];
+  }
+
+  async function classifyUnsettledPayment(
+    payment: ReconcilePaymentRow,
+  ): Promise<ReconcileFinding[]> {
+    const age = minutesBetween(now, payment.created_at);
+    if (payment.status !== 'initialized') return [];
+    const reference = payment.paystack_reference;
+    if (!reference) return [];
+
+    let charge: ReaderCharge;
+    try {
+      charge = await paystack.verifyCharge(reference);
+    } catch {
+      return [unreachable(payment.order_id, payment.id, age, 'charge verify')];
+    }
+    if (!charge.found || charge.status !== 'success') return [];
+    return [
+      {
+        class: 'charge-paid-not-settled',
+        orderId: payment.order_id,
+        paymentId: payment.id,
+        ageMinutes: age,
+        paystackSays: 'charge success',
+        paystackRef: reference,
+        proposedRepair: null,
+        note: 'Paystack captured this charge and the order was never settled. Settlement grants entitlements, delivers digital goods and splits fees, so it is deliberately not something this job re-applies: a person runs the settlement path.',
+      },
+    ];
+  }
+  return {
+    classifyRefundingPayment,
+    classifyPayoutPendingPayment,
+    classifyPayingOrder,
+    classifyRefundHoldOrder,
+    classifyUnsettledPayment,
+  };
+}
 
 /**
  * Read the wedged rows and say, per row, what Paystack proves and what the
@@ -405,6 +956,14 @@ export async function planMarketplaceReconcile(
   const scanned: Record<string, number> = {};
   const queryErrors: string[] = [];
   let truncated = false;
+
+  const {
+    classifyRefundingPayment,
+    classifyPayoutPendingPayment,
+    classifyPayingOrder,
+    classifyRefundHoldOrder,
+    classifyUnsettledPayment,
+  } = createReconcileClassifiers(queries, paystack, now);
 
   async function scan<T>(name: string, run: () => Read<T[]>, cap: number): Promise<T[]> {
     const { data, error } = await run();
@@ -506,9 +1065,9 @@ export async function planMarketplaceReconcile(
       paymentId: payment.id,
       ageMinutes: minutesBetween(now, payment.created_at),
       paystackSays: 'not asked',
+      paystackRef: null,
       proposedRepair: null,
-      note:
-        'The order link failed before any Paystack session existed (#112), so there is nothing to settle and nothing to ask Paystack. Reported for counting only.',
+      note: 'The order link failed before any Paystack session existed (#112), so there is nothing to settle and nothing to ask Paystack. Reported for counting only.',
     });
   }
 
@@ -519,485 +1078,4 @@ export async function planMarketplaceReconcile(
     truncated,
     queryErrors,
   };
-
-  // --- per-class classifiers (closures over `now` and the ports) ------------
-
-  async function classifyRefundingPayment(
-    payment: ReconcilePaymentRow,
-  ): Promise<ReconcileFinding[]> {
-    const age = minutesBetween(now, payment.updated_at);
-    // The state moved on between the query and here: nothing to say.
-    if (payment.status !== 'refunding') return [];
-    const key = chargeKey(payment);
-    if (!key) {
-      return [
-        needsHuman(
-          payment.order_id,
-          payment.id,
-          age,
-          'not asked',
-          'The payment row carries neither a Paystack reference nor a transaction id, so no refund can be looked up.',
-        ),
-      ];
-    }
-
-    let refunds: ReaderRefund[];
-    try {
-      refunds = await paystack.listRefundsForTransaction(key);
-    } catch {
-      return [unreachable(payment.order_id, payment.id, age, 'refund lookup')];
-    }
-    const accepted = refunds.filter((r) => ACCEPTED_REFUND_STATES.has(r.status));
-
-    if (accepted.length === 0) {
-      return [
-        {
-          class: 'refund-claim-not-backed',
-          orderId: payment.order_id,
-          paymentId: payment.id,
-          ageMinutes: age,
-          paystackSays: 'no refund accepted for this charge',
-          proposedRepair:
-            "marketplace_payments.update({status: 'paid'}) WHERE id = <paymentId> AND status = 'refunding'",
-          note:
-            'The refund call never took, and the rollback that should have given the claim back did not run. The row refuses every later refund and the payout until it is released.',
-        },
-      ];
-    }
-
-    if (!payment.checkout_id) {
-      if (accepted.length > 1) {
-        return [
-          needsHuman(
-            payment.order_id,
-            payment.id,
-            age,
-            `${accepted.length} refunds accepted`,
-            'A single-order charge with more than one accepted refund: which reference belongs on the row is not this job\'s to decide.',
-          ),
-        ];
-      }
-      return [
-        {
-          class: 'refund-paid-not-stamped',
-          orderId: payment.order_id,
-          paymentId: payment.id,
-          ageMinutes: age,
-          paystackSays: `refund ${accepted[0].status}`,
-          proposedRepair:
-            "marketplace_payments.update({status: 'refunded', refund_reference: <paystack refund id>}) WHERE id = <paymentId> AND status = 'refunding'",
-          note:
-            'Paystack has paid the buyer back and the stamp that records it failed. The buyer already has the money; only our record is wrong.',
-        },
-      ];
-    }
-
-    // A cart: the payment row covers several orders, so which order the refund
-    // belongs to is not readable from the row.
-    const { data: siblings, error } = await queries.listCheckoutSiblingOrders(payment.checkout_id);
-    if (error) {
-      return [
-        needsHuman(
-          payment.order_id,
-          payment.id,
-          age,
-          `refund ${accepted[0].status}`,
-          'The sibling orders of this cart could not be read, and the repair depends on whether one is still open.',
-        ),
-      ];
-    }
-    const open = (siblings ?? []).filter(
-      (row) => !['cancelled', 'completed'].includes(row.status),
-    );
-    if (open.length >= 2) {
-      // Whichever order was refunded, another is still open, so the original
-      // write was the release back to `paid` — decidable without attribution.
-      return [
-        {
-          class: 'refund-claim-sibling-open',
-          orderId: null,
-          paymentId: payment.id,
-          ageMinutes: age,
-          paystackSays: `refund ${accepted[0].status}`,
-          proposedRepair:
-            "marketplace_payments.update({status: 'paid'}) WHERE id = <paymentId> AND status = 'refunding'",
-          note: `This order's share is back with the buyer and ${open.length} sibling orders are still open, so the charge as a whole is not refunded and the claim must go back to 'paid'.`,
-        },
-      ];
-    }
-    return [
-      needsHuman(
-        null,
-        payment.id,
-        age,
-        `refund ${accepted[0].status}`,
-        'A cart refund that cannot be attributed to one order: with fewer than two open siblings, whether the row should read `refunded` or go back to `paid` depends on which order was refunded.',
-      ),
-    ];
-  }
-
-  async function classifyPayoutPendingPayment(
-    payment: ReconcilePaymentRow,
-  ): Promise<ReconcileFinding[]> {
-    const age = minutesBetween(now, payment.updated_at);
-    if (payment.status !== 'payout_pending') {
-      // The one state worth a Paystack call anyway: we say the money is out.
-      if (payment.status === 'paid_out') {
-        return dangerousDirectionForPayment(payment, age);
-      }
-      return [];
-    }
-    const reference = paymentTransferReference(payment);
-    if (!reference) {
-      return [
-        needsHuman(
-          payment.order_id,
-          payment.id,
-          age,
-          'not asked',
-          'No transfer reference can be derived for this payment, so Paystack cannot be asked what happened.',
-        ),
-      ];
-    }
-
-    let transfer: ReaderTransfer;
-    try {
-      transfer = await paystack.getTransferByReference(reference);
-    } catch {
-      return [unreachable(payment.order_id, payment.id, age, 'transfer lookup')];
-    }
-
-    const holdsClaimMarker = claimReference(payment) !== null;
-
-    if (!transfer.found) {
-      if (!holdsClaimMarker) {
-        return [
-          needsHuman(
-            payment.order_id,
-            payment.id,
-            age,
-            'no such transfer',
-            'The row carries a real transfer code but Paystack has no transfer under its reference. Releasing this claim could let a second transfer go out.',
-          ),
-        ];
-      }
-      return [
-        {
-          class: 'payout-claim-not-backed',
-          orderId: payment.order_id,
-          paymentId: payment.id,
-          ageMinutes: age,
-          paystackSays: 'no such transfer',
-          proposedRepair:
-            "marketplace_payments.update({status: 'paid', payout_transfer_code: null}) WHERE id = <paymentId> AND status = 'payout_pending' AND payout_transfer_code = 'claim:<reference>'",
-          note:
-            'The transfer never reached Paystack and the rollback failed. Behind this claim marker the seller can never be paid and the buyer\'s refund is refused.',
-        },
-      ];
-    }
-
-    const out: ReconcileFinding[] = [];
-    if (holdsClaimMarker) {
-      out.push({
-        class: 'payout-transfer-code-not-stamped',
-        orderId: payment.order_id,
-        paymentId: payment.id,
-        ageMinutes: age,
-        paystackSays: `transfer ${transfer.status}`,
-        proposedRepair:
-          "marketplace_payments.update({payout_transfer_code: <paystack transfer code>}) WHERE id = <paymentId> AND payout_transfer_code = 'claim:<reference>'",
-        note:
-          'The transfer exists at Paystack and the stamp that records its code failed, so no transfer webhook can match this row by code.',
-      });
-    }
-
-    if (transfer.status === 'success') {
-      out.push({
-        class: 'payment-payout-succeeded-not-settled',
-        orderId: payment.order_id,
-        paymentId: payment.id,
-        ageMinutes: age,
-        paystackSays: 'transfer success',
-        proposedRepair:
-          "marketplace_payments.update({status: 'paid_out', payout_at: <now>}) WHERE id = <paymentId> AND status IN ('payout_pending','paid')",
-        note: 'Paystack paid the seller and the settlement write failed.',
-      });
-      return out;
-    }
-    if (FAILED_TRANSFER_STATES.has(String(transfer.status))) {
-      out.push(
-        needsHuman(
-          payment.order_id,
-          payment.id,
-          age,
-          `transfer ${transfer.status}`,
-          'The transfer failed or was reversed. Putting the row back is the transfer.failed webhook\'s job, because it also burns a payout attempt; this job must not do it.',
-        ),
-      );
-      return out;
-    }
-    if (
-      IN_FLIGHT_TRANSFER_STATES.has(String(transfer.status)) &&
-      age > TRANSFER_PENDING_STALE_MINUTES
-    ) {
-      out.push(
-        needsHuman(
-          payment.order_id,
-          payment.id,
-          age,
-          `transfer ${transfer.status}`,
-          'The transfer has been pending at Paystack for over 72 hours. Nothing here is wedged by us; somebody should chase it.',
-        ),
-      );
-    }
-    return out;
-  }
-
-  async function dangerousDirectionForPayment(
-    payment: ReconcilePaymentRow,
-    age: number,
-  ): Promise<ReconcileFinding[]> {
-    const reference = paymentTransferReference(payment);
-    if (!reference) return [];
-    let transfer: ReaderTransfer;
-    try {
-      transfer = await paystack.getTransferByReference(reference);
-    } catch {
-      return [unreachable(payment.order_id, payment.id, age, 'transfer lookup')];
-    }
-    if (transfer.found && transfer.status === 'success') return [];
-    return [
-      needsHuman(
-        payment.order_id,
-        payment.id,
-        age,
-        transfer.found ? `transfer ${transfer.status}` : 'no such transfer',
-        'The payment says the seller has been paid and Paystack does not agree. Nothing is proposed: this is the direction where a wrong guess moves money.',
-      ),
-    ];
-  }
-
-  async function classifyPayingOrder(order: ReconcileOrderRow): Promise<ReconcileFinding[]> {
-    const age = minutesBetween(now, order.updated_at);
-    if (order.payout_status !== 'paying') {
-      if (order.payout_status === 'paid_out') {
-        return dangerousDirectionForOrder(order, age);
-      }
-      return [];
-    }
-    const reference = orderTransferReference(order);
-
-    let transfer: ReaderTransfer;
-    try {
-      transfer = await paystack.getTransferByReference(reference);
-    } catch {
-      return [unreachable(order.id, order.payment_id, age, 'transfer lookup')];
-    }
-
-    if (!transfer.found) {
-      if (order.payout_transfer_code) {
-        return [
-          needsHuman(
-            order.id,
-            order.payment_id,
-            age,
-            'no such transfer',
-            'The order carries a transfer code but Paystack has no transfer under its reference. Releasing the claim could let a second transfer go out.',
-          ),
-        ];
-      }
-      return [
-        {
-          class: 'order-paying-not-backed',
-          orderId: order.id,
-          paymentId: order.payment_id,
-          ageMinutes: age,
-          paystackSays: 'no such transfer',
-          proposedRepair:
-            "marketplace_orders.update({payout_status: 'pending', payout_failed_reason: <job reason>}) WHERE id = <orderId> AND payout_status = 'paying'",
-          note:
-            'No transfer was ever made and the claim release failed, so this order can never be claimed again and the seller is never paid.',
-        },
-      ];
-    }
-
-    if (transfer.status === 'success') {
-      return [
-        {
-          class: 'order-paying-transfer-succeeded',
-          orderId: order.id,
-          paymentId: order.payment_id,
-          ageMinutes: age,
-          paystackSays: 'transfer success',
-          proposedRepair:
-            "marketplace_orders.update({payout_status: 'paid_out', payout_failed_reason: null}) WHERE id = <orderId> AND payout_status IN ('paying','pending')",
-          note:
-            'Paystack paid this seller and the settlement write failed. The parent payment row rolls up on a later run, once every sibling has settled.',
-        },
-      ];
-    }
-    if (FAILED_TRANSFER_STATES.has(String(transfer.status))) {
-      return [
-        needsHuman(
-          order.id,
-          order.payment_id,
-          age,
-          `transfer ${transfer.status}`,
-          'The transfer failed or was reversed. Unwinding it burns a payout attempt and belongs to the transfer.failed webhook, not to this job.',
-        ),
-      ];
-    }
-    if (age > TRANSFER_PENDING_STALE_MINUTES) {
-      return [
-        needsHuman(
-          order.id,
-          order.payment_id,
-          age,
-          `transfer ${transfer.status}`,
-          'The transfer has been pending at Paystack for over 72 hours.',
-        ),
-      ];
-    }
-    // Accepted and still in flight: legitimately waiting for transfer.success.
-    return [];
-  }
-
-  async function dangerousDirectionForOrder(
-    order: ReconcileOrderRow,
-    age: number,
-  ): Promise<ReconcileFinding[]> {
-    let transfer: ReaderTransfer;
-    try {
-      transfer = await paystack.getTransferByReference(orderTransferReference(order));
-    } catch {
-      return [unreachable(order.id, order.payment_id, age, 'transfer lookup')];
-    }
-    if (transfer.found && transfer.status === 'success') return [];
-    return [
-      needsHuman(
-        order.id,
-        order.payment_id,
-        age,
-        transfer.found ? `transfer ${transfer.status}` : 'no such transfer',
-        'The order says the seller has been paid and Paystack does not agree. Nothing is proposed: this is the direction where a wrong guess moves money.',
-      ),
-    ];
-  }
-
-  async function classifyRefundHoldOrder(order: ReconcileOrderRow): Promise<ReconcileFinding[]> {
-    const age = minutesBetween(now, order.updated_at);
-    if (order.payout_status !== 'refund_hold') return [];
-    if (!order.payment_id) {
-      return [
-        needsHuman(
-          order.id,
-          null,
-          age,
-          'not asked',
-          'The order holds a refund hold and names no payment, so there is no charge to ask Paystack about.',
-        ),
-      ];
-    }
-    const { data: payment, error } = await queries.getPaymentForReconcile(order.payment_id);
-    if (error || !payment) {
-      return [
-        needsHuman(
-          order.id,
-          order.payment_id,
-          age,
-          'not asked',
-          'The payment row behind this refund hold could not be read.',
-        ),
-      ];
-    }
-    const key = chargeKey(payment);
-    if (!key) {
-      return [
-        needsHuman(
-          order.id,
-          payment.id,
-          age,
-          'not asked',
-          'The payment carries no Paystack reference, so no refund can be looked up.',
-        ),
-      ];
-    }
-
-    let refunds: ReaderRefund[];
-    try {
-      refunds = await paystack.listRefundsForTransaction(key);
-    } catch {
-      return [unreachable(order.id, payment.id, age, 'refund lookup')];
-    }
-    const accepted = refunds.filter((r) => ACCEPTED_REFUND_STATES.has(r.status));
-
-    if (accepted.length === 0) {
-      return [
-        {
-          class: 'order-refund-hold-not-backed',
-          orderId: order.id,
-          paymentId: payment.id,
-          ageMinutes: age,
-          paystackSays: 'no refund accepted for this charge',
-          proposedRepair:
-            "marketplace_orders.update({payout_status: 'pending'}) WHERE id = <orderId> AND payout_status = 'refund_hold'",
-          note:
-            'No refund was ever accepted, and the hold that should have been given back was not. It blocks the payout and refuses every later refund for this order.',
-        },
-      ];
-    }
-    if (payment.checkout_id) {
-      return [
-        needsHuman(
-          order.id,
-          payment.id,
-          age,
-          `refund ${accepted[0].status}`,
-          'A cart charge with an accepted refund: whether THIS order is the refunded one cannot be read from the rows, and marking the wrong order unpayable would cost a seller their money.',
-        ),
-      ];
-    }
-    return [
-      {
-        class: 'order-refund-hold-refunded',
-        orderId: order.id,
-        paymentId: payment.id,
-        ageMinutes: age,
-        paystackSays: `refund ${accepted[0].status}`,
-        proposedRepair:
-          "marketplace_orders.update({payout_status: 'skipped', payout_failed_reason: 'refunded'}) WHERE id = <orderId> AND payout_status = 'refund_hold'",
-        note:
-          'The buyer has been refunded, so this order must never pay out, and the write that records that failed.',
-      },
-    ];
-  }
-
-  async function classifyUnsettledPayment(
-    payment: ReconcilePaymentRow,
-  ): Promise<ReconcileFinding[]> {
-    const age = minutesBetween(now, payment.created_at);
-    if (payment.status !== 'initialized') return [];
-    const reference = payment.paystack_reference;
-    if (!reference) return [];
-
-    let charge: ReaderCharge;
-    try {
-      charge = await paystack.verifyCharge(reference);
-    } catch {
-      return [unreachable(payment.order_id, payment.id, age, 'charge verify')];
-    }
-    if (!charge.found || charge.status !== 'success') return [];
-    return [
-      {
-        class: 'charge-paid-not-settled',
-        orderId: payment.order_id,
-        paymentId: payment.id,
-        ageMinutes: age,
-        paystackSays: 'charge success',
-        proposedRepair: null,
-        note:
-          'Paystack captured this charge and the order was never settled. Settlement grants entitlements, delivers digital goods and splits fees, so it is deliberately not something this job re-applies: a person runs the settlement path.',
-      },
-    ];
-  }
 }

@@ -84,6 +84,7 @@ type Rows = {
   paying?: ReconcileOrderRow[];
   holds?: ReconcileOrderRow[];
   payments?: Record<string, ReconcilePaymentRow>;
+  orders?: Record<string, ReconcileOrderRow>;
   siblings?: Array<{ id: string; status: string; payout_status: string }>;
   siblingsError?: boolean;
 };
@@ -105,6 +106,7 @@ function queries(rows: Rows): ReconcileQueries {
     listStuckPayingOrders: () => ok(rows.paying ?? []),
     listStuckRefundHoldOrders: () => ok(rows.holds ?? []),
     getPaymentForReconcile: (id: string) => ok(rows.payments?.[id] ?? null),
+    getOrderForReconcile: (id: string) => ok(rows.orders?.[id] ?? null),
     listCheckoutSiblingOrders: () =>
       rows.siblingsError
         ? Promise.resolve({ data: null, error: new Error('read failed') })
