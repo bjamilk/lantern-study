@@ -376,7 +376,13 @@ describe('discarded write errors do not grow', () => {
     expect(files.length).toBeGreaterThan(200);
     const total = Object.values(current).reduce((a, b) => a + b, 0);
     expect(total).toBeGreaterThan(50);
-    expect(Object.keys(current)).toContain('services/marketplacePayments.ts');
+    // The canary is that the money file is REACHED, not that it is still dirty.
+    // It used to assert `marketplacePayments.ts` was among the findings, which
+    // stopped being true the moment that file was finished — a self-test that
+    // fails on success is worse than none.
+    expect(files.some((f) => f.endsWith(path.join('services', 'marketplacePayments.ts')))).toBe(
+      true,
+    );
   });
 
   it('still finds the shape the bare-await regex cannot see', () => {
