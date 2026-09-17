@@ -69,9 +69,8 @@ initSentry();
 // Import services
 import { CacheService, cacheService as sharedCacheService } from './services/cache';
 import { ApiKeyService } from './services/apiKey';
-import { SupabaseService } from './services/supabase';
-import { createDataLayer, type DataLayer } from './services/data';
-import { createDataLayerHost } from './services/dataLayerHost';
+import { type DataLayer } from './services/data';
+import { createRuntimeDataLayer } from './services/data/bootstrap';
 
 // Import middleware
 import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores, isWebhookRateLimitExempt } from './middleware/rateLimit';
@@ -177,7 +176,6 @@ if (process.env.NODE_ENV === 'production') {
 // Initialize services
 let cacheService: CacheService;
 let apiKeyService: ApiKeyService;
-let supabaseService: SupabaseService;
 let dataLayer: DataLayer;
 
 async function initializeServices() {
@@ -209,22 +207,15 @@ async function initializeServices() {
       url: process.env.SUPABASE_URL || 'http://127.0.0.1:55421',
       serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
     };
-    supabaseService = new SupabaseService(dbConfig);
-
     // The data layer (`services/data/index.ts`): the same domain functions the
     // facade delegates to, bound ONCE to the client and to their `deps`. Route
-    // families flipped off `SupabaseService` are injected with this instead.
-    // `host` carries the three deps that still need the facade instance and
-    // shrinks to nothing as the remaining importers are flipped — see
-    // `docs/data-layer-wiring.md`.
-    dataLayer = createDataLayer({
-      client: supabaseService.getClient(),
-      supabaseUrl: dbConfig.url,
-      host: createDataLayerHost(supabaseService),
-    });
+    // families are injected with this. `createRuntimeDataLayer` is the ONE
+    // wiring, shared with the BullMQ worker process — see
+    // `services/data/bootstrap.ts` and `docs/data-layer-wiring.md`.
+    ({ dataLayer } = createRuntimeDataLayer(dbConfig));
 
     const { setIdempotencyClient } = await import('./middleware/idempotency');
-    setIdempotencyClient(() => supabaseService.getClient());
+    setIdempotencyClient(() => dataLayer.getClient());
 
     // Initialize API key service (requires Supabase service role client)
     apiKeyService = new (await import('./services/apiKey')).ApiKeyService();

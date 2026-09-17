@@ -10,7 +10,7 @@
  * - `scheduleRepeatableCronJobs` — registers the repeatable cron jobs, each with
  *   a fixed `jobId` so a redeploy replaces its schedule instead of stacking a
  *   second one.
- * - `initializeWorkerServices` — injects the service-role SupabaseService the
+ * - `initializeWorkerServices` — injects the service-role data layer the
  *   processors use.
  * - `processAiJob` and the `JobProgress` interface.
  *
@@ -59,9 +59,7 @@ import {
   companionChat,
 } from "../../services/aiService";
 import { upsertSmartNotesSection } from "@lantern/shared/utils/smartNotes";
-import { SupabaseService } from "../../services/supabase";
-import { createDataLayer, type DataLayer } from "../../services/data";
-import { createDataLayerHost } from "../../services/dataLayerHost";
+import { type DataLayer } from "../../services/data";
 import { parseApkgBuffer } from "../../services/apkgImport";
 import { runPresentationPreviewJob } from "../../services/presentationPreview";
 import { runYoutubeTranscriptJob } from "../../services/youtubeNote";
@@ -108,23 +106,19 @@ import {
 // at boot. Both telemetry helpers no-op rather than throw when it is missing.
 // ---------------------------------------------------------------------------
 
-let supabaseService: SupabaseService;
 /**
- * The worker's own composition root. `server.ts` builds one for the API
- * process; this process has no server, so it builds its own over the same
- * service-role facade rather than taking a second injection point — which also
- * keeps the two processor suites that inject a bare `{ getClient }` stub
- * working unchanged: the layer they get is bound to that same stub client.
+ * The worker's handle on the database. `worker.ts` builds it with
+ * `createRuntimeDataLayer` — the SAME factory call `server.ts` makes, rather
+ * than a second hand-written wiring, which is what let the two disagree about
+ * `supabaseUrl` (monolith lane M3, Phase B).
+ *
+ * The two processor suites inject a bare stub through this same entry point
+ * and reach only the members they stub, as before.
  */
 let dataLayer: DataLayer;
 
-export function initializeWorkerServices(supabase: SupabaseService): void {
-  supabaseService = supabase;
-  dataLayer = createDataLayer({
-    client: supabase.getClient(),
-    supabaseUrl: process.env.SUPABASE_URL || "",
-    host: createDataLayerHost(supabase),
-  });
+export function initializeWorkerServices(layer: DataLayer): void {
+  dataLayer = layer;
 }
 
 async function recordInference(
@@ -132,8 +126,8 @@ async function recordInference(
   feature: string,
   result: { provider?: string; model?: string },
 ): Promise<void> {
-  if (!userId || !supabaseService) return;
-  await logAIInference(supabaseService.getClient(), {
+  if (!userId || !dataLayer) return;
+  await logAIInference(dataLayer.getClient(), {
     userId,
     feature,
     provider: result.provider,
@@ -152,9 +146,9 @@ async function recordGenerationEvent(
   count: number,
   data: Record<string, unknown>,
 ): Promise<void> {
-  if (!userId || !supabaseService) return;
+  if (!userId || !dataLayer) return;
   const noteId = typeof data.noteId === "string" ? data.noteId : null;
-  await recordLearningEvent(supabaseService, {
+  await recordLearningEvent(dataLayer, {
     userId,
     eventType,
     targetType: noteId ? "note" : null,
@@ -407,12 +401,12 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
         conversationId?: string | null;
         newConversation?: boolean;
       };
-      if (!userId || !supabaseService) {
+      if (!userId || !dataLayer) {
         throw new Error(
           "Companion message job requires userId and supabase service",
         );
       }
-      const client = supabaseService.getClient();
+      const client = dataLayer.getClient();
       await progress.stage("reading");
       // Photos attached to this turn.
       //
@@ -516,12 +510,12 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       await progress.stage("generating");
       const result = await summarizeNoteContent(content, { title, sourceType, guidance, depth });
       await recordInference(userId, "summarize-note", result);
-      if (noteId && userId && supabaseService) {
+      if (noteId && userId && dataLayer) {
         await progress.stage("saving");
         progress.ref({ type: "note", id: noteId, route: `/notes/${noteId}` });
-        const latest = await supabaseService.getNote(noteId, userId);
+        const latest = await dataLayer.notes.getNote(noteId, userId);
         const nextBody = upsertSmartNotesSection(latest.body || "", result.summary);
-        const note = await supabaseService.updateNote(
+        const note = await dataLayer.notes.updateNote(
           userId,
           noteId,
           { summary: result.summary, body: nextBody },
@@ -547,7 +541,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
         Array.isArray(result.questions) ? result.questions.length : 0,
         job.data as Record<string, unknown>,
       );
-      if (noteId && userId && supabaseService) {
+      if (noteId && userId && dataLayer) {
         await progress.stage("saving");
         const questions = result.questions.map((q, index) => ({
           id: `nq-${index}`,
@@ -558,7 +552,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
           explanation: q.explanation,
           topic: q.topic,
         }));
-        const session = await supabaseService.upsertNoteQuiz(userId, noteId, {
+        const session = await dataLayer.notes.upsertNoteQuiz(userId, noteId, {
           studyGoal: studyGoal || "retention",
           questions,
         });
@@ -599,7 +593,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
         creditCost?: number;
         title?: string;
       };
-      if (!noteId || !attachmentId || !userId || !supabaseService) {
+      if (!noteId || !attachmentId || !userId || !dataLayer) {
         throw new Error("Narration job requires noteId, attachmentId and a user");
       }
       progress.ref({ type: "note", id: noteId, route: `/notes/${noteId}` });
@@ -636,7 +630,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
     }
     case "ai.studyPack.generate": {
       const { draftId } = job.data as { draftId: string };
-      if (!draftId || !supabaseService) {
+      if (!draftId || !dataLayer) {
         throw new Error("Study pack generation job requires draftId and supabase service");
       }
       // FIXED (F7a): the pack makes exactly one progress write of its own, and
@@ -676,7 +670,7 @@ async function processFileJob(job: Job, progress: JobProgress): Promise<unknown>
     await progress.stage("reading");
     const importData = await parseApkgBuffer(buffer);
     await progress.stage("saving");
-    const importedDeck = await supabaseService.importDeck(importData, userId);
+    const importedDeck = await dataLayer.decks.importDeck(importData, userId);
     const deckId = (importedDeck as { id?: string })?.id;
     if (deckId) progress.ref({ type: "deck", id: deckId, route: `/flashcards/${deckId}` });
     return { success: true, data: importedDeck };
@@ -775,7 +769,7 @@ async function processExportJob(job: Job, progress: JobProgress): Promise<unknow
   if (job.name === "export.userData") {
     const { userId } = job.data as { userId: string };
     await progress.stage("generating");
-    const archive = await supabaseService.exportUserData(userId);
+    const archive = await dataLayer.users.exportUserData(userId);
     return { success: true, data: archive };
   }
   throw new Error(`Unknown export job: ${job.name}`);
