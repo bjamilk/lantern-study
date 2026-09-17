@@ -22,7 +22,6 @@ describe('canAccessStorageObject profile-avatars', () => {
         serviceRoleKey: 'test-service-role-key',
       } as never),
       supabaseUrl: 'https://test.supabase.co',
-      host: {} as never,
     });
     service = layer.storageAcl;
     visibilitySpy = jest.spyOn(layer.users, 'isProfileVisibleToViewer');
@@ -110,7 +109,6 @@ describe('canAccessStorageObject marketplace shop covers', () => {
         serviceRoleKey: 'test-service-role-key',
       } as never),
       supabaseUrl: 'https://test.supabase.co',
-      host: {} as never,
     });
     service = layer.storageAcl;
   });
@@ -161,7 +159,6 @@ describe('storageUrlMatchesObject (exact path ACL)', () => {
         serviceRoleKey: 'test-service-role-key',
       } as never),
       supabaseUrl: 'https://test.supabase.co',
-      host: {} as never,
     });
     service = layer.storageAcl;
   });

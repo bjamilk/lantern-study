@@ -25,7 +25,7 @@ jest.mock('./gamification');
 jest.mock('./boardActions');
 jest.mock('./marketplace');
 
-import { createDataLayer, type DataLayerHost } from './index';
+import { createDataLayer } from './index';
 import * as groupsData from './groups';
 import * as notificationsData from './notifications';
 import * as readStateData from './readState';
@@ -36,13 +36,9 @@ import * as boardActionsData from './boardActions';
 import * as marketplaceData from './marketplace';
 
 const client = { marker: 'client' } as never;
-const legacyService = { marker: 'facade' } as never;
-
-// The whole bridge, as of M3 Phase B: the facade handle and nothing else.
-const host: DataLayerHost = { legacyService };
 
 const build = () =>
-  createDataLayer({ client, supabaseUrl: 'https://example.supabase.co', host });
+  createDataLayer({ client, supabaseUrl: 'https://example.supabase.co' });
 
 describe('createDataLayer', () => {
   beforeEach(() => {
@@ -164,9 +160,9 @@ describe('createDataLayer', () => {
       .calls[0][1];
 
     // These four used to come off `DataLayerHost`, which built them from the
-    // facade; their services take a layer host since M3 Phase B, so the layer
-    // builds them. They must still be FUNCTIONS that import on call — an
-    // eager import here would put the cycle back in the boot path.
+    // facade. The bridge is gone (M3 Phase B, PR 4) and the layer builds them
+    // itself. They must still be FUNCTIONS that import on call — an eager
+    // import here would put the cycle back in the boot path.
     for (const dep of [
       'createOrderFromBuyNow',
       'createOrderFromOfferAccept',
@@ -175,8 +171,6 @@ describe('createDataLayer', () => {
     ]) {
       expect(typeof deps[dep]).toBe('function');
     }
-    // The bridge is down to the facade handle itself.
-    expect(Object.keys(host)).toEqual(['legacyService']);
   });
 
   it('holds the rating-column circuit breaker PER LAYER', async () => {
@@ -191,9 +185,8 @@ describe('createDataLayer', () => {
     expect(second.marketplace.ratingColumnsAvailable()).toBe(true);
   });
 
-  it('hands out the client and the legacy facade handle unchanged', () => {
+  it('hands out the client unchanged', () => {
     const layer = build();
     expect(layer.getClient()).toBe(client);
-    expect(layer.legacyService).toBe(legacyService);
   });
 });

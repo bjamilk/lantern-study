@@ -47,7 +47,6 @@ function makeService(client?: unknown) {
   const layer = createDataLayer({
     client: supabase,
     supabaseUrl: 'https://test.supabase.co',
-    host: {} as never,
   });
   return {
     supabase: supabase as any,

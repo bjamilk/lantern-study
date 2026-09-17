@@ -22,9 +22,7 @@
  *  - a member the stand-in does not define stays `undefined`, so a route's
  *    `dataLayer.x.y?.(…)` optional call behaves exactly as it did against the
  *    facade stand-in;
- *  - `getClient` and `legacyService` come off the stand-in, falling back to the
- *    stand-in itself for `legacyService` — which is what a suite that hands its
- *    fake to a `services/` singleton expects.
+ *  - `getClient` comes off the stand-in.
  *
  * ## The gotcha
  *
@@ -59,7 +57,6 @@ export function stubDataLayer(stub: Record<string, unknown>): DataLayer {
               (stub.getClient as (...a: unknown[]) => unknown)(...args)
           : stub.getClient;
       }
-      if (prop === "legacyService") return stub.legacyService ?? stub;
       return namespace;
     },
   });

@@ -81,7 +81,6 @@ const client = {
 const layer = createDataLayer({
   client: client as never,
   supabaseUrl: 'https://example.supabase.co',
-  host: { legacyService: undefined } as never,
 });
 const service: any = {
   supabase: client,

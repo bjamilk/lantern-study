@@ -32,7 +32,6 @@ describe('mapTestSessionRowToClient', () => {
         serviceRoleKey: 'test-key',
       } as never),
       supabaseUrl: 'https://example.supabase.co',
-      host: {} as never,
     }).tests;
 
     const mapped = svc.mapTestSessionRowToClient({
@@ -73,7 +72,6 @@ describe('mapTestSessionRowToClient', () => {
         serviceRoleKey: 'test-key',
       } as never),
       supabaseUrl: 'https://example.supabase.co',
-      host: {} as never,
     }).tests;
 
     const mapped = svc.mapTestSessionRowToClient({

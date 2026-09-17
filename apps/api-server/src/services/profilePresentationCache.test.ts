@@ -55,7 +55,6 @@ describe('profile presentation cache invalidation', () => {
     const service = createDataLayer({
       client: { from } as never,
       supabaseUrl: 'http://localhost:54321',
-      host: {} as never,
     }).users;
 
     jest.spyOn(cacheService, 'invalidateUserCache').mockResolvedValue();

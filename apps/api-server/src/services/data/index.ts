@@ -38,27 +38,15 @@
  * below is the access control) and the `supabaseUrl` the storage ACL needs to
  * sign an object.
  *
- * ## The gotcha: `host`, and why it exists
+ * ## No seam left
  *
- * Seven deps cannot be built from the data layer alone: thin wrappers over the
- * services that take the whole `SupabaseService` (`marketplaceOrders`,
- * `marketplaceSellerTools`, `marketplaceFavoriteAlerts`,
- * `learningConnections`, `userDataLifecycle`, `courseTopics`), plus
- * `legacyService` itself. They arrive as `DataLayerHost`, implemented in
- * `services/dataLayerHost.ts` and built in `server.ts`.
- *
- * It was fifteen until monolith lane M3: the five bodies that never left the
- * facade moved into `data/mappers.ts`, `data/marketplace.ts` and
- * `data/tests.ts`, and the per-INSTANCE rating-column circuit breaker is now
- * held HERE, one per layer (`ratingColumns` below), which is the property
- * `supabase.reviewSignals.test.ts` asserts.
- *
- * This is a TRANSITIONAL seam, not an architecture: it shrinks as those bodies
- * move into `services/data/*` and as the `services/` importers are flipped, and
- * when it is empty the facade can be deleted. Do not add to it without saying
- * in the PR how it comes back out.
+ * Every dep is built here, from this layer. The `host` bridge that carried the
+ * few the layer could not build — bodies that had never left `SupabaseService`,
+ * its per-instance rating circuit breaker, and wrappers over services that took
+ * the facade whole — is gone with the facade (monolith lane M3). If something
+ * ever cannot be built from the layer again, it is a sign the body is in the
+ * wrong place, not that the seam should come back.
  */
-import type { SupabaseService } from "../supabase";
 
 import type { DataClient } from "./client";
 import * as academicData from "./academic";
@@ -84,23 +72,6 @@ import * as uploadsData from "./uploads";
 import * as usersData from "./users";
 
 /**
- * The few things still reachable only through `SupabaseService`. Each field is
- * typed by the data module that asks for it, so a signature change is a compile
- * error here rather than a silent `any`. Implemented in
- * `services/dataLayerHost.ts`; see the gotcha above.
- */
-export type DataLayerHost = {
-  /**
-   * The `SupabaseService` instance itself. `data/notes.ts`, `data/tests.ts`,
-   * `data/gamification.ts` and `data/offlineBundles.ts` already declare
-   * `service: SupabaseService` in their own `*Deps` types, and a flipped route
-   * hands it to the `services/` singletons that still take it whole
-   * (`getCommunitiesService`, `getActivityFeedService`, …).
-   */
-  legacyService: SupabaseService;
-};
-
-/**
  * What a `services/*` module needs when all it wants is the service-role
  * client: `getClient()`, and nothing else.
  *
@@ -121,7 +92,6 @@ export type CreateDataLayerOptions = {
   client: DataClient;
   /** Needed by the storage ACL to sign an object; `DatabaseConfig.url`. */
   supabaseUrl: string;
-  host: DataLayerHost;
 };
 
 /**
@@ -182,7 +152,7 @@ const getResponseProfile = (profile?: string): "compact" | "full" =>
   profile === "compact" ? "compact" : "full";
 
 export function createDataLayer(options: CreateDataLayerOptions) {
-  const { client, supabaseUrl, host } = options;
+  const { client, supabaseUrl } = options;
 
   // Declared first so every `deps` arrow below can read through it at CALL
   // time. Namespaces are assigned immediately after; nothing invokes a dep
@@ -196,23 +166,20 @@ export function createDataLayer(options: CreateDataLayerOptions) {
 
   // --- deps the layer builds over services that still take the whole facade --
   //
-  // Narrowed in monolith lane M3 from `service: host.legacyService`, which is
+  // Narrowed in monolith lane M3 from `service: layer`, which is
   // what these four data modules used to be handed. The lazy `await import()`
   // is the one the data modules used to do inline: it still runs when the dep
   // is CALLED, never at module load, so the cycle stays out of the boot path.
-  // Each arrow loses its `host.legacyService` as its service is flipped onto
+  // Each arrow loses its `layer` as its service is flipped onto
   // the layer.
   const recordLearningEvent: notesData.NotesDeps["recordLearningEvent"] = async (
     input,
   ) =>
-    (await import("../learningEvents")).recordLearningEvent(
-      host.legacyService,
-      input,
-    );
+    (await import("../learningEvents")).recordLearningEvent(layer, input);
   const lookupDeckOwnerAndCourse: offlineBundlesData.FlashcardDeps["lookupDeckOwnerAndCourse"] =
     async (deckId) =>
       (await import("../learningEvents")).lookupDeckOwnerAndCourse(
-        host.legacyService,
+        layer,
         deckId,
       );
   const refreshTopicMastery: offlineBundlesData.FlashcardDeps["refreshTopicMastery"] =
@@ -537,7 +504,6 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   // --- namespaces -----------------------------------------------------------
 
   layer.getClient = () => client;
-  layer.legacyService = host.legacyService;
   layer.academic = createAcademicApi(client, resolveTopicForArtefact);
   layer.adminAnalytics = createAdminAnalyticsApi(client);
   layer.boardActions = createBoardActionsApi(client, boardActionsDeps);
@@ -842,7 +808,7 @@ function createMarketplaceApi(
     listingStateError: marketplaceData.listingStateError,
     // Takes only `{ getMarketplaceListingById }`, which the domain's own deps
     // literal already reads through the layer at call time. It used to be
-    // handed `host.legacyService` — the last read of the facade in this file.
+    // handed `layer` — the last read of the facade in this file.
     assertSellerListingUpdateAllowed: bindDeps(
       marketplaceDeps,
       marketplaceData.assertSellerListingUpdateAllowed,
@@ -1146,8 +1112,6 @@ function createUsersApi(
  */
 export type DataLayer = {
   getClient: () => DataClient;
-  /** See `DataLayerHost.legacyService`. Transitional; do not add callers. */
-  legacyService: SupabaseService;
   academic: AcademicApi;
   adminAnalytics: AdminAnalyticsApi;
   boardActions: BoardActionsApi;

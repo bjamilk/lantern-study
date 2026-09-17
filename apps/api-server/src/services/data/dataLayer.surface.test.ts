@@ -34,15 +34,15 @@
  *
  * ## The gotcha
  *
- * The layer is built here over a Proxy client and a Proxy host: nothing is
- * called, only enumerated, so no query is issued and no facade is constructed.
+ * The layer is built here over a Proxy client: nothing is called, only
+ * enumerated, so no query is issued.
  * If a future `createDataLayer` starts INVOKING a dep during construction,
  * this test is where it will first be noticed.
  */
 import fs from 'fs';
 import path from 'path';
 
-import { createDataLayer, type DataLayer, type DataLayerHost } from './index';
+import { createDataLayer, type DataLayer } from './index';
 
 type Snapshot = {
   root: Array<{ name: string; kind: string }>;
@@ -77,15 +77,10 @@ function fakeClient(): never {
   return new Proxy({}, { get: () => () => undefined }) as never;
 }
 
-function fakeHost(): DataLayerHost {
-  return new Proxy({}, { get: () => () => undefined }) as unknown as DataLayerHost;
-}
-
 function buildLayer(): DataLayer {
   return createDataLayer({
     client: fakeClient(),
     supabaseUrl: 'http://localhost:54321',
-    host: fakeHost(),
   });
 }
 
@@ -96,13 +91,6 @@ function currentSurface(): Snapshot {
 
   for (const key of Object.keys(layer).sort()) {
     const value = layer[key];
-    // `legacyService` is the facade instance itself, not a namespace — an
-    // object here under a real host and a stub under this one. It is recorded
-    // as a root member so that the day it goes, the diff says so.
-    if (key === 'legacyService') {
-      root.push({ name: key, kind: 'legacy-facade' });
-      continue;
-    }
     if (typeof value === 'object' && value !== null) {
       const members = value as Record<string, unknown>;
       namespaces.push({

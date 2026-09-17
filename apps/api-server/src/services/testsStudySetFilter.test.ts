@@ -77,7 +77,6 @@ const layer = () =>
       serviceRoleKey: 'test-key',
     } as never),
     supabaseUrl: 'https://example.supabase.co',
-    host: {} as never,
   });
 
 /** The one namespace this suite drives, under the name it already used. */
