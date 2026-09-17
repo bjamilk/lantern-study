@@ -906,20 +906,12 @@ router.get(
     let questionBank: { questionCount: number; version: number; owned: boolean } | null = null;
     if (listing.listing_kind === 'question_bank') {
       try {
-        const { data: bank } = await dataLayer.getClient()
-          .from('marketplace_question_banks')
-          .select('question_count, version')
-          .eq('listing_id', id)
-          .maybeSingle();
+        const { data: bank } = await dataLayer.marketplace.getQuestionBankMeta(id);
         if (bank) {
           let owned = false;
           if (viewerId) {
-            const { data: entitlement } = await dataLayer.getClient()
-              .from('marketplace_question_bank_entitlements')
-              .select('id')
-              .eq('listing_id', id)
-              .eq('user_id', viewerId)
-              .maybeSingle();
+            const { data: entitlement } =
+              await dataLayer.marketplace.getDigitalEntitlement(id, viewerId);
             owned = !!entitlement;
           }
           questionBank = {
@@ -937,20 +929,12 @@ router.get(
     let studyPack: { counts: unknown; version: number; owned: boolean } | null = null;
     if (listing.listing_kind === 'study_pack') {
       try {
-        const { data: pack } = await dataLayer.getClient()
-          .from('marketplace_study_packs')
-          .select('counts, version')
-          .eq('listing_id', id)
-          .maybeSingle();
+        const { data: pack } = await dataLayer.marketplace.getStudyPackMeta(id);
         if (pack) {
           let owned = false;
           if (viewerId) {
-            const { data: entitlement } = await dataLayer.getClient()
-              .from('marketplace_question_bank_entitlements')
-              .select('id')
-              .eq('listing_id', id)
-              .eq('user_id', viewerId)
-              .maybeSingle();
+            const { data: entitlement } =
+              await dataLayer.marketplace.getDigitalEntitlement(id, viewerId);
             owned = !!entitlement;
           }
           studyPack = { counts: pack.counts, version: pack.version, owned };

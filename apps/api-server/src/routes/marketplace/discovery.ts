@@ -149,16 +149,11 @@ router.post(
       return parts.length > 0 ? parts.join(', ') : 'All listings';
     })();
 
-    const { data, error } = await dataLayer.getClient()
-      .from('saved_searches')
-      .insert({
-        user_id: userId,
-        name: searchName,
-        filters,
-        notify: true,
-      })
-      .select('*')
-      .single();
+    const { data, error } = await dataLayer.marketplace.createSavedSearch(
+      userId,
+      searchName,
+      filters
+    );
 
     if (error) throw error;
 
@@ -173,11 +168,7 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     const userId = req.user.id;
 
-    const { data, error } = await dataLayer.getClient()
-      .from('saved_searches')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    const { data, error } = await dataLayer.marketplace.listSavedSearches(userId);
 
     if (error) throw error;
 
@@ -193,11 +184,7 @@ router.delete(
     const userId = req.user.id;
     const { id } = req.params;
 
-    const { error } = await dataLayer.getClient()
-      .from('saved_searches')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', userId);
+    const { error } = await dataLayer.marketplace.deleteSavedSearch(userId, id);
 
     if (error) throw error;
 
@@ -219,13 +206,7 @@ router.patch(
       return res.status(400).json({ success: false, error: 'notify or name required' });
     }
 
-    const { data, error } = await dataLayer.getClient()
-      .from('saved_searches')
-      .update(patch)
-      .eq('id', id)
-      .eq('user_id', userId)
-      .select('*')
-      .single();
+    const { data, error } = await dataLayer.marketplace.updateSavedSearch(userId, id, patch);
 
     if (error) throw error;
     res.json({ success: true, data });

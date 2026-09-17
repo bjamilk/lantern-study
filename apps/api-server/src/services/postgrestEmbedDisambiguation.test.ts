@@ -430,8 +430,10 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   //     FK between their two tables. Counts are per resolved call site, so one
   //     shared `orderSelect` string counts once for every query that uses it.
   // R5a split routes/marketplace.ts into routes/marketplace/*; both call sites
-  // are the offer→listing embeds, now in offers.ts. Same queries, new path.
-  'routes/marketplace/offers.ts::marketplace_listings': 2,
+  // are the offer→listing embeds, which lived in offers.ts. Monolith lane R2
+  // (PR 3) moved those two queries into services/data/marketplace.ts with the
+  // rest of the offer chains, so the two rows MERGED into the entry below:
+  // 6 + 2 = 8. Same queries, one fewer file.
   'services/marketplaceAlerts.ts::marketplace_listings': 4,
   'services/marketplaceCart.ts::marketplace_listings': 5,
   'services/marketplaceOrders.ts::marketplace_listings': 16,
@@ -443,7 +445,7 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   // into the marketplace repository (monolith lane M1h). Same queries, new
   // file: the rows moved with them rather than the count changing —
   // supabase.ts drops from 6 to zero.
-  'services/data/marketplace.ts::marketplace_listings': 6,
+  'services/data/marketplace.ts::marketplace_listings': 8,
 
   // --- Jobs board (jobs lane). Membership/company/posting joins, single FK
   //     each today.

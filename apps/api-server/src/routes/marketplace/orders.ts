@@ -328,12 +328,20 @@ router.patch(
       const replayed = await claim(async () => {
         ran = true;
         if (Object.keys(fieldUpdates).length > 0) {
-          const scoped = dataLayer.getClient()
-            .from('marketplace_orders')
-            .update(fieldUpdates)
-            .eq('id', req.params.id);
-          // Two exact filters instead of an interpolated .or() string.
-          await (isSeller ? scoped.eq('seller_id', req.user.id) : scoped.eq('buyer_id', req.user.id));
+          // Two exact filters instead of an interpolated .or() string; the call
+          // stays INSIDE the idempotency claim, so a replay re-runs neither this
+          // nor the status transition below.
+          //
+          // KNOWN ISSUE (tracked, #108): the returned `{error}` is discarded, so
+          // a failed update is invisible and this handler still answers success
+          // — a seller told their meeting point saved may have saved nothing.
+          // Left as-is; R2 moves queries, it does not fix them.
+          await dataLayer.marketplace.updateOrderFieldsAsParty(
+            req.params.id,
+            req.user.id,
+            isSeller,
+            fieldUpdates
+          );
         }
         const order = await ordersService.updateOrderStatus(
           req.params.id,

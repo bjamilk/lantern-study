@@ -160,22 +160,15 @@ router.get(
     }
 
     // Get profile
-    const { data: profile, error: profileErr } = await dataLayer.getClient()
-      .from('profiles')
-      .select('id, name, avatar_url, created_at')
-      .eq('id', userId)
-      .single();
+    const { data: profile, error: profileErr } =
+      await dataLayer.marketplace.getSellerProfileCard(userId);
 
     if (profileErr || !profile) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
     // Get all listings
-    const { data: allListings } = await dataLayer.getClient()
-      .from('marketplace_listings')
-      .select('id, title, price, images, category, location, status, views_count, created_at')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    const { data: allListings } = await dataLayer.marketplace.listSellerListings(userId);
 
     const listings = allListings || [];
     const activeListings = listings.filter((l) => l.status === 'active');
@@ -191,11 +184,8 @@ router.get(
       : activeListings.map((l) => l.id);
     let allReviews: any[] = [];
     if (reviewListingIds.length > 0) {
-      const { data: reviews } = await dataLayer.getClient()
-        .from('marketplace_reviews')
-        .select('id, listing_id, reviewer_id, rating, comment, created_at, reviewer:profiles!marketplace_reviews_reviewer_id_fkey(id, name, avatar_url)')
-        .in('listing_id', reviewListingIds)
-        .order('created_at', { ascending: false });
+      const { data: reviews } =
+        await dataLayer.marketplace.listReviewsForListings(reviewListingIds);
       allReviews = reviews || [];
     }
 
@@ -230,14 +220,8 @@ router.get(
       const ownerListingIds = listings.map((l) => l.id);
       if (ownerListingIds.length > 0) {
         const [{ count: favCount }, { count: inquiryCount }] = await Promise.all([
-          dataLayer.getClient()
-            .from('marketplace_favorites')
-            .select('id', { count: 'exact', head: true })
-            .in('listing_id', ownerListingIds),
-          dataLayer.getClient()
-            .from('marketplace_inquiries')
-            .select('id', { count: 'exact', head: true })
-            .in('listing_id', ownerListingIds),
+          dataLayer.marketplace.countFavoritesForListings(ownerListingIds),
+          dataLayer.marketplace.countInquiriesForListings(ownerListingIds),
         ]);
         totalFavorites = favCount || 0;
         totalInquiries = inquiryCount || 0;

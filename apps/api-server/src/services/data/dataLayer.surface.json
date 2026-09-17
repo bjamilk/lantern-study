@@ -896,6 +896,18 @@
           "arity": 0
         },
         {
+          "name": "countFavoritesForListings",
+          "arity": 0
+        },
+        {
+          "name": "countInquiriesForListings",
+          "arity": 0
+        },
+        {
+          "name": "counterOfferRpc",
+          "arity": 0
+        },
+        {
           "name": "createInquiry",
           "arity": 0
         },
@@ -912,11 +924,23 @@
           "arity": 0
         },
         {
+          "name": "createSavedSearch",
+          "arity": 0
+        },
+        {
           "name": "deleteMarketplaceListing",
           "arity": 0
         },
         {
           "name": "deleteMarketplaceListingSafely",
+          "arity": 0
+        },
+        {
+          "name": "deleteSavedSearch",
+          "arity": 0
+        },
+        {
+          "name": "expireOfferIfPending",
           "arity": 0
         },
         {
@@ -928,7 +952,15 @@
           "arity": 0
         },
         {
+          "name": "findPendingOfferForBuyer",
+          "arity": 0
+        },
+        {
           "name": "getBuyerInquiries",
+          "arity": 0
+        },
+        {
+          "name": "getDigitalEntitlement",
           "arity": 0
         },
         {
@@ -976,6 +1008,18 @@
           "arity": 0
         },
         {
+          "name": "getOfferById",
+          "arity": 0
+        },
+        {
+          "name": "getOfferWithListing",
+          "arity": 0
+        },
+        {
+          "name": "getQuestionBankMeta",
+          "arity": 0
+        },
+        {
           "name": "getRelatedMarketplaceListings",
           "arity": 0
         },
@@ -992,7 +1036,15 @@
           "arity": 0
         },
         {
+          "name": "getSellerProfileCard",
+          "arity": 0
+        },
+        {
           "name": "getSellerStats",
+          "arity": 0
+        },
+        {
+          "name": "getStudyPackMeta",
           "arity": 0
         },
         {
@@ -1008,12 +1060,40 @@
           "arity": 0
         },
         {
+          "name": "insertOffer",
+          "arity": 0
+        },
+        {
           "name": "isListingFavorited",
           "arity": 0
         },
         {
           "name": "isMissingRatingColumn",
           "arity": 1
+        },
+        {
+          "name": "listOffersForListing",
+          "arity": 0
+        },
+        {
+          "name": "listOffersForParty",
+          "arity": 0
+        },
+        {
+          "name": "listOrdersForOffers",
+          "arity": 0
+        },
+        {
+          "name": "listReviewsForListings",
+          "arity": 0
+        },
+        {
+          "name": "listSavedSearches",
+          "arity": 0
+        },
+        {
+          "name": "listSellerListings",
+          "arity": 0
         },
         {
           "name": "listingStateError",
@@ -1084,6 +1164,10 @@
           "arity": 0
         },
         {
+          "name": "setOfferStatusIfPending",
+          "arity": 0
+        },
+        {
           "name": "signSimilarListingCards",
           "arity": 0
         },
@@ -1109,6 +1193,14 @@
         },
         {
           "name": "updateMarketplaceListing",
+          "arity": 0
+        },
+        {
+          "name": "updateOrderFieldsAsParty",
+          "arity": 0
+        },
+        {
+          "name": "updateSavedSearch",
           "arity": 0
         }
       ]

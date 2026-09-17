@@ -3042,3 +3042,430 @@ export async function createPurchaseNotification(
     link: `/marketplace/transactions/${transactionId}`,
   });
 }
+
+// ============ ROUTE ESCAPES (monolith lane R2, PR 3) ============
+//
+// The 27 chains `routes/marketplace/*` still built by hand. Moved VERBATIM; the
+// routes keep every decision — the status codes, the 404-not-403 on an offer a
+// caller is not party to, the digital-listing refusal, the ownership checks, and
+// all response shaping.
+//
+// THE OWNER PREDICATE IS THE ACCESS CONTROL. The API holds the service-role
+// client, which BYPASSES RLS, so a buyer id or seller id is a REQUIRED parameter
+// on every function that touches a caller-owned row, applied inside it.
+//
+// Four functions here deliberately look a row up BY ID ALONE, because the caller
+// authorizes afterwards in a way SQL cannot express. Each says so on itself, and
+// each is named in the pull request that moved it.
+
+// ---- saved searches (routes/marketplace/discovery.ts) ----------------------
+
+/** Create a saved search owned by the caller. Returns the stored row. */
+export async function createSavedSearch(
+  supabase: DataClient,
+  userId: string,
+  name: string,
+  filters: unknown,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("saved_searches")
+    .insert({
+      user_id: userId,
+      name,
+      filters,
+      notify: true,
+    })
+    .select("*")
+    .single();
+}
+
+/** Every saved search the caller owns, newest first. */
+export async function listSavedSearches(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("saved_searches")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+}
+
+/**
+ * Delete one of the caller's saved searches. The `userId` filter is the whole
+ * guard: without it anybody could delete anybody's saved search by id.
+ */
+export async function deleteSavedSearch(
+  supabase: DataClient,
+  userId: string,
+  id: string,
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from("saved_searches")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  return { error };
+}
+
+/** Patch one of the caller's saved searches (notify and/or name). */
+export async function updateSavedSearch(
+  supabase: DataClient,
+  userId: string,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("saved_searches")
+    .update(patch)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+}
+
+// ---- the public shop page (routes/marketplace/seller.ts) -------------------
+//
+// A shop page is PUBLIC, so `userId` here identifies WHOSE shop is being shown,
+// not who is asking. What decides visibility is the listing `status` the route
+// filters on afterwards, and the `isOwner` check that gates the private stats.
+
+/** The seller's public profile card. */
+export async function getSellerProfileCard(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("profiles")
+    .select("id, name, avatar_url, created_at")
+    .eq("id", userId)
+    .single();
+}
+
+/**
+ * Every listing the seller has, in any status. The caller splits them into
+ * active / reserved / sold and decides which a visitor may see — a non-owner
+ * gets the shop shelf, the owner gets everything.
+ */
+export async function listSellerListings(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("marketplace_listings")
+    .select("id, title, price, images, category, location, status, views_count, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+}
+
+/** Reviews for a set of listings, newest first, with the reviewer's card. */
+export async function listReviewsForListings(
+  supabase: DataClient,
+  listingIds: string[],
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("marketplace_reviews")
+    .select(
+      "id, listing_id, reviewer_id, rating, comment, created_at, reviewer:profiles!marketplace_reviews_reviewer_id_fkey(id, name, avatar_url)",
+    )
+    .in("listing_id", listingIds)
+    .order("created_at", { ascending: false });
+}
+
+/**
+ * How many favourites those listings have, as a HEAD count — no rows come back.
+ * Dropping `head: true` turns a badge on the seller dashboard into a full scan.
+ */
+export async function countFavoritesForListings(
+  supabase: DataClient,
+  listingIds: string[],
+): Promise<{ count: number | null; error: any }> {
+  const { count, error } = await supabase
+    .from("marketplace_favorites")
+    .select("id", { count: "exact", head: true })
+    .in("listing_id", listingIds);
+  return { count, error };
+}
+
+/** The same, for inquiries. */
+export async function countInquiriesForListings(
+  supabase: DataClient,
+  listingIds: string[],
+): Promise<{ count: number | null; error: any }> {
+  const { count, error } = await supabase
+    .from("marketplace_inquiries")
+    .select("id", { count: "exact", head: true })
+    .in("listing_id", listingIds);
+  return { count, error };
+}
+
+// ---- digital listing meta (routes/marketplace/listings.ts) -----------------
+
+/** Question count and version for a question-bank listing. */
+export async function getQuestionBankMeta(
+  supabase: DataClient,
+  listingId: string,
+): Promise<{ data: { question_count: number; version: number } | null; error: any }> {
+  return await supabase
+    .from("marketplace_question_banks")
+    .select("question_count, version")
+    .eq("listing_id", listingId)
+    .maybeSingle();
+}
+
+/** Contents and version for a study-pack listing. */
+export async function getStudyPackMeta(
+  supabase: DataClient,
+  listingId: string,
+): Promise<{ data: { counts: unknown; version: number } | null; error: any }> {
+  return await supabase
+    .from("marketplace_study_packs")
+    .select("counts, version")
+    .eq("listing_id", listingId)
+    .maybeSingle();
+}
+
+/**
+ * Whether THIS viewer owns the digital product on a listing.
+ *
+ * `viewerId` is required, and the caller must not call this at all for a
+ * signed-out visitor: without the predicate the listing page would tell every
+ * visitor they already own a paid question bank, and the "Download" affordance
+ * follows `owned`.
+ */
+export async function getDigitalEntitlement(
+  supabase: DataClient,
+  listingId: string,
+  viewerId: string,
+): Promise<{ data: { id: string } | null; error: any }> {
+  return await supabase
+    .from("marketplace_question_bank_entitlements")
+    .select("id")
+    .eq("listing_id", listingId)
+    .eq("user_id", viewerId)
+    .maybeSingle();
+}
+
+// ---- offers (routes/marketplace/offers.ts) ---------------------------------
+//
+// THE CONDITIONAL UPDATES ARE THE CONCURRENCY CONTROL. `expireOfferIfPending`
+// and `setOfferStatusIfPending` both carry `eq("status", "pending")`, and the
+// caller reads a zero-row result as 409. Drop that predicate and two tabs can
+// both decline the same offer, or a decline can land on an offer that was
+// already accepted and paid for, stranding the order.
+
+/**
+ * Lazily mark a stale pending offer expired. Conditional on it STILL being
+ * pending, so it cannot overwrite a status somebody else just set. Best-effort:
+ * the caller logs and carries on, and its response must not depend on this.
+ */
+export async function expireOfferIfPending(
+  supabase: DataClient,
+  offerId: string,
+): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from("marketplace_offers")
+    .update({ status: "expired" })
+    .eq("id", offerId)
+    .eq("status", "pending");
+  return { error };
+}
+
+/**
+ * The orders created from a set of offers.
+ *
+ * UNSCOPED BY DESIGN: it reads every order for those offer ids and SELECTS
+ * `buyer_id` and `seller_id` so the caller can drop the rows where the requester
+ * is neither. `requesterId` is a required parameter even though it is not in the
+ * query, because it is the caller's job to apply it and this signature is what
+ * makes that obvious. An order is an affordance hint here, not the payload.
+ */
+export async function listOrdersForOffers(
+  supabase: DataClient,
+  offerIds: string[],
+  requesterId: string,
+): Promise<{ data: any[] | null; error: any; requesterId: string }> {
+  const result = await supabase
+    .from("marketplace_orders")
+    .select("id, status, payment_id, offer_id, buyer_id, seller_id")
+    .in("offer_id", offerIds);
+  return { ...result, requesterId };
+}
+
+/** Create a pending offer. A `23505` means this buyer already has one open. */
+export async function insertOffer(
+  supabase: DataClient,
+  buyerId: string,
+  offer: {
+    listing_id: string;
+    seller_id: string;
+    amount: number;
+    message: string | null;
+    expires_at: string;
+  },
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("marketplace_offers")
+    .insert({
+      listing_id: offer.listing_id,
+      buyer_id: buyerId,
+      seller_id: offer.seller_id,
+      amount: offer.amount,
+      message: offer.message,
+      status: "pending",
+      proposed_by: "buyer",
+      expires_at: offer.expires_at,
+    })
+    .select("*")
+    .single();
+}
+
+/** The caller's own open offer on a listing — the one-pending-per-buyer slot. */
+export async function findPendingOfferForBuyer(
+  supabase: DataClient,
+  listingId: string,
+  buyerId: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("marketplace_offers")
+    .select("*")
+    .eq("listing_id", listingId)
+    .eq("buyer_id", buyerId)
+    .eq("status", "pending")
+    .maybeSingle();
+}
+
+/** Every offer where the caller is the buyer, or the seller. Newest first. */
+export async function listOffersForParty(
+  supabase: DataClient,
+  userId: string,
+  role: "buyer" | "seller",
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("marketplace_offers")
+    .select(
+      "*, listing:marketplace_listings(id, title, price, images, status, category), buyer:profiles!marketplace_offers_buyer_id_fkey(id, name, avatar_url), seller:profiles!marketplace_offers_seller_id_fkey(id, name, avatar_url)",
+    )
+    .eq(role === "seller" ? "seller_id" : "buyer_id", userId)
+    .order("created_at", { ascending: false });
+}
+
+/**
+ * One offer with its listing, BY ID ALONE.
+ *
+ * Unscoped on purpose: the caller compares `buyer_id`/`seller_id` itself and
+ * answers 404 — not 403 — for a stranger, so nobody can probe which offer ids
+ * exist. Adding an owner filter here would not change who is refused; it would
+ * only move the decision somewhere it reads as an accident.
+ */
+export async function getOfferWithListing(
+  supabase: DataClient,
+  offerId: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("marketplace_offers")
+    .select("*, listing:marketplace_listings(id, title, price)")
+    .eq("id", offerId)
+    .single();
+}
+
+/**
+ * Re-read one offer BY ID ALONE.
+ *
+ * Unscoped on purpose, and safe only where it is called: the counter path passes
+ * an id the `marketplace_counter_offer` RPC has just returned, and the accept
+ * path passes the id `finalizeOfferAcceptSale` has already authorized and
+ * written. Never pass an id the caller has not been proven entitled to.
+ */
+export async function getOfferById(
+  supabase: DataClient,
+  offerId: string,
+  options: { require?: boolean } = {},
+): Promise<{ data: any | null; error: any }> {
+  const query = supabase.from("marketplace_offers").select("*").eq("id", offerId);
+  return options.require ? await query.single() : await query.maybeSingle();
+}
+
+/**
+ * Move an offer to its next status, ONLY while it is still pending. A zero-row
+ * result is the caller's 409 — see the section note above.
+ *
+ * By offer id alone: the caller has already established that it is a party to
+ * this offer, through `getOfferWithListing`, and answers 404 otherwise.
+ */
+export async function setOfferStatusIfPending(
+  supabase: DataClient,
+  offerId: string,
+  nextStatus: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("marketplace_offers")
+    .update({ status: nextStatus })
+    .eq("id", offerId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+}
+
+/** Every offer on one listing, with the buyer's card. The caller checks ownership. */
+export async function listOffersForListing(
+  supabase: DataClient,
+  listingId: string,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("marketplace_offers")
+    .select("*, buyer:profiles!marketplace_offers_buyer_id_fkey(id, name, avatar_url)")
+    .eq("listing_id", listingId)
+    .order("created_at", { ascending: false });
+}
+
+/**
+ * The atomic counter: parent to `countered` and the child insert, in ONE
+ * transaction. A counter built from two statements here could leave a listing
+ * with two live offers if the second failed.
+ */
+export async function counterOfferRpc(
+  supabase: DataClient,
+  offerId: string,
+  actorId: string,
+  counterAmount: number,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase.rpc("marketplace_counter_offer", {
+    p_offer_id: offerId,
+    p_actor_id: actorId,
+    p_counter_amount: counterAmount,
+  });
+}
+
+// ---- orders (routes/marketplace/orders.ts) ---------------------------------
+
+/**
+ * Patch the caller's own fields on an order, as buyer XOR seller.
+ *
+ * Two EXACT filters rather than one interpolated `.or()` string — that predicate
+ * is what stops a buyer writing a seller-only field, or either party writing
+ * somebody else's order, even after `getOrderById` has resolved them as a party.
+ *
+ * KNOWN ISSUE (tracked, #108): the caller DISCARDS the `{ error }` this returns.
+ * A failed update is invisible — the handler carries on to the status transition
+ * and answers success — so a seller told their meeting point saved may have
+ * saved nothing. The error is returned here so a caller CAN check it; the route
+ * is left exactly as it was, because this lane moves queries and does not fix
+ * them.
+ */
+export async function updateOrderFieldsAsParty(
+  supabase: DataClient,
+  orderId: string,
+  userId: string,
+  isSeller: boolean,
+  fieldUpdates: Record<string, unknown>,
+): Promise<{ error: any }> {
+  const scoped = supabase
+    .from("marketplace_orders")
+    .update(fieldUpdates)
+    .eq("id", orderId);
+  const { error } = await (isSeller
+    ? scoped.eq("seller_id", userId)
+    : scoped.eq("buyer_id", userId));
+  return { error };
+}
