@@ -47,4 +47,33 @@ describe('idempotencyMiddleware', () => {
     expect(result).toEqual({ cached: true });
     spy.mockRestore();
   });
+
+  /**
+   * #117. The lease's per-route policy is only as good as its plumbing: a route
+   * that declares `leaseReclaim` and never has it forwarded would silently get
+   * the default, and the declaration would be decoration.
+   */
+  it.each([
+    ['forwards leaseReclaim when the route opts in', true, true],
+    ['leaves it undefined when the route stays on the default', undefined, undefined],
+  ])('%s', async (_name, declared, expected) => {
+    const spy = jest
+      .spyOn(idempotencyService, 'withIdempotency')
+      .mockResolvedValue({ ok: true } as any);
+
+    const mw = idempotencyMiddleware({ operation: 'test_op', leaseReclaim: declared });
+    const req: any = { user: { id: 'u1' }, headers: { 'idempotency-key': 'abc' } };
+    mw(req, {} as any, jest.fn());
+    await req.runIdempotent(async () => ({ x: 1 }));
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.anything(),
+      'u1',
+      'test_op',
+      'abc',
+      expect.any(Function),
+      { leaseReclaim: expected }
+    );
+    spy.mockRestore();
+  });
 });

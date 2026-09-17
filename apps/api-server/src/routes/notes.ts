@@ -2138,6 +2138,11 @@ router.post(
   '/share/:token/accept',
   idempotencyMiddleware({
     operation: 'note_share_accept',
+    // #117: safe to replay after an abandoned claim. `accept_note_share_link`
+    // takes the link row FOR UPDATE and answers a second call with
+    // `already_accepted`, so re-running it re-reports the grant the dead attempt
+    // made rather than granting again.
+    leaseReclaim: true,
     fallbackKey: (req) =>
       `note_share_accept:${(req as IdempotentRequest).user?.id}:${req.params.token}`,
   }),

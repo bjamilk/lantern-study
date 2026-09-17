@@ -1030,6 +1030,10 @@ export const initializeTestRoutes = (layer: DataLayer, cache: CacheService) => {
     requireTestOwner(),
     idempotencyMiddleware({
       operation: 'test_result_create',
+      // #117: safe to replay after an abandoned claim. The result is an upsert
+      // on `session_id`, and the coin award goes through `awardWalletOnce` under
+      // a per-test key, so a second run rewrites one row and pays nothing twice.
+      leaseReclaim: true,
       fallbackKey: (req: any) =>
         typeof req.params?.testId === 'string' && req.params.testId
           ? `test-result:${req.params.testId}`

@@ -26,6 +26,13 @@ export type IdempotencyMiddlewareOptions = {
   requireKey?: boolean;
   /** Used when Idempotency-Key header is absent (legacy windowed keys). */
   fallbackKey?: (req: Request) => string | null;
+  /**
+   * Passed straight to `withIdempotency` (#117). Opt IN only for a route whose
+   * handler can run a second time after a crash without duplicating anything —
+   * see the per-caller table in `docs/idempotency-lease.md`. Left out, an
+   * abandoned claim is retired rather than replayed.
+   */
+  leaseReclaim?: boolean;
 };
 
 export type IdempotentRequest = Request & {
@@ -73,7 +80,9 @@ export function idempotencyMiddleware(options: IdempotencyMiddlewareOptions) {
       if (!userId) {
         return handler();
       }
-      return withIdempotency(getServiceClient(), userId, options.operation, key, handler);
+      return withIdempotency(getServiceClient(), userId, options.operation, key, handler, {
+        leaseReclaim: options.leaseReclaim,
+      });
     };
 
     next();
