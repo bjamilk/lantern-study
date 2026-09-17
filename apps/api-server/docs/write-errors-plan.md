@@ -153,5 +153,9 @@ rest of `services/marketplacePayments.ts` — 24 sites, so that file is now at Z
 baseline is 87 → 63. B PR 2 (done): `marketplaceOrders.ts` — 8 fixed and the dead
 `voidOrphanPendingTransaction` deleted, plus the `updateOrderFieldsAsParty` call site in
 `routes/marketplace/orders.ts` that #111 marked; baseline 63 → 53. Both money services are
-now at ZERO. Then the rest by domain, best-effort sites batched. Each PR re-freezes the ratchet baseline
+now at ZERO. B PR 3 (done): the must-succeed stragglers — `adminAudit`, `apiKey`, `idempotency`,
+`marketplaceAddresses`, `marketplaceCheckout`, `marketplaceStudyPacks`,
+`marketplaceQuestionBanks`; baseline 53 → 40. Only TWO of the thirteen turned out to be
+must-succeed (the default-address flip); the rest are must-be-SEEN. Then the rest by domain,
+best-effort sites batched. Each PR re-freezes the ratchet baseline
 downward in its own commit, with the before and after counts in the PR body.
