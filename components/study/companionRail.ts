@@ -47,8 +47,16 @@ export const COMPANION_RAIL_DEFAULTS: CompanionRailPreferences = {
  * The narrowest studio we are willing to leave behind. Below this a quiz
  * question wraps to four lines and a flashcard stops being readable, which is
  * the failure the issue was filed about.
+ *
+ * WHY 540 AND NOT 560. 560 was the first number, and it missed the one window
+ * the issue was filed from by two pixels: the founder's 1258 device-px Chrome at
+ * 125% zoom is a 1006 CSS-px viewport, and with the nav stood down inside a
+ * studio that is a 942px room — 558px of studio after a 384px panel. Refusing to
+ * dock there would have left the founder's own case as the one the fix did not
+ * reach. 540 is the width at which the studio still holds a quiz question and a
+ * flashcard; it is a floor, not a target.
  */
-export const COMPANION_RAIL_STUDIO_MIN = 560;
+export const COMPANION_RAIL_STUDIO_MIN = 540;
 
 /** The narrowest the docked companion is ever drawn. */
 export const COMPANION_RAIL_MIN_WIDTH = 384;

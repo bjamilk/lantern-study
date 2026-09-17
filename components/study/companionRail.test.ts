@@ -32,13 +32,13 @@ describe('decideCompanionRail', () => {
   });
 
   it('refuses to dock one pixel below the threshold, and docks at it', () => {
-    expect(COMPANION_RAIL_DOCK_MIN_ROW).toBe(944);
+    expect(COMPANION_RAIL_DOCK_MIN_ROW).toBe(924);
     expect(decide(COMPANION_RAIL_DOCK_MIN_ROW - 1, 'open')).toBe('collapsed');
     expect(decide(COMPANION_RAIL_DOCK_MIN_ROW, 'open')).toBe('docked');
   });
 
   it('draws no rail at all on a row that cannot spare 48px', () => {
-    expect(COMPANION_RAIL_MIN_ROW).toBe(608);
+    expect(COMPANION_RAIL_MIN_ROW).toBe(588);
     expect(decide(COMPANION_RAIL_MIN_ROW - 1, 'open')).toBe('none');
     expect(decide(COMPANION_RAIL_MIN_ROW - 1, 'collapsed')).toBe('none');
     // Not even an explicit expand conjures a rail there: the overlay is the
@@ -64,18 +64,23 @@ describe('decideCompanionRail', () => {
   });
 
   it('is the 1006px focus room from the issue: the nav is down, the room is wide', () => {
-    // The media query said "under lg, no rail". The row is 942px.
+    // The founder's own window, and the case the old media query got backwards:
+    // "under lg, no rail", on a 942px room. It docks now, leaving a 558px
+    // studio — which is why STUDIO_MIN is 540 and not the 560 it started at.
     const row = 1006 - 64;
     expect(companionRailFit(row).fits).toBe(true);
-    // Two pixels under the dock threshold, so it collapses — and the founder's
-    // window is the one that proves the threshold is doing real work.
-    expect(decide(row, 'open')).toBe('collapsed');
+    expect(companionRailFit(row).canDock).toBe(true);
+    expect(row - companionRailFit(row).dockWidth).toBe(558);
+    // A studio still starts collapsed there — the screen goes to studying —
+    // but the button now docks rather than throwing a sheet over the studio.
+    expect(decide(row, 'collapsed')).toBe('collapsed');
+    expect(decide(row, 'collapsed', 'expand')).toBe('docked');
   });
 });
 
 describe('companionRailFit', () => {
   it('always leaves the studio its minimum at every docked width', () => {
-    for (const row of [944, 1007, 1008, 1071, 1072, 1600, 2400]) {
+    for (const row of [924, 987, 988, 1051, 1052, 1600, 2400]) {
       const fit = companionRailFit(row);
       expect(fit.canDock).toBe(true);
       expect(row - fit.dockWidth).toBeGreaterThanOrEqual(COMPANION_RAIL_STUDIO_MIN);
@@ -83,14 +88,14 @@ describe('companionRailFit', () => {
   });
 
   it('grows the rail in three steps as the row gets roomier', () => {
-    expect(companionRailFit(1000).dockWidth).toBe(384);
-    expect(companionRailFit(1008).dockWidth).toBe(448);
-    expect(companionRailFit(1072).dockWidth).toBe(512);
+    expect(companionRailFit(980).dockWidth).toBe(384);
+    expect(companionRailFit(988).dockWidth).toBe(448);
+    expect(companionRailFit(1052).dockWidth).toBe(512);
   });
 
   it('compares two fits by the answer, not by the pixel', () => {
     expect(sameCompanionRailFit(companionRailFit(1200), companionRailFit(1250))).toBe(true);
-    expect(sameCompanionRailFit(companionRailFit(1000), companionRailFit(1100))).toBe(false);
+    expect(sameCompanionRailFit(companionRailFit(980), companionRailFit(1100))).toBe(false);
   });
 });
 

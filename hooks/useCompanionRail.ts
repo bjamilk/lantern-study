@@ -27,7 +27,7 @@ import {
  * ONE OBSERVER, FEW RENDERS. State holds the FIT — three booleans-worth of
  * answer — not the pixel width, and a resize that does not change the answer
  * does not update state at all. Dragging a window edge therefore re-renders the
- * room at most twice (once crossing 608px, once crossing 944px) instead of once
+ * room at most twice (once crossing 588px, once crossing 924px) instead of once
  * per frame.
  *
  * THE FALLBACK IS THE OLD BEHAVIOUR, EXACTLY. Server rendering, and any browser

@@ -138,7 +138,7 @@ describe('deciding from the room, not the window', () => {
   it('grows the docked panel on the row, not on the viewport', async () => {
     await show();
     expect(rail.dockWidthClass).toBe('w-[32rem]');
-    await resize(1000);
+    await resize(950);
     expect(rail.dockWidthClass).toBe('w-96');
   });
 
