@@ -260,8 +260,7 @@ router.post(
 
         const email =
           (typeof req.user?.email === 'string' && req.user.email) ||
-          (await dataLayer.getClient().auth.admin.getUserById(buyerId)).data.user?.email ||
-          '';
+          (await dataLayer.users.getAuthUserEmail(buyerId)) || '';
 
         const requestedGroups = Array.isArray(req.body?.groups) ? req.body.groups : [];
         const modeBySeller = new Map<

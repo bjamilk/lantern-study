@@ -850,3 +850,30 @@ export async function searchMessages(
     ...deps.normalizeMessageRecord(msg),
   }));
 }
+
+/**
+ * Every DM thread the caller participates in, most recent first (monolith lane
+ * R2, PR 2b — moved verbatim from `routes/messages.ts`).
+ *
+ * `contains("participant_ids", JSON.stringify([userId]))` passes a JSON STRING
+ * on purpose: `participant_ids` is jsonb, and PostgREST renders a JS array as
+ * Postgres `{uuid}`, which fails with 22P02. That predicate is also the access
+ * control — the service role BYPASSES RLS — and the caller re-checks membership
+ * on each row afterwards, because `contains` is a containment test on a column
+ * the caller does not otherwise validate.
+ *
+ * `nullsFirst: false` keeps threads that have never had a message at the BOTTOM
+ * rather than the top of the list.
+ */
+export async function listDmThreadsForUser(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase
+    .from("dm_threads")
+    .select(
+      "id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by, history_cleared_at, status, requested_by",
+    )
+    .contains("participant_ids", JSON.stringify([userId]))
+    .order("last_message_time", { ascending: false, nullsFirst: false });
+}

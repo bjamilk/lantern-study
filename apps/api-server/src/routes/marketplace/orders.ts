@@ -81,8 +81,7 @@ router.post(
           if (marketplacePaystackEnabled()) {
             const email =
               (typeof req.user?.email === 'string' && req.user.email) ||
-              (await dataLayer.getClient().auth.admin.getUserById(buyerId)).data.user
-                ?.email ||
+              (await dataLayer.users.getAuthUserEmail(buyerId)) ||
               '';
             if (!email) {
               // R5a: explicit PublicError — this is the buyer's problem to fix.

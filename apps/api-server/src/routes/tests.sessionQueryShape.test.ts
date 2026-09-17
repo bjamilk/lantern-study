@@ -20,7 +20,8 @@ jest.mock('../middleware/auth', () => ({
 }));
 
 import router, { initializeTestRoutes } from './tests';
-import { createQueryRecorder, runRouteHandler, type ResolveResult } from '../testSupport/queryRecorder';
+import { createQueryRecorder, runRouteHandler, bindDataModule, type ResolveResult } from '../testSupport/queryRecorder';
+import * as testsData from '../services/data/tests';
 
 const USER = 'user-1';
 const SESSION = 'session-9';
@@ -31,6 +32,7 @@ function initWith(resolve?: ResolveResult) {
     {
       getClient: () => rec.client,
       tests: {
+        ...bindDataModule(testsData, rec.client),
         mapTestSessionRowToClient: (row: any) => ({ ...row, mapped: true }),
         attachSourceNoteTitles: jest.fn(async () => {}),
       },

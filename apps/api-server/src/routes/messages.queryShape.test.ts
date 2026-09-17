@@ -39,7 +39,10 @@ jest.mock('../middleware/auth', () => ({
 }));
 
 import router, { initializeMessageRoutes } from './messages';
-import { createQueryRecorder, runRouteHandler, type QueryResult, type ResolveResult } from '../testSupport/queryRecorder';
+import { createQueryRecorder, runRouteHandler, bindDataModule, type QueryResult, type ResolveResult } from '../testSupport/queryRecorder';
+import * as messageSearchData from '../services/data/messageSearch';
+import * as directMessagesData from '../services/data/directMessages';
+import * as usersData from '../services/data/users';
 
 const USER = 'user-1';
 const OTHER = 'user-2';
@@ -50,11 +53,12 @@ function initWith(resolve?: ResolveResult) {
     {
       getClient: () => rec.client,
       groups: {},
-      users: {},
+      users: bindDataModule(usersData, rec.client),
       notifications: {},
       readState: {},
       mappers: {},
-      directMessages: {},
+      messageSearch: bindDataModule(messageSearchData, rec.client),
+      directMessages: bindDataModule(directMessagesData, rec.client),
       groupMessages: {},
       uploads: {},
     } as any,

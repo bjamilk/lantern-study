@@ -27,13 +27,23 @@ jest.mock('@lantern/shared/marketplace', () => ({ MARKETPLACE_DEFAULT_COUNTRY: '
 jest.mock('@lantern/shared/jobs', () => ({ JOBS_DEFAULT_COUNTRY: 'NG' }));
 
 import router, { initializeSitemapRoutes } from './sitemap';
-import { createQueryRecorder, runRouteHandler, type QueryResult, type ResolveResult } from '../testSupport/queryRecorder';
+import { createQueryRecorder, runRouteHandler, bindDataModule, type QueryResult, type ResolveResult } from '../testSupport/queryRecorder';
+import * as sitemapData from '../services/data/sitemap';
 
 const emptyCache = () => ({ get: jest.fn(async () => null), set: jest.fn(async () => {}) });
 
+/**
+ * The namespace is the REAL data module bound to the recording client, exactly
+ * the way `data/index.ts` binds it to the live one: the route calls
+ * `dataLayer.<ns>.<fn>(…)`, the real module builds the chain, the recorder
+ * captures it. The trace is still the query the database would see, end to end.
+ */
 function initWith(resolve?: ResolveResult) {
   const rec = createQueryRecorder(resolve);
-  initializeSitemapRoutes({ getClient: () => rec.client } as any, emptyCache() as any);
+  initializeSitemapRoutes(
+    { getClient: () => rec.client, sitemap: bindDataModule(sitemapData, rec.client) } as any,
+    emptyCache() as any,
+  );
   return rec;
 }
 

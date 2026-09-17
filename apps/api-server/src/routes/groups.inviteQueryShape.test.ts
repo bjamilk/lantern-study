@@ -28,7 +28,8 @@ jest.mock('../middleware/auth', () => ({
 }));
 
 import router, { initializeGroupRoutes } from './groups';
-import { createQueryRecorder, runRouteHandler, type QueryResult, type ResolveResult } from '../testSupport/queryRecorder';
+import { createQueryRecorder, runRouteHandler, bindDataModule, type QueryResult, type ResolveResult } from '../testSupport/queryRecorder';
+import * as groupsData from '../services/data/groups';
 
 const GROUP = {
   id: 'group-1',
@@ -43,7 +44,11 @@ function initWith(resolve?: ResolveResult, groups: Record<string, unknown> = {})
   initializeGroupRoutes(
     {
       getClient: () => rec.client,
-      groups: { getGroupByInviteId: jest.fn(async () => GROUP), ...groups },
+      groups: {
+        ...bindDataModule(groupsData, rec.client),
+        getGroupByInviteId: jest.fn(async () => GROUP),
+        ...groups,
+      },
       users: {},
       notifications: {},
     } as any,

@@ -92,7 +92,7 @@ router.post(
       return res.status(400).json({ success: false, error: 'No valid events in batch.' });
     }
 
-    const { error } = await dataLayer.getClient().from('product_events').insert(rows);
+    const { error } = await dataLayer.productEvents.insertProductEvents(rows);
     if (error) {
       logger.warn('product_events insert failed', { error: error.message, count: rows.length });
       return res.status(500).json({ success: false, error: 'Failed to record events.' });

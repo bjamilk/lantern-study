@@ -26,7 +26,8 @@ jest.mock('../services/redisStore', () => ({
 }));
 
 import router, { initializeUserRoutes } from './users';
-import { stubDataLayer } from '../services/data/testStub';
+import { stubDataLayer, bindDataModule } from '../services/data/testStub';
+import * as usersData from '../services/data/users';
 
 type ProfileRow = { expo_push_token?: unknown; settings?: unknown } | null;
 
@@ -35,16 +36,25 @@ let profileError: unknown = null;
 const updatedTokens: Array<string | null> = [];
 
 function initWith() {
-  const supabase: any = {
-    getClient: () => ({
-      from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({ data: profileRow, error: profileError }),
-          }),
+  const client = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: profileRow, error: profileError }),
         }),
       }),
     }),
+  };
+  const supabase: any = {
+    getClient: () => client,
+    // The profile read moved into `services/data/users.ts` (lane R2, PR 2b), so
+    // the route reaches it through the layer. Binding the real module to this
+    // same fake client leaves what this suite asserts unchanged.
+    //
+    // FLAT, not under a `users` key: this stand-in goes through `stubDataLayer`,
+    // whose proxy maps EVERY namespace onto the flat object, so a nested key
+    // would never be read.
+    ...bindDataModule(usersData, client),
     getUserById: async () => ({ id: 'user-1', settings: profileRow?.settings ?? {} }),
     updateExpoPushToken: async (_id: string, token: string) => {
       updatedTokens.push(token);

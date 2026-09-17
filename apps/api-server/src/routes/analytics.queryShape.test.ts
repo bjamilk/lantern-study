@@ -19,11 +19,15 @@ jest.mock('../middleware/auth', () => ({
 }));
 
 import router, { initializeAnalyticsRoutes } from './analytics';
-import { createQueryRecorder, runRouteHandler, type ResolveResult } from '../testSupport/queryRecorder';
+import { createQueryRecorder, runRouteHandler, bindDataModule, type ResolveResult } from '../testSupport/queryRecorder';
+import * as productEventsData from '../services/data/productEvents';
 
 function initWith(resolve?: ResolveResult) {
   const rec = createQueryRecorder(resolve);
-  initializeAnalyticsRoutes({ getClient: () => rec.client } as any);
+  initializeAnalyticsRoutes({
+    getClient: () => rec.client,
+    productEvents: bindDataModule(productEventsData, rec.client),
+  } as any);
   return rec;
 }
 

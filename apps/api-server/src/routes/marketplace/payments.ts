@@ -124,8 +124,7 @@ router.post(
     try {
       const email =
         (typeof req.user?.email === 'string' && req.user.email) ||
-        (await dataLayer.getClient().auth.admin.getUserById(userId)).data.user?.email ||
-        '';
+        (await dataLayer.users.getAuthUserEmail(userId)) || '';
       if (!email) {
         return res.status(400).json({
           success: false,

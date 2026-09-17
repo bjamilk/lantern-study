@@ -517,7 +517,12 @@ router.post(
     await setUserSessionCutoff(userId);
 
     try {
-      await dataLayer.getClient().auth.admin.signOut(userId, 'global');
+      // KNOWN ISSUE (tracked, #108): GoTrue RESOLVES with `{error}` rather than
+      // throwing, so this catch cannot see a reported failure and it is
+      // discarded. Not a session-integrity hole today because
+      // `setUserSessionCutoff` above has already invalidated the outstanding
+      // tokens. Left as-is; R2 moves calls, it does not fix them.
+      await dataLayer.users.signOutUserGlobally(userId);
     } catch (err) {
       logger.warn('Supabase global signOut failed', { userId, err });
     }
@@ -549,7 +554,9 @@ router.post(
     await setUserSessionCutoff(userId);
 
     try {
-      await dataLayer.getClient().auth.admin.signOut(userId, 'global');
+      // KNOWN ISSUE (tracked, #108): see the note in POST /logout — the returned
+      // `{error}` is discarded, and the cutoff above is what ends the sessions.
+      await dataLayer.users.signOutUserGlobally(userId);
     } catch (err) {
       logger.warn('Supabase global signOut failed on session revoke', { userId, err });
     }

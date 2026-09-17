@@ -39,14 +39,7 @@ router.get(
 
     // Phase 4 R. Active, non-'other' campuses only — the same visibility rule
     // the summary endpoint hand-writes, because the API bypasses RLS.
-    const client = dataLayer.getClient();
-    const { data, error } = await client
-      .from('marketplace_campuses')
-      .select('slug')
-      .eq('active', true)
-      .neq('kind', 'other')
-      .order('name', { ascending: true })
-      .limit(5000);
+    const { data, error } = await dataLayer.sitemap.listCampusSlugsForSitemap();
 
     if (error) {
       return res.status(500).send('<?xml version="1.0" encoding="UTF-8"?><error />');
@@ -81,14 +74,9 @@ router.get(
       return sitemapXmlResponse(res, cached);
     }
 
-    const client = dataLayer.getClient();
-    const { data, error } = await client
-      .from('marketplace_listings')
-      .select('id, updated_at')
-      .eq('status', 'active')
-      .eq('country_code', MARKETPLACE_DEFAULT_COUNTRY)
-      .order('updated_at', { ascending: false })
-      .limit(5000);
+    const { data, error } = await dataLayer.sitemap.listListingsForSitemap(
+      MARKETPLACE_DEFAULT_COUNTRY
+    );
 
     if (error) {
       return res.status(500).send('<?xml version="1.0" encoding="UTF-8"?><error />');
@@ -134,21 +122,9 @@ router.get(
       return sitemapXmlResponse(res, cached);
     }
 
-    const client = dataLayer.getClient();
     const [postings, companies] = await Promise.all([
-      client
-        .from('job_postings')
-        .select('id, updated_at')
-        .eq('status', 'active')
-        .eq('country_code', JOBS_DEFAULT_COUNTRY)
-        .order('updated_at', { ascending: false })
-        .limit(5000),
-      client
-        .from('job_companies')
-        .select('id, updated_at')
-        .eq('verification_status', 'verified')
-        .order('updated_at', { ascending: false })
-        .limit(2000),
+      dataLayer.sitemap.listJobPostingsForSitemap(JOBS_DEFAULT_COUNTRY),
+      dataLayer.sitemap.listJobCompaniesForSitemap(),
     ]);
 
     if (postings.error || companies.error) {

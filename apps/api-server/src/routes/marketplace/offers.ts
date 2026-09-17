@@ -470,9 +470,7 @@ router.put(
             if (marketplacePaystackEnabled() && finalized.orderId) {
               try {
                 const buyerId = String(acceptedOffer.buyer_id);
-                const email =
-                  (await dataLayer.getClient().auth.admin.getUserById(buyerId)).data.user
-                    ?.email || '';
+                const email = await dataLayer.users.getAuthUserEmail(buyerId);
                 if (email) {
                   checkout = (await getMarketplacePaymentsService(
                     dataLayer

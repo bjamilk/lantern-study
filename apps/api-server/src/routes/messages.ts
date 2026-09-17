@@ -237,37 +237,31 @@ router.get(
     const pattern = `%${q.replace(/[,()%_]/g, ' ').trim()}%`;
     if (pattern === '%%') return res.json({ results: [] });
 
-    const client = dataLayer.getClient();
-
     try {
       // --- resolve the group and thread scopes the caller may search ---
+      // This block IS the authorization model: the service role bypasses RLS,
+      // so the searches below are safe only because they are restricted to the
+      // ids resolved here. See the banner of `services/data/messageSearch.ts`.
       let groupIds: string[] = [];
       if (scopeGroupId) {
-        const { data: membership } = await client
-          .from('group_members')
-          .select('group_id')
-          .eq('group_id', scopeGroupId)
-          .eq('user_id', userId)
-          .maybeSingle();
+        const { data: membership } = await dataLayer.messageSearch.getSearchScopeMembership(
+          scopeGroupId,
+          userId
+        );
         if (membership) groupIds = [scopeGroupId];
       } else if (!scopeThreadId) {
-        const { data: memberships } = await client
-          .from('group_members')
-          .select('group_id')
-          .eq('user_id', userId)
-          .limit(300);
+        const { data: memberships } =
+          await dataLayer.messageSearch.listSearchableGroupIds(userId);
         groupIds = (memberships || []).map((m: any) => m.group_id).filter(Boolean);
       }
 
       type ThreadRow = { id: string; participant_ids: string[]; participants: any };
       let threads: ThreadRow[] = [];
       if (scopeThreadId || !scopeGroupId) {
-        let threadQuery = client
-          .from('dm_threads')
-          .select('id, participant_ids, participants, hidden_by')
-          .contains('participant_ids', JSON.stringify([userId]));
-        if (scopeThreadId) threadQuery = threadQuery.eq('id', scopeThreadId);
-        const { data: threadRows } = await threadQuery.limit(300);
+        const { data: threadRows } = await dataLayer.messageSearch.listSearchableThreads(
+          userId,
+          scopeThreadId
+        );
         threads = (threadRows || []).filter((t: any) => {
           const pids = Array.isArray(t.participant_ids) ? t.participant_ids : [];
           if (!pids.includes(userId)) return false;
@@ -281,24 +275,10 @@ router.get(
       // --- search both stores ---
       const [groupHits, dmHits] = await Promise.all([
         groupIds.length
-          ? client
-              .from('messages')
-              .select('id, group_id, sender_id, text, question_stem, timestamp')
-              .in('group_id', groupIds)
-              .is('removed_at', null)
-              .or(`text.ilike.${pattern},question_stem.ilike.${pattern}`)
-              .order('timestamp', { ascending: false })
-              .limit(limit)
+          ? dataLayer.messageSearch.searchGroupMessages(groupIds, pattern, limit)
           : Promise.resolve({ data: [] as any[] }),
         threadIds.length
-          ? client
-              .from('dm_messages')
-              .select('id, thread_id, sender_id, text, timestamp')
-              .in('thread_id', threadIds)
-              .is('removed_at', null)
-              .ilike('text', pattern)
-              .order('timestamp', { ascending: false })
-              .limit(limit)
+          ? dataLayer.messageSearch.searchDirectMessages(threadIds, pattern, limit)
           : Promise.resolve({ data: [] as any[] }),
       ]);
 
@@ -309,10 +289,9 @@ router.get(
       const matchedGroupIds = [...new Set(groupRows.map((m: any) => m.group_id))];
       let groupNameById = new Map<string, { name: string; avatarUrl: string | null }>();
       if (matchedGroupIds.length) {
-        const { data: groupMeta } = await client
-          .from('groups')
-          .select('id, name, avatar_url')
-          .in('id', matchedGroupIds);
+        const { data: groupMeta } = await dataLayer.messageSearch.listGroupLabels(
+          matchedGroupIds as string[]
+        );
         groupNameById = new Map(
           (groupMeta || []).map((g: any) => [g.id, { name: g.name, avatarUrl: g.avatar_url || null }])
         );
@@ -1097,11 +1076,7 @@ router.get(
     try {
       // participant_ids is jsonb — pass a JSON string so PostgREST uses cs.["uuid"]
       // (a JS array becomes Postgres {uuid} and fails with 22P02 invalid json).
-      const { data: threads, error } = await dataLayer.getClient()
-        .from('dm_threads')
-        .select('id, participant_ids, participants, last_message, last_message_time, archived_by, hidden_by, history_cleared_at, status, requested_by')
-        .contains('participant_ids', JSON.stringify([userId]))
-        .order('last_message_time', { ascending: false, nullsFirst: false });
+      const { data: threads, error } = await dataLayer.directMessages.listDmThreadsForUser(userId);
 
       if (error) {
         logger.error('Error fetching DM threads', {
@@ -1135,10 +1110,7 @@ router.get(
 
       let profilesMap: Record<string, any> = {};
       if (otherUserIds.length > 0) {
-        const { data: profiles } = await dataLayer.getClient()
-          .from('profiles')
-          .select('id, name, avatar_url')
-          .in('id', otherUserIds);
+        const { data: profiles } = await dataLayer.users.listProfileCards(otherUserIds);
         if (profiles) {
           profilesMap = Object.fromEntries(profiles.map((p: any) => [p.id, p]));
         }

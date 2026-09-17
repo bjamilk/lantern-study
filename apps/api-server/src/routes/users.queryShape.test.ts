@@ -37,7 +37,9 @@ jest.mock('../middleware/auth', () => ({
 }));
 
 import router, { initializeUserRoutes } from './users';
-import { createQueryRecorder, runRouteHandler, type QueryResult, type ResolveResult } from '../testSupport/queryRecorder';
+import { createQueryRecorder, runRouteHandler, bindDataModule, type QueryResult, type ResolveResult } from '../testSupport/queryRecorder';
+import * as usersData from '../services/data/users';
+import * as budgetData from '../services/data/budget';
 
 const USER = 'user-1';
 
@@ -46,7 +48,8 @@ function initWith(resolve?: ResolveResult, layer: Record<string, unknown> = {}) 
   initializeUserRoutes(
     {
       getClient: () => rec.client,
-      users: {},
+      users: bindDataModule(usersData, rec.client),
+      budget: bindDataModule(budgetData, rec.client),
       notifications: {},
       ...layer,
     } as any,

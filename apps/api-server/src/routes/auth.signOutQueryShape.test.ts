@@ -40,14 +40,18 @@ jest.mock('../services/tokenDenylist', () => ({
 }));
 
 import router, { initializeAuthRoutes } from './auth';
-import { createQueryRecorder } from '../testSupport/queryRecorder';
+import { createQueryRecorder, bindDataModule } from '../testSupport/queryRecorder';
+import * as usersData from '../services/data/users';
 import { runRouteHandler } from '../testSupport/queryRecorder';
 
 const USER = 'user-1';
 
 function initWith(authResult: Record<string, unknown> = { data: {}, error: null }) {
   const rec = createQueryRecorder({ data: null, error: null }, authResult);
-  initializeAuthRoutes({ getClient: () => rec.client, users: {} } as any, {
+  initializeAuthRoutes({
+    getClient: () => rec.client,
+    users: bindDataModule(usersData, rec.client),
+  } as any, {
     invalidateUserCache: jest.fn(async () => {}),
     get: jest.fn(async () => null),
     set: jest.fn(async () => {}),
@@ -82,7 +86,10 @@ describe('POST /logout', () => {
     rec.client.auth.admin.signOut = jest.fn(async () => {
       throw new Error('gotrue unreachable');
     });
-    initializeAuthRoutes({ getClient: () => rec.client, users: {} } as any, {
+    initializeAuthRoutes({
+      getClient: () => rec.client,
+      users: bindDataModule(usersData, rec.client),
+    } as any, {
       invalidateUserCache: jest.fn(async () => {}),
     } as any);
 

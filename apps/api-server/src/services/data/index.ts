@@ -64,10 +64,13 @@ import * as groupMessagesData from "./groupMessages";
 import * as groupsData from "./groups";
 import * as mappersData from "./mappers";
 import * as marketplaceData from "./marketplace";
+import * as messageSearchData from "./messageSearch";
 import * as notesData from "./notes";
 import * as notificationsData from "./notifications";
+import * as productEventsData from "./productEvents";
 import * as offlineBundlesData from "./offlineBundles";
 import * as readStateData from "./readState";
+import * as sitemapData from "./sitemap";
 import * as storageAclData from "./storageAcl";
 import * as testsData from "./tests";
 import * as uploadsData from "./uploads";
@@ -522,7 +525,10 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   layer.mappers = createMappersApi(mappersDeps);
   layer.marketplace = createMarketplaceApi(client, marketplaceDeps, ratingColumns);
   layer.notes = createNotesApi(client, notesDeps);
+  layer.messageSearch = createMessageSearchApi(client);
   layer.notifications = createNotificationsApi(client, notificationsDeps);
+  layer.productEvents = createProductEventsApi(client);
+  layer.sitemap = createSitemapApi(client);
   layer.offlineBundles = createOfflineBundlesApi(client, offlineBundlesDeps);
   layer.readState = createReadStateApi(client, readStateDeps);
   layer.storageAcl = createStorageAclApi(client, supabaseUrl, storageAclDeps);
@@ -597,6 +603,38 @@ function createAiCompanionApi(
   };
 }
 
+function createMessageSearchApi(
+  client: DataClient,
+) {
+  return {
+    getSearchScopeMembership: bindDb(client, messageSearchData.getSearchScopeMembership),
+    listSearchableGroupIds: bindDb(client, messageSearchData.listSearchableGroupIds),
+    listSearchableThreads: bindDb(client, messageSearchData.listSearchableThreads),
+    searchGroupMessages: bindDb(client, messageSearchData.searchGroupMessages),
+    searchDirectMessages: bindDb(client, messageSearchData.searchDirectMessages),
+    listGroupLabels: bindDb(client, messageSearchData.listGroupLabels),
+  };
+}
+
+function createProductEventsApi(
+  client: DataClient,
+) {
+  return {
+    insertProductEvents: bindDb(client, productEventsData.insertProductEvents),
+  };
+}
+
+function createSitemapApi(
+  client: DataClient,
+) {
+  return {
+    listCampusSlugsForSitemap: bindDb(client, sitemapData.listCampusSlugsForSitemap),
+    listListingsForSitemap: bindDb(client, sitemapData.listListingsForSitemap),
+    listJobPostingsForSitemap: bindDb(client, sitemapData.listJobPostingsForSitemap),
+    listJobCompaniesForSitemap: bindDb(client, sitemapData.listJobCompaniesForSitemap),
+  };
+}
+
 function createBudgetApi(
   client: DataClient,
 ) {
@@ -609,6 +647,8 @@ function createBudgetApi(
     listCategoryExpensesForMonth: bindDb(client, budgetData.listCategoryExpensesForMonth),
     deleteBudgetTransaction: bindDb(client, budgetData.deleteBudgetTransaction),
     getMonthlyBudget: bindDb(client, budgetData.getMonthlyBudget),
+    getMonthlyBudgetForMonth: bindDb(client, budgetData.getMonthlyBudgetForMonth),
+    upsertMonthlyBudget: bindDb(client, budgetData.upsertMonthlyBudget),
   };
 }
 
@@ -701,6 +741,8 @@ function createDirectMessagesApi(
   directMessagesDeps: directMessagesData.DirectMessageDeps,
 ) {
   return {
+    // Moved out of routes/messages.ts (lane R2, PR 2b).
+    listDmThreadsForUser: bindDb(client, directMessagesData.listDmThreadsForUser),
     getDirectMessages: bindDbDeps(client, directMessagesDeps, directMessagesData.getDirectMessages),
     sendDirectMessage: bindDbDeps(client, directMessagesDeps, directMessagesData.sendDirectMessage),
     blockUser: bindDb(client, directMessagesData.blockUser),
@@ -802,6 +844,9 @@ function createGroupsApi(
     declineGroupInvite: bindDb(client, groupsData.declineGroupInvite),
     getPendingGroupInvitesForUser: bindDb(client, groupsData.getPendingGroupInvitesForUser),
     isGroupMember: bindDb(client, groupsData.isGroupMember),
+    // Moved out of the invite-preview handlers in routes/groups.ts (R2, PR 2b).
+    countAcceptedGroupMembers: bindDb(client, groupsData.countAcceptedGroupMembers),
+    getGroupMembershipRow: bindDb(client, groupsData.getGroupMembershipRow),
     isDmThreadParticipant: bindDb(client, groupsData.isDmThreadParticipant),
     getAuthorizedDmMessage: bindDbDeps(client, groupsDeps, groupsData.getAuthorizedDmMessage),
     canViewPeerChatAvatar: bindDb(client, groupsData.canViewPeerChatAvatar),
@@ -1063,6 +1108,8 @@ function createTestsApi(
   testsDeps: testsData.TestDeps,
 ) {
   return {
+    // Moved out of routes/tests.ts (lane R2, PR 2b).
+    getOwnedTestSession: bindDb(client, testsData.getOwnedTestSession),
     generateTestQuestions: testsData.generateTestQuestions,
     calculateTestScore: testsData.calculateTestScore,
     getUserTests: bindDbDeps(client, testsDeps, testsData.getUserTests),
@@ -1143,6 +1190,16 @@ function createUsersApi(
     deleteUserProfileOnly: bindDb(client, usersData.deleteUserProfileOnly),
     getUserStats: bindDb(client, usersData.getUserStats),
     getUserGroups: bindDb(client, usersData.getUserGroups),
+    // Moved out of routes/users.ts, routes/auth.ts and the four marketplace
+    // checkout paths (lane R2, PR 2b).
+    getPushTokenProfile: bindDb(client, usersData.getPushTokenProfile),
+    updateProfileFields: bindDb(client, usersData.updateProfileFields),
+    listProfileCards: bindDb(client, usersData.listProfileCards),
+    searchUsersRpc: bindDb(client, usersData.searchUsersRpc),
+    isUsernameAvailableRpc: bindDb(client, usersData.isUsernameAvailableRpc),
+    getAuthUserEmail: bindDb(client, usersData.getAuthUserEmail),
+    getAuthUserEmailConfirmedAt: bindDb(client, usersData.getAuthUserEmailConfirmedAt),
+    signOutUserGlobally: bindDb(client, usersData.signOutUserGlobally),
   };
 }
 
@@ -1169,7 +1226,10 @@ export type DataLayer = {
   mappers: MappersApi;
   marketplace: MarketplaceApi;
   notes: NotesApi;
+  messageSearch: MessageSearchApi;
   notifications: NotificationsApi;
+  productEvents: ProductEventsApi;
+  sitemap: SitemapApi;
   offlineBundles: OfflineBundlesApi;
   readState: ReadStateApi;
   storageAcl: StorageAclApi;
@@ -1194,7 +1254,10 @@ export type GroupsApi = ReturnType<typeof createGroupsApi>;
 export type MappersApi = ReturnType<typeof createMappersApi>;
 export type MarketplaceApi = ReturnType<typeof createMarketplaceApi>;
 export type NotesApi = ReturnType<typeof createNotesApi>;
+export type MessageSearchApi = ReturnType<typeof createMessageSearchApi>;
 export type NotificationsApi = ReturnType<typeof createNotificationsApi>;
+export type ProductEventsApi = ReturnType<typeof createProductEventsApi>;
+export type SitemapApi = ReturnType<typeof createSitemapApi>;
 export type OfflineBundlesApi = ReturnType<typeof createOfflineBundlesApi>;
 export type ReadStateApi = ReturnType<typeof createReadStateApi>;
 export type StorageAclApi = ReturnType<typeof createStorageAclApi>;

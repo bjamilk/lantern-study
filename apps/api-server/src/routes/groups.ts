@@ -925,11 +925,7 @@ router.get(
       return res.status(404).json({ success: false, error: 'Invalid or expired invite link' });
     }
 
-    const { count } = await dataLayer.getClient()
-      .from('group_members')
-      .select('user_id', { count: 'exact', head: true })
-      .eq('group_id', group.id)
-      .eq('pending', false);
+    const { count } = await dataLayer.groups.countAcceptedGroupMembers(group.id);
 
     res.json({
       success: true,
@@ -962,18 +958,12 @@ router.get(
       return res.status(400).json({ success: false, error: 'This group has been archived' });
     }
 
-    const { count } = await dataLayer.getClient()
-      .from('group_members')
-      .select('user_id', { count: 'exact', head: true })
-      .eq('group_id', group.id)
-      .eq('pending', false);
+    const { count } = await dataLayer.groups.countAcceptedGroupMembers(group.id);
 
-    const { data: membership } = await dataLayer.getClient()
-      .from('group_members')
-      .select('user_id, pending')
-      .eq('group_id', group.id)
-      .eq('user_id', userId)
-      .maybeSingle();
+    const { data: membership } = await dataLayer.groups.getGroupMembershipRow(
+      group.id,
+      userId
+    );
 
     const isPending = membership?.pending === true;
 
