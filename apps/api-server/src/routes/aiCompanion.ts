@@ -86,7 +86,8 @@ import {
 import { aiPostBurstRateLimit, uploadBurstRateLimit } from '../middleware/rateLimit';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import { companionChat, summarizeGroupChat, CompanionContext } from '../services/aiService';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { logAIInference } from '../services/aiInferenceLog';
 import { clientErrorMessage } from '../utils/safeError';
 import { handleValidationErrors, validateAICompanionMessage } from '../middleware/validation';
@@ -114,10 +115,18 @@ import {
   loadTrustedCompanionImages,
 } from '../services/companionImageAttachments';
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export function initializeAICompanionRoutes(svc: SupabaseService) {
-  supabaseService = svc;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
+
+export function initializeAICompanionRoutes(layer: DataLayer) {
+  dataLayer = layer;
 }
 
 const router = Router();
@@ -168,7 +177,7 @@ router.get('/conversations', async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
   try {
     const conversations = await listCompanionConversations(
-      supabaseService.getClient(),
+      dataLayer.getClient(),
       userId
     );
     res.json({ conversations });
@@ -187,13 +196,13 @@ router.post('/conversations', async (req: Request, res: Response) => {
     // Only attach a note the user owns (same trust boundary as message send).
     let trustedNoteId: string | null = null;
     if (noteContextId) {
-      const trusted = await buildTrustedCompanionContext(supabaseService, userId, {
+      const trusted = await buildTrustedCompanionContext(legacyService(), userId, {
         noteId: noteContextId,
       });
       trustedNoteId = trusted.noteId || null;
     }
     const row = await createCompanionConversation(
-      supabaseService.getClient(),
+      dataLayer.getClient(),
       userId,
       trustedNoteId
     );
@@ -219,7 +228,7 @@ router.get('/history', async (req: Request, res: Response) => {
   const conversationId = parseCompanionUuid(req.query.conversationId);
   const noteContextId = parseNoteContextId(req.query.noteContextId);
   try {
-    const client = supabaseService.getClient();
+    const client = dataLayer.getClient();
     let resolvedConversationId = conversationId;
     let resolvedNoteContextId: string | null = noteContextId;
 
@@ -283,7 +292,7 @@ router.delete('/history', async (req: Request, res: Response) => {
     req.query.noteContextId ?? (req.body as { noteContextId?: string } | undefined)?.noteContextId
   );
   try {
-    const client = supabaseService.getClient();
+    const client = dataLayer.getClient();
 
     if (conversationId) {
       const owned = await getOwnedConversation(client, userId, conversationId);
@@ -335,7 +344,7 @@ router.post('/feedback', async (req: Request, res: Response) => {
   }
 
   try {
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('ai_companion_messages')
       .update({ feedback: cleared ? null : rating })
       .eq('id', messageId)
@@ -370,7 +379,7 @@ router.post('/analytics', async (req: Request, res: Response) => {
   }
 
   try {
-    await supabaseService.getClient()
+    await dataLayer.getClient()
       .from('ai_analytics')
       .insert({ user_id: userId, event, metadata: metadata || {}, created_at: new Date().toISOString() });
 
@@ -405,7 +414,7 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
 
   try {
     const { groupName, messages } = await fetchAuthorizedGroupSummaryMessages(
-      supabaseService,
+      legacyService(),
       groupId,
       userId,
       50
@@ -425,7 +434,7 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
     // the one cross-user prompt-injection surface in the AI stack, and
     // `aiService.groupSummaryFencing.test.ts` pins the fence.
     const { summary, provider } = await summarizeGroupChat(messages, displayName);
-    await logAIInference(supabaseService.getClient(), {
+    await logAIInference(dataLayer.getClient(), {
       userId,
       feature: 'companion-summarize-group',
       provider,
@@ -487,7 +496,7 @@ router.post('/attachments', uploadBurstRateLimit, async (req: Request, res: Resp
 
   try {
     const attachment = await createCompanionImageAttachment({
-      supabaseService,
+      supabaseService: legacyService(),
       userId,
       buffer,
       fileName: typeof fileName === 'string' ? fileName : 'image.jpg',
@@ -574,7 +583,7 @@ async function persistCompanionExchange(params: {
     noteContextId,
     selectIds = false,
   } = params;
-  const client = supabaseService.getClient();
+  const client = dataLayer.getClient();
   const now = new Date().toISOString();
   const rows = [
     {
@@ -668,17 +677,17 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
       userId,
       async () => {
         const trustedContext = await buildTrustedCompanionContext(
-          supabaseService,
+          legacyService(),
           userId,
           { ...(context || {}), imageAttachments: undefined }
         );
         trustedContext.imageAttachments = await loadTrustedCompanionImages(
-          supabaseService,
+          legacyService(),
           userId,
           collectImageAttachmentIds(context)
         );
         const threadNoteId = trustedContext.noteId || null;
-        const client = supabaseService.getClient();
+        const client = dataLayer.getClient();
         const conversation = await resolveConversationForSend(
           client,
           userId,
@@ -707,7 +716,7 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           { ...trustedContext, noteId: effectiveNoteId || undefined }
         );
 
-        await logAIInference(supabaseService.getClient(), {
+        await logAIInference(dataLayer.getClient(), {
           userId,
           feature: 'companion-message',
           provider,
@@ -803,17 +812,17 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
 
   try {
     const trustedContext = await buildTrustedCompanionContext(
-      supabaseService,
+      legacyService(),
       userId,
       { ...(context || {}), imageAttachments: undefined }
     );
     trustedContext.imageAttachments = await loadTrustedCompanionImages(
-      supabaseService,
+      legacyService(),
       userId,
       collectImageAttachmentIds(context)
     );
     const threadNoteId = trustedContext.noteId || null;
-    const client = supabaseService.getClient();
+    const client = dataLayer.getClient();
     const conversation = await resolveConversationForSend(
       client,
       userId,

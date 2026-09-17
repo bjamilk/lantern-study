@@ -38,6 +38,7 @@ jest.mock('../services/walletService', () => ({
 
 import { setIdempotencyClient } from '../middleware/idempotency';
 import router, { initializeTestRoutes } from './tests';
+import { stubDataLayer } from '../services/data/testStub';
 
 setIdempotencyClient(() => ({}) as any);
 
@@ -51,7 +52,7 @@ const cache = {
   deletePattern: async () => {},
 };
 
-initializeTestRoutes({ createTest, createTestResult } as any, cache as any);
+initializeTestRoutes(stubDataLayer({ createTest, createTestResult }) as any, cache as any);
 
 /**
  * Drive one route's handlers directly. `skip` is how many leading handlers

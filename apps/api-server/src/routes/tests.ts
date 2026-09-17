@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateTestConfig, validatePagination, validateUserId } from '../middleware/validation';
-import { SupabaseService, buildAttemptTally } from '../services/supabase';
+import { buildAttemptTally } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
@@ -201,12 +203,20 @@ async function awardTestPassCoins(userId: string, testId: string, score: number)
 const router = Router();
 
 // Initialize services (will be injected in main server)
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
+
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `data.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
 // Initialize function to be called from main server
-export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+export const initializeTestRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 
   // GET /api/v1/tests - Get user's tests
@@ -251,7 +261,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       logger.debug('Fetching tests', { page, limit, status, courseId, topicId, lean, sort, from, to, userId });
 
       try {
-        if (!supabaseService) {
+        if (!legacyService()) {
           res.json({
             success: true,
             data: [],
@@ -260,7 +270,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
           return;
         }
 
-        const { tests, total } = await supabaseService.getUserTests(userId, {
+        const { tests, total } = await dataLayer.tests.getUserTests(userId, {
           page,
           limit,
           status,
@@ -338,7 +348,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         // not a client bug, and this is the only place that can resolve the
         // source's real title. A titleless save with NO source still 400s —
         // there is nothing to name it after.
-        const sourceTitle = await supabaseService.resolvePersonalTestSourceTitle(source, userId);
+        const sourceTitle = await dataLayer.tests.resolvePersonalTestSourceTitle(source, userId);
         cleanTitle = defaultPersonalTestTitle(sourceTitle) || '';
       }
       if (!cleanTitle) {
@@ -365,7 +375,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let payload: any;
       try {
         payload = await run(async () => {
-          const test = await supabaseService.createPersonalTest(
+          const test = await dataLayer.tests.createPersonalTest(
             {
               title: cleanTitle,
               questions: normalized.questions,
@@ -380,7 +390,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
             userId
           );
           await cacheService.deletePattern(`tests:${userId}:*`);
-          return supabaseService.mapTestSessionRowToClient(test);
+          return dataLayer.tests.mapTestSessionRowToClient(test);
         });
       } catch (err) {
         if (respondPublicError(err, res)) return;
@@ -420,7 +430,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Clearing completed test history', { userId });
 
-      const deletedCount = await supabaseService.clearCompletedTestHistory(userId);
+      const deletedCount = await dataLayer.tests.clearCompletedTestHistory(userId);
 
       res.json({
         success: true,
@@ -444,7 +454,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       const { sessionId } = req.params;
 
-      const { data, error } = await supabaseService.getClient()
+      const { data, error } = await dataLayer.getClient()
         .from('test_sessions')
         .select('*')
         .eq('id', sessionId)
@@ -461,8 +471,8 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       // Same camelCase + coerced userAnswers map as GET /tests/:id so mobile
       // hydrate matches web (legacy array user_answers become a questionId map).
-      const mapped = supabaseService.mapTestSessionRowToClient(data);
-      await supabaseService.attachSourceNoteTitles([mapped as any], userId);
+      const mapped = dataLayer.tests.mapTestSessionRowToClient(data);
+      await dataLayer.tests.attachSourceNoteTitles([mapped as any], userId);
       res.json({
         success: true,
         data: {
@@ -494,7 +504,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       logger.debug('Deleting completed test session', { sessionId, userId });
 
       try {
-        const deleted = await supabaseService.deleteCompletedTestSession(sessionId, userId);
+        const deleted = await dataLayer.tests.deleteCompletedTestSession(sessionId, userId);
         if (!deleted) {
           return res.status(404).json({
             success: false,
@@ -559,7 +569,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       let draft;
       try {
-        draft = await supabaseService.createTestDraft(
+        draft = await dataLayer.tests.createTestDraft(
           {
             config,
             courseId,
@@ -604,7 +614,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       try {
         const configBody = body.config && typeof body.config === 'object' ? body.config : null;
-        const updated = await supabaseService.updateTestDraft(draftId, userId, {
+        const updated = await dataLayer.tests.updateTestDraft(draftId, userId, {
           user_answers: body.user_answers ?? body.userAnswers,
           current_question_index:
             body.current_question_index ?? body.currentQuestionIndex,
@@ -651,7 +661,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       try {
         const configBody = body.config && typeof body.config === 'object' ? body.config : null;
-        const completed = await supabaseService.completeTestDraft(draftId, userId, {
+        const completed = await dataLayer.tests.completeTestDraft(draftId, userId, {
           user_answers: body.user_answers ?? body.userAnswers,
           activityDate: body.activityDate,
           score: body.score,
@@ -713,7 +723,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
       const draftId = String(req.params.id || '');
-      const abandoned = await supabaseService.abandonTestDraft(draftId, userId);
+      const abandoned = await dataLayer.tests.abandonTestDraft(draftId, userId);
       if (!abandoned) {
         return res.status(404).json({
           success: false,
@@ -765,7 +775,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let access: 'owner' | 'group' = 'owner';
 
       if (!test) {
-        const resolved = await supabaseService.resolveTestSessionForCaller(testId, userId);
+        const resolved = await dataLayer.tests.resolveTestSessionForCaller(testId, userId);
 
         if (!resolved) {
           return res.status(404).json({
@@ -788,13 +798,13 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       const mapped =
         test && typeof test === 'object' && 'user_id' in (test as object)
-          ? supabaseService.mapTestSessionRowToClient(test)
+          ? dataLayer.tests.mapTestSessionRowToClient(test)
           : test;
 
       // Same contract as the list: a note quiz names the note it came from,
       // even if it was saved before that title was persisted into config.
       if (mapped && typeof mapped === 'object' && access === 'owner') {
-        await supabaseService.attachSourceNoteTitles([mapped as any], userId);
+        await dataLayer.tests.attachSourceNoteTitles([mapped as any], userId);
       }
 
       if (access === 'group' && mapped && typeof mapped === 'object') {
@@ -855,7 +865,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let test;
       try {
         test = await run(async () => {
-          const created = await supabaseService.createTest(testConfig, userId);
+          const created = await dataLayer.tests.createTest(testConfig, userId);
           // Inside the wrapper: a replay must not re-run the invalidation for
           // a write that did not happen.
           await cacheService.deletePattern(`tests:${userId}:*`);
@@ -886,7 +896,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Starting test', { testId, userId });
 
-      const test = await supabaseService.getTestById(testId, userId);
+      const test = await dataLayer.tests.getTestById(testId, userId);
       if (!test) {
         return res.status(404).json({
           success: false,
@@ -902,7 +912,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const startedTest = await supabaseService.startTest(testId, userId);
+      const startedTest = await dataLayer.tests.startTest(testId, userId);
 
       // Invalidate caches
       await cacheService.delete(userScopedCacheKey('test', userId, testId));
@@ -936,7 +946,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const test = await supabaseService.getTestById(testId, userId);
+      const test = await dataLayer.tests.getTestById(testId, userId);
       if (!test) {
         return res.status(404).json({
           success: false,
@@ -952,7 +962,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const result = await supabaseService.submitTest(testId, userId, answers);
+      const result = await dataLayer.tests.submitTest(testId, userId, answers);
 
       // Invalidate caches
       await cacheService.delete(userScopedCacheKey('test', userId, testId));
@@ -965,7 +975,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       // signal we get about topic strength. Fire-and-forget and debounced in
       // the service — a 40-question submission must not wait on a recompute,
       // and finishing three tests in a row must not run it three times.
-      getTopicMasteryService(supabaseService).refreshAsync(userId);
+      getTopicMasteryService(legacyService()).refreshAsync(userId);
 
       res.json({
         success: true,
@@ -987,7 +997,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Fetching test results', { testId, userId });
 
-      const test = await supabaseService.getTestById(testId, userId);
+      const test = await dataLayer.tests.getTestById(testId, userId);
       if (!test) {
         return res.status(404).json({
           success: false,
@@ -1007,7 +1017,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let results = await cacheService.get(cacheKey);
 
       if (!results) {
-        results = await supabaseService.getTestResults(testId, userId);
+        results = await dataLayer.tests.getTestResults(testId, userId);
 
         // Cache for 30 minutes (results don't change)
         await cacheService.set(cacheKey, results, 1800);
@@ -1050,7 +1060,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const run = req.runIdempotent || ((handler: () => Promise<any>) => handler());
 
       const payload = await run(async () => {
-        const result = await supabaseService.createTestResult(testId, {
+        const result = await dataLayer.tests.createTestResult(testId, {
           score,
           correctAnswersCount,
           totalQuestions,
@@ -1087,7 +1097,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Fetching test questions', { testId, userId });
 
-      const test = await supabaseService.getTestById(testId, userId);
+      const test = await dataLayer.tests.getTestById(testId, userId);
       if (!test) {
         return res.status(404).json({
           success: false,
@@ -1107,7 +1117,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let questions = await cacheService.get(cacheKey);
 
       if (!questions) {
-        questions = await supabaseService.getTestQuestions(testId, userId);
+        questions = await dataLayer.tests.getTestQuestions(testId, userId);
 
         // Cache for 30 minutes
         await cacheService.set(cacheKey, questions, 1800);
@@ -1133,7 +1143,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Deleting test', { testId, userId });
 
-      const test = await supabaseService.getTestById(testId, userId);
+      const test = await dataLayer.tests.getTestById(testId, userId);
       if (!test) {
         return res.status(404).json({
           success: false,
@@ -1149,7 +1159,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         });
       }
 
-      const deleted = await supabaseService.deleteTest(testId);
+      const deleted = await dataLayer.tests.deleteTest(testId);
 
       if (!deleted) {
         return res.status(404).json({
@@ -1185,7 +1195,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let stats = await cacheService.get(cacheKey);
 
       if (!stats) {
-        stats = await supabaseService.getSubjectStats(userId);
+        stats = await dataLayer.tests.getSubjectStats(userId);
 
         // Cache for 10 minutes
         await cacheService.set(cacheKey, stats, 600);
@@ -1214,7 +1224,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let stats = await cacheService.get(cacheKey);
 
       if (!stats) {
-        stats = await supabaseService.getPerformanceStats(userId, period as string);
+        stats = await dataLayer.tests.getPerformanceStats(userId, period as string);
 
         // Cache for 5 minutes
         await cacheService.set(cacheKey, stats, 300);
@@ -1245,7 +1255,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       let templates = await cacheService.get(cacheKey) as any[];
 
       if (!templates) {
-        templates = await supabaseService.getTestTemplates({
+        templates = await dataLayer.tests.getTestTemplates({
           page: parseInt(page as string),
           limit: parseInt(limit as string),
           subject: subject as string,

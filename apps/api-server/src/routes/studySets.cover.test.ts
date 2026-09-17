@@ -33,6 +33,7 @@ import {
 } from '../services/supabase';
 import { PublicError } from '../utils/safeError';
 import router, { initializeStudySetRoutes, MAX_STUDY_SET_COVER_BYTES } from './studySets';
+import { stubDataLayer } from '../services/data/testStub';
 
 const SET_ID = '11111111-2222-4333-8444-555555555555';
 const PNG_BASE64 =
@@ -101,14 +102,14 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
       thumbUrl: 'https://signed/c.thumb',
     }));
     const deleteCoverObject = jest.fn(async () => {});
-    initializeStudySetRoutes({
+    initializeStudySetRoutes(stubDataLayer({
       assertCoverColumn: jest.fn(async () => {}),
       uploadCoverImage,
       setStudySetCoverPath: jest.fn(async () => ({
         previousPath: 'user-1/study-sets/set/1-old.webp',
       })),
       deleteCoverObject,
-    } as any);
+    }) as any);
 
     const res = await runRoute(
       'post',
@@ -135,11 +136,11 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
     setsService.get.mockImplementation(async () => {
       throw new PublicError('Study set not found');
     });
-    initializeStudySetRoutes({
+    initializeStudySetRoutes(stubDataLayer({
       uploadCoverImage,
       setStudySetCoverPath: jest.fn(),
       deleteCoverObject: jest.fn(),
-    } as any);
+    }) as any);
 
     const res = await runRoute(
       'post',
@@ -154,11 +155,11 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
 
   it('refuses a payload over 5 MB before anything is uploaded', async () => {
     const uploadCoverImage = jest.fn();
-    initializeStudySetRoutes({
+    initializeStudySetRoutes(stubDataLayer({
       uploadCoverImage,
       setStudySetCoverPath: jest.fn(),
       deleteCoverObject: jest.fn(),
-    } as any);
+    }) as any);
 
     const res = await runRoute(
       'post',
@@ -183,11 +184,11 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
 
   it('refuses a non-image content type before anything is uploaded', async () => {
     const uploadCoverImage = jest.fn();
-    initializeStudySetRoutes({
+    initializeStudySetRoutes(stubDataLayer({
       uploadCoverImage,
       setStudySetCoverPath: jest.fn(),
       deleteCoverObject: jest.fn(),
-    } as any);
+    }) as any);
 
     const res = await runRoute(
       'post',
@@ -204,14 +205,14 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
     // must refuse the request up front instead of uploading, failing on the
     // write, and answering a blank 500.
     const uploadCoverImage = jest.fn();
-    initializeStudySetRoutes({
+    initializeStudySetRoutes(stubDataLayer({
       assertCoverColumn: jest.fn(async () => {
         throw new CoverColumnMissingError();
       }),
       uploadCoverImage,
       setStudySetCoverPath: jest.fn(),
       deleteCoverObject: jest.fn(),
-    } as any);
+    }) as any);
 
     const res = await runRoute(
       'post',
@@ -230,7 +231,7 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
 
   it('still cleans up the object when the column write fails late', async () => {
     const deleteCoverObject = jest.fn(async () => {});
-    initializeStudySetRoutes({
+    initializeStudySetRoutes(stubDataLayer({
       assertCoverColumn: jest.fn(async () => {}),
       uploadCoverImage: jest.fn(async () => ({
         path: 'user-1/study-sets/set/1-c.webp',
@@ -241,7 +242,7 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
         throw new CoverColumnMissingError();
       }),
       deleteCoverObject,
-    } as any);
+    }) as any);
 
     const res = await runRoute(
       'post',
@@ -254,14 +255,14 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
   });
 
   it('names storage when the bucket is the thing that is broken', async () => {
-    initializeStudySetRoutes({
+    initializeStudySetRoutes(stubDataLayer({
       assertCoverColumn: jest.fn(async () => {}),
       uploadCoverImage: jest.fn(async () => {
         throw new CoverStorageUnavailableError('Bucket not found');
       }),
       setStudySetCoverPath: jest.fn(),
       deleteCoverObject: jest.fn(),
-    } as any);
+    }) as any);
 
     const res = await runRoute(
       'post',
@@ -285,7 +286,7 @@ describe('DELETE /users/me/study-sets/:setId/cover', () => {
       previousPath: 'user-1/study-sets/set/1-c.webp',
     }));
     const deleteCoverObject = jest.fn(async () => {});
-    initializeStudySetRoutes({ setStudySetCoverPath, deleteCoverObject } as any);
+    initializeStudySetRoutes(stubDataLayer({ setStudySetCoverPath, deleteCoverObject }) as any);
 
     const res = await runRoute('delete', '/:setId/cover', request({}));
 
@@ -296,12 +297,12 @@ describe('DELETE /users/me/study-sets/:setId/cover', () => {
   });
 
   it('answers 503 naming the migration when cover_path does not exist', async () => {
-    initializeStudySetRoutes({
+    initializeStudySetRoutes(stubDataLayer({
       setStudySetCoverPath: jest.fn(async () => {
         throw new CoverColumnMissingError();
       }),
       deleteCoverObject: jest.fn(),
-    } as any);
+    }) as any);
 
     const res = await runRoute('delete', '/:setId/cover', request({}));
 
@@ -316,7 +317,7 @@ describe('PATCH /users/me/study-sets/:setId', () => {
       previousPath: 'user-1/study-sets/set/1-c.webp',
     }));
     const deleteCoverObject = jest.fn(async () => {});
-    initializeStudySetRoutes({ setStudySetCoverPath, deleteCoverObject } as any);
+    initializeStudySetRoutes(stubDataLayer({ setStudySetCoverPath, deleteCoverObject }) as any);
 
     const res = await runRoute(
       'patch',
@@ -333,7 +334,7 @@ describe('PATCH /users/me/study-sets/:setId', () => {
 
   it('never lets a patch body aim the column at an arbitrary storage object', async () => {
     const setStudySetCoverPath = jest.fn(async () => ({ previousPath: null }));
-    initializeStudySetRoutes({ setStudySetCoverPath, deleteCoverObject: jest.fn() } as any);
+    initializeStudySetRoutes(stubDataLayer({ setStudySetCoverPath, deleteCoverObject: jest.fn() }) as any);
 
     const res = await runRoute(
       'patch',

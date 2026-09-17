@@ -31,6 +31,7 @@ import {
 } from '../services/supabase';
 import { setIdempotencyClient } from '../middleware/idempotency';
 import router, { initializeDeckRoutes } from './decks';
+import { stubDataLayer } from '../services/data/testStub';
 
 setIdempotencyClient(() => ({}) as any);
 
@@ -94,7 +95,7 @@ function initWith(service: any) {
     delete: async () => {},
     deletePattern: async () => {},
   };
-  initializeDeckRoutes(service as any, cache as any);
+  initializeDeckRoutes(stubDataLayer(service) as any, cache as any);
 }
 
 beforeEach(() => jest.clearAllMocks());

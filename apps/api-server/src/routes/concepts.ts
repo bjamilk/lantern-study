@@ -11,6 +11,7 @@ import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
+import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import {
@@ -28,7 +29,10 @@ let dataLayer: DataLayer;
 // TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
 // facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
 // disappears when the `services/` importers are flipped.
-const legacyService = () => dataLayer.legacyService;
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
 export const initializeConceptRoutes = (layer: DataLayer, cache: CacheService) => {

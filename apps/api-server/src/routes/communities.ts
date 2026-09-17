@@ -8,7 +8,8 @@
 import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import {
   getCommunitiesService,
   normalizePublicCommunitySlug,
@@ -24,10 +25,18 @@ import { requireAuthUserId } from '../utils/requestAuth';
 const router = Router();
 export const discoverRouter = Router();
 
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export const initializeCommunityRoutes = (supabase: SupabaseService): void => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `data.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
+
+export const initializeCommunityRoutes = (layer: DataLayer): void => {
+  dataLayer = layer;
 };
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
@@ -73,7 +82,7 @@ router.get(
       return;
     }
 
-    const data = await getCommunitiesService(supabaseService).publicSummaryBySlug(slug);
+    const data = await getCommunitiesService(legacyService()).publicSummaryBySlug(slug);
     if (!data) {
       // Unknown AND private answer the same way: the card must not become an
       // oracle for whether a private room exists.
@@ -96,7 +105,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getCommunitiesService(supabaseService).listMine(userId);
+    const data = await getCommunitiesService(legacyService()).listMine(userId);
     res.json({ success: true, data });
   })
 );
@@ -119,7 +128,7 @@ router.post(
         endsAt?: string | null;
         location?: string | null;
       };
-      const data = await getCommunitiesService(supabaseService).createCommunity(userId, body);
+      const data = await getCommunitiesService(legacyService()).createCommunity(userId, body);
       res.status(201).json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -144,8 +153,8 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      await getCommunitiesService(supabaseService).assertCanAccessCommunities(userId);
-      const data = await getCommunityModerationService(supabaseService).joinByCode(
+      await getCommunitiesService(legacyService()).assertCanAccessCommunities(userId);
+      const data = await getCommunityModerationService(legacyService()).joinByCode(
         userId,
         (req.body ?? {}).code
       );
@@ -164,7 +173,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunityModerationService(supabaseService).listInvites(
+      const data = await getCommunityModerationService(legacyService()).listInvites(
         userId,
         req.params.communityId
       );
@@ -184,7 +193,7 @@ router.post(
     if (!userId) return;
     try {
       const body = (req.body ?? {}) as { expiresInMs?: unknown; maxUses?: unknown };
-      const data = await getCommunityModerationService(supabaseService).createInvite(
+      const data = await getCommunityModerationService(legacyService()).createInvite(
         userId,
         req.params.communityId,
         body
@@ -204,7 +213,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunityModerationService(supabaseService).revokeInvite(
+      const data = await getCommunityModerationService(legacyService()).revokeInvite(
         userId,
         req.params.communityId,
         req.params.code
@@ -227,7 +236,7 @@ router.post(
     const actorId = requireAuthUserId(req, res);
     if (!actorId) return;
     try {
-      const data = await getCommunityModerationService(supabaseService).setMemberRole(
+      const data = await getCommunityModerationService(legacyService()).setMemberRole(
         actorId,
         req.params.communityId,
         req.params.userId,
@@ -253,7 +262,7 @@ router.post(
     if (!actorId) return;
     try {
       const body = (req.body ?? {}) as { duration?: unknown; reason?: unknown };
-      const data = await getCommunityModerationService(supabaseService).muteMember(
+      const data = await getCommunityModerationService(legacyService()).muteMember(
         actorId,
         req.params.communityId,
         req.params.userId,
@@ -277,7 +286,7 @@ router.delete(
     const actorId = requireAuthUserId(req, res);
     if (!actorId) return;
     try {
-      const data = await getCommunityModerationService(supabaseService).removePost(
+      const data = await getCommunityModerationService(legacyService()).removePost(
         actorId,
         req.params.communityId,
         req.params.postId,
@@ -304,7 +313,7 @@ router.post(
     if (!actorId) return;
     try {
       const body = (req.body ?? {}) as { answerMessageId?: unknown };
-      const data = await getCommunityModerationService(supabaseService).markPostAnswered(
+      const data = await getCommunityModerationService(legacyService()).markPostAnswered(
         actorId,
         req.params.communityId,
         req.params.postId,
@@ -325,7 +334,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).getBySlug(userId, req.params.slug);
+      const data = await getCommunitiesService(legacyService()).getBySlug(userId, req.params.slug);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -343,7 +352,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).listMembers(
+      const data = await getCommunitiesService(legacyService()).listMembers(
         userId,
         req.params.communityId,
         {
@@ -368,7 +377,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).listChannels(
+      const data = await getCommunitiesService(legacyService()).listChannels(
         userId,
         req.params.communityId
       );
@@ -389,7 +398,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).openLounge(
+      const data = await getCommunitiesService(legacyService()).openLounge(
         userId,
         req.params.communityId
       );
@@ -408,7 +417,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).join(userId, req.params.communityId);
+      const data = await getCommunitiesService(legacyService()).join(userId, req.params.communityId);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -424,7 +433,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).leave(userId, req.params.communityId);
+      const data = await getCommunitiesService(legacyService()).leave(userId, req.params.communityId);
       res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
@@ -443,7 +452,7 @@ discoverRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).discoverCommunities(userId, {
+      const data = await getCommunitiesService(legacyService()).discoverCommunities(userId, {
         q: str(req.query.q),
         kind: str(req.query.kind),
         institutionId: str(req.query.institutionId),
@@ -465,7 +474,7 @@ discoverRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).discoverGroups(userId, {
+      const data = await getCommunitiesService(legacyService()).discoverGroups(userId, {
         q: str(req.query.q),
         communityId: str(req.query.communityId),
         courseId: str(req.query.courseId),
@@ -486,7 +495,7 @@ discoverRouter.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).joinDiscoverableGroup(
+      const data = await getCommunitiesService(legacyService()).joinDiscoverableGroup(
         userId,
         req.params.groupId
       );
@@ -504,7 +513,7 @@ discoverRouter.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const data = await getCommunitiesService(supabaseService).discoverPeople(userId, {
+      const data = await getCommunitiesService(legacyService()).discoverPeople(userId, {
         q: str(req.query.q),
         institutionId: str(req.query.institutionId),
         courseId: str(req.query.courseId),
@@ -525,7 +534,7 @@ discoverRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getStudyPresenceService(supabaseService).now(userId, {
+    const data = await getStudyPresenceService(legacyService()).now(userId, {
       courseId: str(req.query.courseId) ?? null,
       institutionId: str(req.query.institutionId) ?? null,
     });

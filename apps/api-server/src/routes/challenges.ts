@@ -4,7 +4,7 @@ import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateCreateChallenge, validateSubmitChallenge, validateChallengeId } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { ChallengeService } from '../services/challengeService';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { logger } from '../utils/logger';
@@ -15,8 +15,10 @@ const router = Router();
 let challengeService: ChallengeService;
 let cacheService: CacheService;
 
-export const initializeChallengeRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  challengeService = new ChallengeService(supabase);
+export const initializeChallengeRoutes = (layer: DataLayer, cache: CacheService) => {
+  // TRANSITIONAL (M2a): ChallengeService still takes the `SupabaseService`
+  // facade whole; it is the same instance the data layer is built from.
+  challengeService = new ChallengeService(layer.legacyService);
   cacheService = cache;
 };
 

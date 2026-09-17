@@ -37,6 +37,7 @@ jest.mock('../services/cache', () => ({
 import router, { initializeCommunityRoutes } from './communities';
 import { normalizePublicCommunitySlug } from '../services/communities';
 import { cacheService } from '../services/cache';
+import { stubDataLayer } from '../services/data/testStub';
 
 const CAMPUS_ID = '33333333-3333-4333-8333-333333333333';
 
@@ -71,7 +72,7 @@ const client = {
     return builder;
   },
 };
-initializeCommunityRoutes({ getClient: () => client } as any);
+initializeCommunityRoutes(stubDataLayer({ getClient: () => client }) as any);
 
 function makeRes() {
   let settle: () => void = () => undefined;

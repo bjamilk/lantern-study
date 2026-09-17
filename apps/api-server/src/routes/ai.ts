@@ -15,7 +15,8 @@ import { aiPostBurstRateLimit } from '../middleware/rateLimit';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
-import { SupabaseService } from '../services/supabase';
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { logAIInference } from '../services/aiInferenceLog';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted, stampAiChargeOnJob, aiChargeFromRes } from '../queue/respondAsync';
@@ -45,10 +46,18 @@ import { recordLearningEvent, surfaceFromRequest } from '../services/learningEve
 import { isFlashcardTypeMix } from '@lantern/shared/flashcards';
 
 const router = Router();
-let supabaseService: SupabaseService;
+let dataLayer: DataLayer;
 
-export function initializeAIRoutes(supabase: SupabaseService): void {
-  supabaseService = supabase;
+// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
+// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
+// disappears when the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector
+// runs (several suites drive a handler without calling it), exactly as the
+// old module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
+
+export function initializeAIRoutes(layer: DataLayer): void {
+  dataLayer = layer;
 }
 
 async function recordInference(
@@ -61,8 +70,8 @@ async function recordInference(
   }
 ): Promise<void> {
   const userId = req.user?.id;
-  if (!userId || !supabaseService) return;
-  await logAIInference(supabaseService.getClient(), {
+  if (!userId || !legacyService()) return;
+  await logAIInference(dataLayer.getClient(), {
     userId,
     feature,
     provider: result.provider,
@@ -141,8 +150,8 @@ router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), 
       async () => {
         const generated = await generateQuestionsFromNotes(notes, { count, difficulty, questionTypes, subject });
         await recordInference(req, 'generate-questions', generated);
-        if (userId && supabaseService) {
-          await recordLearningEvent(supabaseService, {
+        if (userId && legacyService()) {
+          await recordLearningEvent(legacyService(), {
             userId,
             eventType: 'question_generated',
             count: Array.isArray(generated.questions) ? generated.questions.length : 0,
@@ -319,8 +328,8 @@ router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards')
           difficulty,
         });
         await recordInference(req, 'generate-flashcards', generated);
-        if (userId && supabaseService) {
-          await recordLearningEvent(supabaseService, {
+        if (userId && legacyService()) {
+          await recordLearningEvent(legacyService(), {
             userId,
             eventType: 'card_generated',
             count: Array.isArray(generated.flashcards) ? generated.flashcards.length : 0,
@@ -519,7 +528,7 @@ router.post(
         res.status(401).json({ error: 'Authentication required' });
         return;
       }
-      const factory = getStudyPackFactoryService(supabaseService);
+      const factory = getStudyPackFactoryService(legacyService());
       const { noteIds, folderId, courseId, title } = req.body || {};
       const { draftId } = await factory.createDraft(userId, {
         noteIds: Array.isArray(noteIds) ? noteIds.map(String) : undefined,
@@ -569,7 +578,7 @@ router.get('/study-pack/semester-proposals', async (req: AuthenticatedRequest, r
   if (!userId) return;
   const academicYear =
     typeof req.query.academicYear === 'string' ? req.query.academicYear : undefined;
-  const { academicYear: year, proposals } = await getStudyPackFactoryService(supabaseService).proposeSemester(
+  const { academicYear: year, proposals } = await getStudyPackFactoryService(legacyService()).proposeSemester(
     userId,
     academicYear,
   );
@@ -594,7 +603,7 @@ router.get('/study-pack/semester-proposals', async (req: AuthenticatedRequest, r
 router.get('/study-pack/drafts', async (req: AuthenticatedRequest, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const data = await getStudyPackFactoryService(supabaseService).listDrafts(userId);
+  const data = await getStudyPackFactoryService(legacyService()).listDrafts(userId);
   res.json({ success: true, data });
 });
 
@@ -603,7 +612,7 @@ router.get('/study-pack/drafts/:id', async (req: AuthenticatedRequest, res: Resp
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   try {
-    const draft = await getStudyPackFactoryService(supabaseService).getDraft(userId, req.params.id);
+    const draft = await getStudyPackFactoryService(legacyService()).getDraft(userId, req.params.id);
     res.json({ success: true, data: draft });
   } catch (error: any) {
     if (error instanceof PublicError) {
@@ -618,7 +627,7 @@ router.get('/study-pack/drafts/:id', async (req: AuthenticatedRequest, res: Resp
 router.delete('/study-pack/drafts/:id', async (req: AuthenticatedRequest, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await getStudyPackFactoryService(supabaseService).deleteDraft(userId, req.params.id);
+  await getStudyPackFactoryService(legacyService()).deleteDraft(userId, req.params.id);
   res.json({ success: true });
 });
 
