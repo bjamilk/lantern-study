@@ -297,7 +297,7 @@ export async function lookupDeckCourseId(
   }
 }
 
-/** Build the `card_reviewed` input for SupabaseService.reviewFlashcard (kept here so the row shape has one owner). */
+/** Build the `card_reviewed` input for `data/offlineBundles.reviewFlashcard` (kept here so the row shape has one owner). */
 export function buildCardReviewedEvent(params: {
   userId: string;
   flashcardId: string;
