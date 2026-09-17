@@ -132,13 +132,28 @@ describe('the company owner membership row', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: returns the company with nobody owning it, silently', async () => {
-    // The creator gets their company back and cannot administer it: there is no
-    // membership row naming them owner, and nothing was said.
+  it('still returns the company, because throwing would duplicate it on retry', async () => {
     const { company } = await createCompany(true);
     expect(company).toEqual(expect.objectContaining({ id: 'co_1' }));
-    expect(logger.error).not.toHaveBeenCalled();
-    expect(captureScopedException).not.toHaveBeenCalled();
+  });
+
+  it('reports the unowned company at ERROR level and to Sentry', async () => {
+    await createCompany(true);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({
+        table: 'job_company_members',
+        companyId: 'co_1',
+        userId: 'user_1',
+        reason: 'company_owner_membership',
+      }),
+    );
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        fingerprint: ['jobs-company-owner-membership-write-failed'],
+      }),
+    );
   });
 });
 
@@ -182,15 +197,30 @@ describe('the external-apply records', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: the candidate applied and no application exists, silently', async () => {
+  it('warns for the lost click but ERRORS for the lost application', async () => {
+    // The click is analytics; the application is the thing the candidate and
+    // the employer both need to exist.
     await track(true);
-    expect(logger.error).not.toHaveBeenCalled();
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'job_external_apply_clicks' }),
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({
+        table: 'job_applications',
+        reason: 'external_apply_application',
+      }),
+    );
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ fingerprint: ['jobs-application-row-write-failed'] }),
+    );
   });
 });
 
 describe('the saved-search watermark', () => {
-  it('TODAY: answers the match count and says nothing when the stamp fails', async () => {
+  it('still answers the match count when the stamp fails, and warns', async () => {
     const { service } = serviceFor((call) => {
       if (call.table === 'job_saved_searches' && call.ops.some((op) => op.fn === 'update')) {
         return { data: null, error: WRITE_ERROR };
@@ -203,7 +233,11 @@ describe('the saved-search watermark', () => {
     await expect((service as any).savedSearchMatches('user_1', 'search_1')).resolves.toEqual({
       count: 3,
     });
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'job_saved_searches', reason: 'scan_watermark' }),
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 });
 
@@ -245,9 +279,12 @@ describe('the alerts job’s watermark', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: returns the same count and says nothing when the stamp fails', async () => {
+  it('returns the same count when the stamp fails, and warns', async () => {
     await expect(runAlerts(true)).resolves.toBe(0);
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'job_saved_searches', reason: 'alert_watermark' }),
+    );
     expect(logger.error).not.toHaveBeenCalled();
   });
 });

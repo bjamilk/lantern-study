@@ -8,6 +8,7 @@ import {
   jobPostingMatchesSearch,
   normalizeJobSearchFilters,
 } from "@lantern/shared/jobs";
+import { bestEffortWrite } from "./data/writeResult";
 import { shouldSendEmailNotifications } from "@lantern/shared/settings";
 import { isAlertMailConfigured, sendJobAlertEmail } from "./alertMail";
 import type { DataLayer } from "./data";
@@ -104,10 +105,15 @@ export async function processJobSavedSearchAlerts(
 
     // Advance the watermark even with no matches, so the next run scans a
     // smaller window instead of re-reading the same rows forever.
-    await db
-      .from("job_saved_searches")
-      .update({ last_checked_at: now })
-      .eq("id", search.id);
+    // BEST EFFORT (#108): the twin of `savedSearchMatches`. A lost stamp costs
+    // a wider scan next run, and that run re-stamps it.
+    bestEffortWrite(
+      await db
+        .from("job_saved_searches")
+        .update({ last_checked_at: now })
+        .eq("id", search.id),
+      { table: "job_saved_searches", op: "update", searchId: search.id, reason: "alert_watermark" },
+    );
   }
 
   if (sent > 0) {
