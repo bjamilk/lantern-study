@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AdminAppeal, decideListingAppeal, fetchAdminAppeals } from '../../services/admin';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
-import { StatPill } from '../ui/StatPill';
 import { Textarea } from '../ui/Textarea';
-import { formatDateTime } from './types';
+import { Body, Caption } from '../ui/Text';
+import { formatRelativeTime } from './types';
+import { AdminEmpty, AdminStatusBadge } from './AdminChrome';
 import { LISTING_APPEAL_STATUS_LABELS } from '@lantern/shared';
 
 interface AdminAppealsProps {
@@ -54,12 +55,12 @@ export const AdminAppeals: React.FC<AdminAppealsProps> = ({ onSuccess, onError }
   };
 
   return (
-    <Card className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-lantern-text-muted">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <Caption className="text-lantern-text-muted max-w-2xl">
           Sellers may appeal a takedown once. Reversing restores the listing and clears its rights state;
           upholding keeps it down. The seller is notified either way.
-        </p>
+        </Caption>
         <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
           {loading ? 'Loading…' : 'Refresh'}
         </Button>
@@ -68,35 +69,35 @@ export const AdminAppeals: React.FC<AdminAppealsProps> = ({ onSuccess, onError }
         {appeals.map((appeal) => {
           const sellerName = appeal.seller?.name || appeal.seller?.username || appeal.user_id.slice(0, 8);
           return (
-            <Card key={appeal.id} variant="outline" padding="sm" className="space-y-2">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-medium text-lantern-text">{appeal.title}</p>
-                  <p className="text-sm text-lantern-text-muted">
+            <Card key={appeal.id} padding="md" className="space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <Body className="font-semibold text-lantern-text">{appeal.title}</Body>
+                  <Caption className="text-lantern-text-muted">
                     Seller: {sellerName} · Listing status: {appeal.status}
                     {appeal.rights_status ? ` · Rights: ${appeal.rights_status}` : ''}
-                  </p>
+                  </Caption>
                   {appeal.takedown_reason ? (
-                    <p className="text-xs text-lantern-text-muted mt-1">
+                    <Caption className="text-lantern-text-muted">
                       Takedown reason: {appeal.takedown_reason}
-                      {appeal.takedown_at ? ` (${formatDateTime(appeal.takedown_at)})` : ''}
-                    </p>
+                      {appeal.takedown_at ? ` (${formatRelativeTime(appeal.takedown_at)})` : ''}
+                    </Caption>
                   ) : null}
                   {appeal.appeal_note ? (
-                    <p className="text-sm text-lantern-text-secondary mt-1 whitespace-pre-wrap">
+                    <Body className="text-lantern-text-secondary whitespace-pre-wrap">
                       Seller says: {appeal.appeal_note}
-                    </p>
+                    </Body>
+                  ) : null}
+                  {appeal.appealed_at ? (
+                    <Caption className="text-lantern-text-muted">
+                      Appealed {formatRelativeTime(appeal.appealed_at)}
+                    </Caption>
                   ) : null}
                 </div>
-                <StatPill
-                  label="Appeal"
-                  value={LISTING_APPEAL_STATUS_LABELS[appeal.appeal_status] ?? appeal.appeal_status}
-                  accent="warning"
-                />
+                <AdminStatusBadge tone="warning">
+                  {LISTING_APPEAL_STATUS_LABELS[appeal.appeal_status] ?? appeal.appeal_status}
+                </AdminStatusBadge>
               </div>
-              {appeal.appealed_at ? (
-                <p className="text-xs text-lantern-text-muted">Appealed {formatDateTime(appeal.appealed_at)}</p>
-              ) : null}
               <Textarea
                 value={notes[appeal.id] || ''}
                 onChange={(e) => setNotes((prev) => ({ ...prev, [appeal.id]: e.target.value }))}
@@ -123,11 +124,9 @@ export const AdminAppeals: React.FC<AdminAppealsProps> = ({ onSuccess, onError }
             </Card>
           );
         })}
-        {!appeals.length && !loading ? (
-          <p className="text-sm text-lantern-text-muted">No open appeals.</p>
-        ) : null}
+        {!appeals.length && !loading ? <AdminEmpty>No open appeals.</AdminEmpty> : null}
       </div>
-    </Card>
+    </div>
   );
 };
 

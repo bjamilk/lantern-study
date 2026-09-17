@@ -3,10 +3,17 @@ import { AdminPagination, AdminReport, AdminReportAction } from '../../services/
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Select } from '../ui/Select';
-import { StatPill } from '../ui/StatPill';
 import { Textarea } from '../ui/Textarea';
+import { Body, Caption } from '../ui/Text';
 import { PaginationBar } from './PaginationBar';
-import { exportCsv, formatDateTime, reportAgeInfo } from './types';
+import {
+  AdminActionDivider,
+  AdminEmpty,
+  AdminPageHeader,
+  AdminStatusBadge,
+  AdminToolbar,
+} from './AdminChrome';
+import { exportCsv, formatRelativeTime, reportAgeInfo } from './types';
 import {
   CONTENT_REPORT_TARGET_LABELS,
   CONTENT_REPORT_TARGET_TYPES,
@@ -44,6 +51,7 @@ interface AdminReportsProps {
   onBulkDismiss: () => void;
   /** Opens the user drawer for the target's owner (strikes, suspension). */
   onSelectUser?: (userId: string) => void;
+  loading?: boolean;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -88,6 +96,12 @@ function describeTarget(report: AdminReport): {
   };
 }
 
+function ageTone(tone: ReturnType<typeof reportAgeInfo>['tone']) {
+  if (tone === 'success') return 'success' as const;
+  if (tone === 'warning') return 'warning' as const;
+  return 'danger' as const;
+}
+
 export const AdminReports: React.FC<AdminReportsProps> = ({
   reports,
   pagination,
@@ -103,77 +117,85 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
   onResolve,
   onBulkDismiss,
   onSelectUser,
+  loading = false,
 }) => {
   const [severityByReport, setSeverityByReport] = useState<Record<string, 1 | 2 | 3>>({});
   const isOpenQueue = statusFilter === 'open' || statusFilter === 'pending' || statusFilter === 'under_review';
 
   return (
-    <Card className="space-y-3">
-      <div className="flex flex-wrap gap-2 justify-between">
-        <div className="flex flex-wrap gap-2">
-          <Select
-            value={statusFilter}
-            onChange={(e) => onStatusFilterChange(e.target.value as AdminReportStatusFilter)}
-            aria-label="Report status"
-          >
-            {ADMIN_REPORT_STATUS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            value={targetTypeFilter}
-            onChange={(e) => onTargetTypeFilterChange(e.target.value as AdminReportTargetFilter)}
-            aria-label="Reported content type"
-          >
-            <option value="all">All content types</option>
-            {CONTENT_REPORT_TARGET_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {CONTENT_REPORT_TARGET_LABELS[type]}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="flex gap-2">
-          {isOpenQueue && reports.length > 0 ? (
-            <Button variant="secondary" size="sm" onClick={onBulkDismiss}>
-              Bulk dismiss visible
+    <div className="space-y-4">
+      <AdminPageHeader
+        eyebrow="Queue"
+        title="Reports"
+        description="Review flagged content, warn or strike owners, and remove what should not stay up."
+      />
+
+      <AdminToolbar
+        actions={
+          <>
+            {isOpenQueue && reports.length > 0 ? (
+              <Button variant="secondary" size="sm" onClick={onBulkDismiss}>
+                Bulk dismiss visible
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!reports.length}
+              onClick={() =>
+                exportCsv(
+                  'admin-reports.csv',
+                  reports.map((r) => {
+                    const target = describeTarget(r);
+                    return {
+                      id: r.id,
+                      target_type: target.type,
+                      target_id: r.target_id || r.listing_id || '',
+                      target: target.title,
+                      owner: target.ownerName || target.ownerId || '',
+                      reason: r.reason,
+                      status: r.status,
+                      reporter: r.reporter?.name || r.reporter?.username || r.reporter_id,
+                      created: r.created_at,
+                      admin_note: r.admin_note || '',
+                    };
+                  })
+                )
+              }
+            >
+              Export CSV
             </Button>
-          ) : null}
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={!reports.length}
-            onClick={() =>
-              exportCsv(
-                'admin-reports.csv',
-                reports.map((r) => {
-                  const target = describeTarget(r);
-                  return {
-                    id: r.id,
-                    target_type: target.type,
-                    target_id: r.target_id || r.listing_id || '',
-                    target: target.title,
-                    owner: target.ownerName || target.ownerId || '',
-                    reason: r.reason,
-                    status: r.status,
-                    reporter: r.reporter?.name || r.reporter?.username || r.reporter_id,
-                    created: r.created_at,
-                    admin_note: r.admin_note || '',
-                  };
-                })
-              )
-            }
-          >
-            Export CSV
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      >
+        <Select
+          value={statusFilter}
+          onChange={(e) => onStatusFilterChange(e.target.value as AdminReportStatusFilter)}
+          aria-label="Report status"
+        >
+          {ADMIN_REPORT_STATUS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={targetTypeFilter}
+          onChange={(e) => onTargetTypeFilterChange(e.target.value as AdminReportTargetFilter)}
+          aria-label="Reported content type"
+        >
+          <option value="all">All content types</option>
+          {CONTENT_REPORT_TARGET_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {CONTENT_REPORT_TARGET_LABELS[type]}
+            </option>
+          ))}
+        </Select>
+      </AdminToolbar>
+
       <div className="space-y-3">
         {reports.map((report) => {
           const age = reportAgeInfo(report.created_at);
-          const accent = age.tone === 'success' ? 'success' : age.tone === 'warning' ? 'warning' : 'primary';
           const warned = report.admin_note?.includes('[warned');
           const target = describeTarget(report);
           const typeLabel = CONTENT_REPORT_TARGET_LABELS[target.type as ContentReportTargetType] ?? target.type;
@@ -182,22 +204,20 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
           const severity = severityByReport[report.id] ?? 1;
           const rowOpen = report.status === 'pending' || report.status === 'under_review';
           return (
-            <Card key={report.id} variant="outline" padding="sm" className="space-y-2">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
+            <Card key={report.id} padding="md" className="space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="inline-block rounded px-1.5 py-0.5 text-label font-semibold uppercase tracking-wide bg-lantern-primary-background text-lantern-primary">
-                      {typeLabel}
-                    </span>
-                    <p className="font-medium text-lantern-text truncate">{target.title}</p>
+                    <AdminStatusBadge tone="accent">{typeLabel}</AdminStatusBadge>
+                    <Body className="font-semibold text-lantern-text">{target.title}</Body>
                     {!target.exists ? (
-                      <span className="text-label tracking-normal font-semibold text-lantern-text-muted">(no longer exists)</span>
+                      <Caption className="text-lantern-text-muted">(no longer exists)</Caption>
                     ) : null}
                     {target.status ? (
-                      <span className="text-label tracking-normal text-lantern-text-muted">· {target.status}</span>
+                      <Caption className="text-lantern-text-muted">· {target.status}</Caption>
                     ) : null}
                   </div>
-                  <p className="text-sm text-lantern-text-muted">
+                  <Caption className="text-lantern-text-muted">
                     {reasonLabel(report.reason)} · reported by{' '}
                     {report.reporter?.name || report.reporter?.username || 'Unknown reporter'}
                     {target.ownerId ? (
@@ -208,7 +228,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
                           <button
                             type="button"
                             onClick={() => onSelectUser(target.ownerId as string)}
-                            className="text-lantern-primary hover:underline"
+                            className="font-semibold text-lantern-text hover:underline"
                           >
                             {target.ownerName || target.ownerId.slice(0, 8)}
                           </button>
@@ -217,24 +237,26 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
                         )}
                       </>
                     ) : null}
-                  </p>
+                  </Caption>
                   {report.details ? (
-                    <p className="text-sm text-lantern-text-secondary mt-1 whitespace-pre-wrap">{report.details}</p>
+                    <Body className="text-lantern-text-secondary whitespace-pre-wrap">{report.details}</Body>
                   ) : null}
                   {report.admin_note ? (
-                    <p className="text-xs text-lantern-text-muted mt-1">Note: {report.admin_note}</p>
+                    <Caption className="text-lantern-text-muted">Note: {report.admin_note}</Caption>
                   ) : null}
-                  {warned ? <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Owner was warned</p> : null}
+                  {warned ? <Caption className="text-lantern-accent">Owner was warned</Caption> : null}
+                  <Caption className="text-lantern-text-muted">
+                    {formatRelativeTime(report.created_at)}
+                    {report.legacy_source ? ` · migrated from ${report.legacy_source}` : ''}
+                  </Caption>
                 </div>
-                <div className="flex flex-wrap gap-1.5 items-center">
-                  <StatPill label="Status" value={STATUS_LABELS[report.status] ?? report.status} accent={rowOpen ? 'warning' : 'primary'} />
-                  <StatPill label="Age" value={age.label} accent={accent as 'success' | 'warning' | 'primary'} />
+                <div className="flex flex-wrap gap-1.5">
+                  <AdminStatusBadge tone={rowOpen ? 'warning' : 'neutral'}>
+                    {STATUS_LABELS[report.status] ?? report.status}
+                  </AdminStatusBadge>
+                  <AdminStatusBadge tone={ageTone(age.tone)}>{age.label}</AdminStatusBadge>
                 </div>
               </div>
-              <p className="text-xs text-lantern-text-muted">
-                {formatDateTime(report.created_at)}
-                {report.legacy_source ? ` · migrated from ${report.legacy_source}` : ''}
-              </p>
               {rowOpen ? (
                 <>
                   <Textarea
@@ -262,6 +284,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
                         Mark under review
                       </Button>
                     ) : null}
+                    <AdminActionDivider />
                     <Button
                       size="sm"
                       variant="secondary"
@@ -286,6 +309,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
                     >
                       Remove content
                     </Button>
+                    <AdminActionDivider />
                     <span className="inline-flex items-center gap-1">
                       <Select
                         value={String(severity)}
@@ -296,7 +320,6 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
                           }))
                         }
                         aria-label="Strike severity"
-                        className="px-2 py-1 text-xs"
                       >
                         <option value="1">Severity 1</option>
                         <option value="2">Severity 2</option>
@@ -319,9 +342,11 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
             </Card>
           );
         })}
-        {!reports.length ? <p className="text-sm text-lantern-text-muted">No reports in this queue.</p> : null}
+        {!reports.length ? (
+          <AdminEmpty>{loading ? 'Loading reports…' : 'No reports in this queue.'}</AdminEmpty>
+        ) : null}
       </div>
       <PaginationBar pagination={pagination} onPrev={onPrev} onNext={onNext} />
-    </Card>
+    </div>
   );
 };
