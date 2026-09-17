@@ -9,7 +9,9 @@
  * applied, and asserts the trace literally.
  *
  * It was written and committed against the UNTOUCHED route, so it is a freeze of
- * what the route did, not a description of what the extraction produced.
+ * what the route did, not a description of what the extraction produced. After
+ * the move it drives the same traces through the real `services/data/budget.ts`
+ * (see `initWith`), so both halves stay under it.
  *
  * Four expectations here are access control, not cosmetics. The API runs as the
  * SERVICE ROLE, which bypasses RLS, so the `eq("user_id", …)` in
@@ -39,6 +41,7 @@ jest.mock('../services/walletService', () => ({
 }));
 
 import router, { initializeBudgetRoutes } from './budget';
+import * as budgetData from '../services/data/budget';
 
 let walletStub: Record<string, jest.Mock>;
 
@@ -144,10 +147,21 @@ async function runRoute(
 
 const USER = 'user-1';
 
-/** Init the route family with a recording client and return the trace. */
+/**
+ * Init the route family with a `budget` namespace bound to the recording
+ * client, exactly the way `data/index.ts` binds it to the real one. The route
+ * calls `dataLayer.budget.<fn>(…)`; the REAL data module builds the chain; the
+ * recorder captures it. So the trace is still the query the database would see,
+ * end to end, and a change in either half shows up here.
+ */
 function initWith(result?: Result | ((table: string) => Result)) {
   const rec = recorder(result);
-  initializeBudgetRoutes({ getClient: () => rec.client } as any, {
+  const budget = Object.fromEntries(
+    Object.entries(budgetData)
+      .filter(([, fn]) => typeof fn === 'function')
+      .map(([name, fn]) => [name, (...args: unknown[]) => (fn as any)(rec.client, ...args)]),
+  );
+  initializeBudgetRoutes({ getClient: () => rec.client, budget } as any, {
     delete: jest.fn(async () => {}),
   } as any);
   return rec;
