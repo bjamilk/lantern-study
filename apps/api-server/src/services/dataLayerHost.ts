@@ -37,7 +37,7 @@
  * delegates to the facade instance or to a `services/*` singleton.
  */
 import type { SupabaseService } from './supabase';
-import type { DataLayer, DataLayerHost } from './data';
+import type { DataLayerHost } from './data';
 
 /**
  * The facade methods this bridge reaches that TypeScript hides because they are
@@ -53,18 +53,7 @@ type FacadeInternals = {
   generateTestQuestions: (config: any) => any[];
 };
 
-/**
- * `getLayer` is a THUNK, not the layer: the host is an argument to
- * `createDataLayer`, so the layer does not exist yet when this runs. Every
- * group-3 body below is lazy already — it resolves its `services/` singleton
- * when the dep is CALLED — so by then `server.ts` has assigned the layer. A
- * body that has not been flipped yet still takes `service`; the two coexist
- * until the last of them is flipped and the parameter goes away with them.
- */
-export function createDataLayerHost(
-  service: SupabaseService,
-  getLayer: () => DataLayer,
-): DataLayerHost {
+export function createDataLayerHost(service: SupabaseService): DataLayerHost {
   const internals = service as unknown as FacadeInternals;
 
   return {

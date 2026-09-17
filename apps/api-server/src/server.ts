@@ -220,7 +220,7 @@ async function initializeServices() {
     dataLayer = createDataLayer({
       client: supabaseService.getClient(),
       supabaseUrl: dbConfig.url,
-      host: createDataLayerHost(supabaseService, () => dataLayer),
+      host: createDataLayerHost(supabaseService),
     });
 
     const { setIdempotencyClient } = await import('./middleware/idempotency');
