@@ -2484,14 +2484,14 @@ router.get('/:noteId/attachments/:attachmentId/pages', asyncHandler(async (req: 
   // already have rows, so on a document's first open it must run AFTER the
   // backfill or the first walk-through would come back with no pictures and
   // only the second would have them.
-  let result = await ensurePages(legacyService(), {
+  let result = await ensurePages(dataLayer, {
     noteId: req.params.noteId,
     attachmentId: req.params.attachmentId,
   });
 
   const wantsImages = req.query.images === '1' || req.query.images === 'true';
   if (wantsImages && result.available && result.pages.length > 0) {
-    const render = await ensurePageImages(legacyService(), {
+    const render = await ensurePageImages(dataLayer, {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
     }).catch((err) => {
@@ -2503,14 +2503,14 @@ router.get('/:noteId/attachments/:attachmentId/pages', asyncHandler(async (req: 
       return { available: true, rendered: 0 };
     });
     if (render.rendered > 0) {
-      const refreshed = await getPages(legacyService(), req.params.attachmentId);
+      const refreshed = await getPages(dataLayer, req.params.attachmentId);
       if (refreshed.available && refreshed.pages.length > 0) {
         result = { ...result, pages: refreshed.pages };
       }
     }
   }
   const signed = result.pages.length
-    ? await signPageImages(legacyService(), result.pages)
+    ? await signPageImages(dataLayer, result.pages)
     : new Map<number, string>();
 
   res.json({
@@ -3500,7 +3500,7 @@ router.post(
       return;
     }
 
-    const page = await getPageText(legacyService(), {
+    const page = await getPageText(dataLayer, {
       noteId: req.params.noteId,
       attachmentId,
       pageIndex,

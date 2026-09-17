@@ -99,8 +99,7 @@ export async function runPresentationPreviewJob(
     // of a deck, so this is the moment slides become pages. Best effort — the
     // preview and the extracted text are this job's real output and neither
     // depends on the page rows.
-    // TRANSITIONAL (M2d): `persistPagesFromPdfBuffer` still takes the `SupabaseService` facade whole.
-    await persistPagesFromPdfBuffer(layer.legacyService, attachmentId, pdfBuffer, {
+    await persistPagesFromPdfBuffer(layer, attachmentId, pdfBuffer, {
       noteId,
       source: 'presentation_preview',
     });

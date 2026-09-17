@@ -612,8 +612,7 @@ export async function resolveNarrationTarget(
     };
   }
 
-  // TRANSITIONAL (M2d): `ensurePages` still takes the `SupabaseService` facade whole.
-  const pages = await ensurePages(layer.legacyService, {
+  const pages = await ensurePages(layer, {
     noteId: params.noteId,
     attachmentId: params.attachmentId,
   });
@@ -729,8 +728,7 @@ export async function buildNarrationScript(
   const version = Math.max(1, Math.floor(params.version || 1));
 
   await progress?.stage('reading');
-  // TRANSITIONAL (M2d): `ensurePages` still takes the `SupabaseService` facade whole.
-  const pages = await ensurePages(layer.legacyService, {
+  const pages = await ensurePages(layer, {
     noteId: params.noteId,
     attachmentId: params.attachmentId,
   });
@@ -856,8 +854,7 @@ export async function buildNarrationScript(
   // Page pictures are what make the deck playable offline. Best-effort and
   // AFTER the script is stored: a render that times out must not lose a script
   // the student has already paid for — the next GET renders what is missing.
-  // TRANSITIONAL (M2d): `ensurePageImages` still takes the `SupabaseService` facade whole.
-  void ensurePageImages(layer.legacyService, {
+  void ensurePageImages(layer, {
     noteId: params.noteId,
     attachmentId: params.attachmentId,
     maxPages: MAX_NARRATION_PAGES,
@@ -993,12 +990,10 @@ export async function getNarrationBundle(
   let pages: Array<{ pageIndex: number; imageUrl?: string }> = [];
 
   if (params.includeImages !== false && script.status === 'ready') {
-    // TRANSITIONAL (M2d): `getPages` still takes the `SupabaseService` facade whole.
-    const stored_pages = await getPages(layer.legacyService, params.attachmentId);
+    const stored_pages = await getPages(layer, params.attachmentId);
     if (stored_pages.available && stored_pages.pages.length) {
       const capped = stored_pages.pages.slice(0, MAX_NARRATION_PAGES);
-      // TRANSITIONAL (M2d): `signPageImages` still takes the `SupabaseService` facade whole.
-      const signed = await signPageImages(layer.legacyService, capped, {
+      const signed = await signPageImages(layer, capped, {
         expiresInSeconds: NARRATION_IMAGE_URL_TTL_SECONDS,
       });
       pages = capped.map((page) => ({

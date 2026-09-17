@@ -232,8 +232,7 @@ export async function runNoteOcrJob(
       // is what gets written to extracted_text, exactly as before. Failures are
       // swallowed inside persistPagesAfterPdfOcr — OCR succeeding is the thing
       // the student paid for and it must not be undone by a page write.
-      // TRANSITIONAL (M2d): `persistPagesAfterPdfOcr` still takes the `SupabaseService` facade whole.
-      await persistPagesAfterPdfOcr(data.legacyService, attachmentId, buffer, raster.pages, {
+      await persistPagesAfterPdfOcr(data, attachmentId, buffer, raster.pages, {
         noteId,
       });
     }

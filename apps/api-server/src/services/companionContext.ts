@@ -276,8 +276,7 @@ export async function buildTrustedCompanionContext(
     trusted.noteContext = undefined;
     try {
       const { getPageText } = await import('./notePages');
-      // TRANSITIONAL (M2d): `getPageText` still takes the `SupabaseService` facade whole.
-      const page = await getPageText(layer.legacyService, { noteId, attachmentId, pageIndex });
+      const page = await getPageText(layer, { noteId, attachmentId, pageIndex });
       const text = page.reason === 'ok' ? page.text.trim() : '';
       if (text) trusted.noteContext = text.slice(0, MAX_NOTE_LEN);
     } catch {
