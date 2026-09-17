@@ -65,12 +65,12 @@ export const RoomRecommendationCard: React.FC<RoomRecommendationCardProps> = ({
         className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lantern-ink/40"
       >
         <div
-          className={`flex h-32 items-center justify-center ${FEATURE_TINT_BG[feature]} ${FEATURE_PANEL_INK_TEXT[feature]}`}
+          className={`flex h-24 items-center justify-center ${FEATURE_TINT_BG[feature]} ${FEATURE_PANEL_INK_TEXT[feature]}`}
         >
           {scene ? (
-            // The band is 128px tall; 104 leaves the scene a margin without
+            // The band is 96px tall; 80 leaves the scene a margin without
             // making it a stamp in the middle of the panel.
-            <TileScene scene={scene} feature={feature} height={104} />
+            <TileScene scene={scene} feature={feature} height={80} />
           ) : illustration ? (
             <Illustration
               name={illustration}

@@ -9,6 +9,18 @@ import {
   removeAdminJobPosting,
   schoolApproveAdminJobPosting,
 } from '../../services/admin';
+import { Button } from '../ui/Button';
+import { Card } from '../ui/Card';
+import { Body, Caption } from '../ui/Text';
+import {
+  AdminEmpty,
+  AdminPageHeader,
+  AdminRowActions,
+  AdminStatusBadge,
+  AdminTable,
+  adminCellClass,
+  adminRowClass,
+} from './AdminChrome';
 
 export function AdminJobs() {
   const [postings, setPostings] = useState<any[]>([]);
@@ -59,28 +71,34 @@ export function AdminJobs() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-lantern-text">Jobs board moderation</h2>
-        <p className="text-sm text-lantern-text-secondary">
-          Suspend/remove posts, verify companies, resolve reports, school-approve roles.
-        </p>
-      </div>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+    <div className="space-y-5">
+      <AdminPageHeader
+        eyebrow="Careers"
+        title="Jobs"
+        description="Verify companies, resolve reports, and suspend or school-approve postings."
+      />
+      {error ? (
+        <div className="rounded-lantern border border-lantern-error/30 bg-lantern-error/10 px-3 py-2">
+          <Body className="text-lantern-error">{error}</Body>
+        </div>
+      ) : null}
 
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Pending company verification</h3>
+      <section className="space-y-3">
+        <Caption className="font-semibold uppercase tracking-wide text-lantern-text-muted">
+          Pending company verification
+        </Caption>
         {companies.length === 0 ? (
-          <p className="text-xs text-lantern-text-tertiary">No pending companies.</p>
+          <AdminEmpty>No pending companies.</AdminEmpty>
         ) : (
           companies.map((c) => (
-            <div key={c.id} className="flex flex-wrap items-center gap-2 border border-lantern-border rounded-lg p-2 text-sm">
-              <span className="font-medium">{c.displayName}</span>
-              <span className="text-lantern-text-tertiary">{c.verificationDomain || c.website}</span>
-              <button
-                type="button"
+            <Card key={c.id} padding="md" className="flex flex-wrap items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <Body className="font-semibold text-lantern-text">{c.displayName}</Body>
+                <Caption className="text-lantern-text-muted">{c.verificationDomain || c.website}</Caption>
+              </div>
+              <Button
+                size="sm"
                 disabled={busy}
-                className="text-xs px-2 py-1 rounded bg-emerald-600 text-white"
                 onClick={() =>
                   void runAction(async () => {
                     await setAdminJobCompanyVerification(c.id, 'verified');
@@ -88,11 +106,11 @@ export function AdminJobs() {
                 }
               >
                 Verify
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
                 disabled={busy}
-                className="text-xs px-2 py-1 rounded border border-lantern-border"
                 onClick={() => {
                   const note =
                     window.prompt('Optional rejection note for the company owners:') || undefined;
@@ -102,29 +120,31 @@ export function AdminJobs() {
                 }}
               >
                 Reject
-              </button>
-            </div>
+              </Button>
+            </Card>
           ))
         )}
       </section>
 
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Open job reports</h3>
+      <section className="space-y-3">
+        <Caption className="font-semibold uppercase tracking-wide text-lantern-text-muted">
+          Open job reports
+        </Caption>
         {reports.length === 0 ? (
-          <p className="text-xs text-lantern-text-tertiary">No open reports.</p>
+          <AdminEmpty>No open reports.</AdminEmpty>
         ) : (
           reports.map((r) => (
-            <div key={r.id} className="border border-lantern-border rounded-lg p-2 text-sm space-y-1">
-              <p>
-                {r.reason} — {r.posting?.title || r.posting_id}
-              </p>
-              {r.details ? (
-                <p className="text-xs text-lantern-text-secondary">{r.details}</p>
-              ) : null}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="text-xs px-2 py-1 rounded border"
+            <Card key={r.id} padding="md" className="space-y-3">
+              <div>
+                <Body className="font-semibold text-lantern-text">
+                  {r.reason} — {r.posting?.title || r.posting_id}
+                </Body>
+                {r.details ? <Caption className="text-lantern-text-secondary mt-1">{r.details}</Caption> : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="danger"
                   disabled={busy}
                   onClick={() =>
                     void runAction(async () => {
@@ -136,10 +156,10 @@ export function AdminJobs() {
                   }
                 >
                   Remove job
-                </button>
-                <button
-                  type="button"
-                  className="text-xs px-2 py-1 rounded border"
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
                   disabled={busy}
                   onClick={() =>
                     void runAction(async () => {
@@ -148,37 +168,43 @@ export function AdminJobs() {
                   }
                 >
                   Dismiss
-                </button>
+                </Button>
               </div>
-            </div>
+            </Card>
           ))
         )}
       </section>
 
-      <section className="space-y-2">
-        <h3 className="text-sm font-semibold">Recent job posts</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-lantern-text-tertiary">
-                <th className="py-1 pr-2">Title</th>
-                <th className="py-1 pr-2">Type</th>
-                <th className="py-1 pr-2">Status</th>
-                <th className="py-1">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {postings.map((p) => (
-                <tr key={p.id} className="border-t border-lantern-border">
-                  <td className="py-2 pr-2">{p.title}</td>
-                  <td className="py-2 pr-2">{p.employment_type}</td>
-                  <td className="py-2 pr-2">{p.status}</td>
-                  <td className="py-2 space-x-1">
+      <section className="space-y-3">
+        <Caption className="font-semibold uppercase tracking-wide text-lantern-text-muted">
+          Recent job posts
+        </Caption>
+        {postings.length ? (
+          <AdminTable headers={['Title', 'Type', 'Status', 'Actions']}>
+            {postings.map((p) => (
+              <tr key={p.id} className={adminRowClass}>
+                <td className={adminCellClass}>{p.title}</td>
+                <td className={`${adminCellClass} text-lantern-text-muted`}>{p.employment_type}</td>
+                <td className={adminCellClass}>
+                  <AdminStatusBadge
+                    tone={
+                      p.status === 'active'
+                        ? 'success'
+                        : p.status === 'suspended_by_admin'
+                          ? 'warning'
+                          : 'neutral'
+                    }
+                  >
+                    {String(p.status || '').replace(/_/g, ' ')}
+                  </AdminStatusBadge>
+                </td>
+                <td className={`${adminCellClass} whitespace-nowrap`}>
+                  <AdminRowActions>
                     {p.status === 'pending_school_approval' ? (
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
+                        variant="secondary"
                         disabled={busy}
-                        className="text-xs px-2 py-1 rounded border"
                         onClick={() =>
                           void runAction(async () => {
                             await schoolApproveAdminJobPosting(p.id, true);
@@ -186,13 +212,13 @@ export function AdminJobs() {
                         }
                       >
                         School approve
-                      </button>
+                      </Button>
                     ) : null}
                     {p.status === 'active' ? (
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         disabled={busy}
-                        className="text-xs px-2 py-1 rounded border"
                         onClick={() =>
                           void runAction(async () => {
                             await updateAdminJobPostingStatus(p.id, 'suspended_by_admin');
@@ -200,12 +226,12 @@ export function AdminJobs() {
                         }
                       >
                         Suspend
-                      </button>
+                      </Button>
                     ) : p.status === 'suspended_by_admin' ? (
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         disabled={busy}
-                        className="text-xs px-2 py-1 rounded border"
                         onClick={() =>
                           void runAction(async () => {
                             await updateAdminJobPostingStatus(p.id, 'active');
@@ -213,12 +239,12 @@ export function AdminJobs() {
                         }
                       >
                         Activate
-                      </button>
+                      </Button>
                     ) : null}
-                    <button
-                      type="button"
+                    <Button
+                      size="sm"
+                      variant="danger"
                       disabled={busy}
-                      className="text-xs px-2 py-1 rounded border text-red-600"
                       onClick={() =>
                         void runAction(async () => {
                           await removeAdminJobPosting(p.id);
@@ -226,13 +252,15 @@ export function AdminJobs() {
                       }
                     >
                       Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </Button>
+                  </AdminRowActions>
+                </td>
+              </tr>
+            ))}
+          </AdminTable>
+        ) : (
+          <AdminEmpty>No recent job posts.</AdminEmpty>
+        )}
       </section>
     </div>
   );
