@@ -15,14 +15,18 @@ type Row = {
   operation: string;
   idempotency_key: string;
   response: unknown;
+  /** Set by the INSERT the way the table's `DEFAULT now()` does. */
+  created_at?: string;
 };
 
 const COLUMN_READERS: Record<string, (r: Row) => unknown> = {
   user_id: (r) => r.user_id,
   operation: (r) => r.operation,
   idempotency_key: (r) => r.idempotency_key,
-  // PostgREST's JSON text accessor, as used by the claim/store CAS.
+  // PostgREST's JSON text accessors, as used by the claim/store CAS.
   'response->>_status': (r) => (r.response as { _status?: string } | null)?._status,
+  'response->>_claimedAt': (r) =>
+    (r.response as { _claimedAt?: string } | null)?._claimedAt ?? null,
 };
 
 function createMemoryClient(store: Row[] = []) {
@@ -37,6 +41,11 @@ function createMemoryClient(store: Row[] = []) {
     const filters: Array<[string, unknown]> = [];
     const chain: any = {
       eq(col: string, val: unknown) {
+        filters.push([col, val]);
+        return chain;
+      },
+      // PostgREST `is.null` on a JSON accessor: a missing key reads as SQL NULL.
+      is(col: string, val: unknown) {
         filters.push([col, val]);
         return chain;
       },
@@ -72,13 +81,19 @@ function createMemoryClient(store: Row[] = []) {
             ) {
               return Promise.resolve({ data: null, error: { code: '23505', message: 'duplicate' } });
             }
-            store.push({ ...row });
+            // The table's `created_at timestamptz NOT NULL DEFAULT now()`.
+            store.push({ created_at: new Date().toISOString(), ...row });
             return Promise.resolve({ data: row, error: null });
           },
           select(_cols: string) {
             return eqChain(async (filters) => {
               const found = store.find((r) => match(filters, r));
-              return { data: found ? { response: found.response } : null, error: null };
+              return {
+                data: found
+                  ? { response: found.response, created_at: found.created_at ?? null }
+                  : null,
+                error: null,
+              };
             });
           },
           update(patch: { response: unknown }) {
@@ -357,6 +372,45 @@ describe('withIdempotency', () => {
       // instead of collapsing into "Something went wrong" (H7).
       name: 'IdempotentRetryAfterFailureError',
     });
+  });
+
+  /**
+   * TODAY'S BEHAVIOUR, PINNED (#117).
+   *
+   * A claim that was never finished — the process died between claiming the key
+   * and storing the response (deploy, crash, OOM), or the failure-marker write
+   * itself failed — leaves the row at `__processing__`. Only `__failed__` has a
+   * TTL; there is NO staleness handling for `__processing__`. So every retry on
+   * that key waits out the whole poll window and answers 409, for ever —
+   * retrying with the same key being the entire point of an idempotency key.
+   *
+   * This test asserts the BUG on purpose. The fix commit rewrites it.
+   */
+  it('leaves a `__processing__` claim wedged: an hour-old claim still answers 409', async () => {
+    jest.useFakeTimers();
+    try {
+      const { client } = createMemoryClient([
+        {
+          user_id: 'user-1',
+          operation: 'op',
+          idempotency_key: 'key-wedged',
+          response: { _status: '__processing__' },
+          created_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        },
+      ]);
+      const handler = jest.fn(async () => ({ ok: true }));
+      const attempt = withIdempotency(client as any, 'user-1', 'op', 'key-wedged', handler);
+      const asserted = expect(attempt).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'IDEMPOTENCY_CONCURRENT',
+      });
+      // The poll window is 50 x 100 ms; nothing else can move the row on.
+      await jest.advanceTimersByTimeAsync(10_000);
+      await asserted;
+      expect(handler).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('passes through when idempotency key is null', async () => {
