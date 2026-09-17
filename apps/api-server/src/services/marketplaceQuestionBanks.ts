@@ -13,6 +13,7 @@
  * money services share one type and how the last facade-side callers adapt.
  */
 import type { MarketplaceServiceHost } from './marketplaceServiceHost';
+import { bestEffortWrite } from './data/writeResult';
 import { PublicError } from '../utils/safeError';
 import {
   COURSE_ANCHOR_COPY,
@@ -262,7 +263,22 @@ export class MarketplaceQuestionBanksService {
       .single();
     if (error || !bank) {
       // Don't leave a purchasable listing with no content behind it.
-      await this.db.from('marketplace_listings').delete().eq('id', listing.id);
+      // BEST EFFORT at ERROR level, with a Sentry marker (#108). It cannot
+      // throw: the content error below is the one the seller needs. But if the
+      // cleanup is lost, a PURCHASABLE listing exists with nothing behind it —
+      // someone can pay for a question bank that does not exist — so it is
+      // reported rather than swallowed.
+      bestEffortWrite(
+        await this.db.from('marketplace_listings').delete().eq('id', listing.id),
+        {
+          table: 'marketplace_listings',
+          op: 'delete',
+          listingId: listing.id,
+          reason: 'orphaned_listing_cleanup',
+        },
+        'error',
+        'orphaned-listing-cleanup-failed',
+      );
       throw error || new Error('Failed to store question bank content');
     }
 
@@ -558,14 +574,20 @@ export class MarketplaceQuestionBanksService {
     }
 
     // Keep the browse-card question count honest.
+    //
+    // BEST EFFORT (#108): the bank itself is already republished under its
+    // optimistic lock; this only refreshes the number on the browse card.
     const fields = listing.category_specific_fields || {};
-    await this.db
-      .from('marketplace_listings')
-      .update({
-        category_specific_fields: { ...fields, questionCount, digital: true },
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', listingId);
+    bestEffortWrite(
+      await this.db
+        .from('marketplace_listings')
+        .update({
+          category_specific_fields: { ...fields, questionCount, digital: true },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', listingId),
+      { table: 'marketplace_listings', op: 'update', listingId, reason: 'browse_card_counts' },
+    );
 
     // The seller's own offline copy should reflect what buyers now get.
     try {

@@ -374,8 +374,14 @@ describe('discarded write errors do not grow', () => {
     // assertion above vacuously true.
     const files = SCANNED.flatMap((dir) => sourceFiles(path.join(SRC_ROOT, dir)));
     expect(files.length).toBeGreaterThan(200);
+    // Non-vacuity, expressed so that FINISHING the work cannot fail it. This
+    // used to be a magic floor (`> 50`), which the lane walked straight through
+    // — the second time a self-test in this file failed on success. What it was
+    // really guarding is rot: a scan that finds NOTHING while the baseline says
+    // there is something to find.
     const total = Object.values(current).reduce((a, b) => a + b, 0);
-    expect(total).toBeGreaterThan(50);
+    const baselineTotal = Object.values(baseline).reduce((a, b) => a + b, 0);
+    if (baselineTotal > 0) expect(total).toBeGreaterThan(0);
     // The canary is that the money file is REACHED, not that it is still dirty.
     // It used to assert `marketplacePayments.ts` was among the findings, which
     // stopped being true the moment that file was finished — a self-test that

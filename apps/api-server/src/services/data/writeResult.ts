@@ -141,6 +141,17 @@ export function bestEffortWrite(
   result: WriteResult,
   context: WriteContext,
   level: 'warn' | 'error' = 'warn',
+  /**
+   * When given (and only at 'error' level), the failure is ALSO reported to
+   * Sentry under this stable fingerprint, the way `reconcileLaterWrite` reports
+   * a money-moved write.
+   *
+   * For the sites where a lost row is a fact somebody has to act on even though
+   * no money moved and the request must still succeed: an admin audit row (a
+   * compliance event), an idempotency key wedged at `__processing__`, a
+   * purchasable listing left with no content behind it.
+   */
+  fingerprint?: string,
 ): boolean {
   const error = result?.error;
   if (!error) return true;
@@ -151,6 +162,25 @@ export function bestEffortWrite(
   };
   if (level === 'error') logger.error('Database write failed (best-effort)', meta);
   else logger.warn('Database write failed (best-effort)', meta);
+  if (fingerprint && level === 'error') {
+    captureScopedException(
+      new Error(
+        `Write failed (best-effort): ${context.op} on ${context.table}${
+          meta.code ? ` (${meta.code})` : ''
+        }`,
+      ),
+      {
+        fingerprint: [fingerprint],
+        tags: {
+          table: context.table,
+          op: context.op,
+          ...(context.orderId == null ? {} : { orderId: String(context.orderId) }),
+          ...(context.userId == null ? {} : { userId: String(context.userId) }),
+        },
+        extra: meta,
+      },
+    );
+  }
   return false;
 }
 

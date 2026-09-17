@@ -21,6 +21,7 @@
  * money services share one type and how the last facade-side callers adapt.
  */
 import type { MarketplaceServiceHost } from './marketplaceServiceHost';
+import { bestEffortWrite } from './data/writeResult';
 import { PublicError } from '../utils/safeError';
 import { isMissingTopicColumn } from './academicCourses';
 import {
@@ -408,7 +409,22 @@ export class MarketplaceStudyPacksService {
       .single();
     if (error || !pack) {
       // Don't leave a purchasable listing with no content behind it.
-      await this.db.from('marketplace_listings').delete().eq('id', listing.id);
+      // BEST EFFORT at ERROR level, with a Sentry marker (#108). It cannot
+      // throw: the content error below is the one the seller needs. But if the
+      // cleanup is lost, a PURCHASABLE listing exists with nothing behind it —
+      // someone can pay for a study pack that does not exist — so it is
+      // reported rather than swallowed.
+      bestEffortWrite(
+        await this.db.from('marketplace_listings').delete().eq('id', listing.id),
+        {
+          table: 'marketplace_listings',
+          op: 'delete',
+          listingId: listing.id,
+          reason: 'orphaned_listing_cleanup',
+        },
+        'error',
+        'orphaned-listing-cleanup-failed',
+      );
       throw error || new Error('Failed to store study pack content');
     }
 
@@ -808,7 +824,14 @@ export class MarketplaceStudyPacksService {
       if (resolvedTopicId) patch.topic_id = resolvedTopicId;
       const { error } = await this.db.from('decks').update(patch).eq('id', deckId);
       if (error && isMissingTopicColumn(error)) {
-        await this.db.from('decks').update({ course_id: courseId }).eq('id', deckId);
+        // BEST EFFORT (#108): the retry without the topic. The buyer has their
+        // deck either way — "a half-filed deck beats a failed delivery" — but
+        // when this one fails too the deck is delivered UNFILED, and nothing
+        // used to say so.
+        bestEffortWrite(
+          await this.db.from('decks').update({ course_id: courseId }).eq('id', deckId),
+          { table: 'decks', op: 'update', deckId, userId, reason: 'file_deck_without_topic' },
+        );
       }
     }
     return deckId ?? priorDeckId;
@@ -1009,14 +1032,20 @@ export class MarketplaceStudyPacksService {
     }
 
     // Keep the browse-card counts honest.
+    //
+    // BEST EFFORT (#108): the pack itself is already republished under its
+    // optimistic lock; this only refreshes the numbers on the browse card.
     const fields = listing.category_specific_fields || {};
-    await this.db
-      .from('marketplace_listings')
-      .update({
-        category_specific_fields: { ...fields, counts, digital: true },
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', listingId);
+    bestEffortWrite(
+      await this.db
+        .from('marketplace_listings')
+        .update({
+          category_specific_fields: { ...fields, counts, digital: true },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', listingId),
+      { table: 'marketplace_listings', op: 'update', listingId, reason: 'browse_card_counts' },
+    );
 
     // Refresh the seller's own delivered copy — but only if they had already
     // downloaded it. Never mint a fresh entitlement here, which would make the
