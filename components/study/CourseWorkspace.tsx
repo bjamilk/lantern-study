@@ -148,6 +148,8 @@ import { useNoteHandlers } from '../../hooks/useNoteHandlers';
 import { useAiJobUserId } from '../../hooks/useAiJobs';
 import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { useFocusSidebarCollapse } from '../../hooks/useFocusSidebarCollapse';
+import { useCompanionRail } from '../../hooks/useCompanionRail';
+import { CompanionRailButton } from './CompanionRailButton';
 import { runAiJob } from '../../stores/aiJobRunner';
 import { touchWorkspaceRecent } from '../../utils/workspaceRecents';
 import * as notesApi from '../../services/notes';
@@ -246,9 +248,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [planGenerating, setPlanGenerating] = useState(false);
   const [quizQuestionCount, setQuizQuestionCount] = useState(10);
   const [importSource, setImportSource] = useState<StudyUploadSource | null>(null);
-  const [companionRail, setCompanionRail] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
-  );
   const [createKind, setCreateKind] = useState<CreateFromSourceKind | null>(null);
   const [createOptions, setCreateOptions] = useState<CreateFromSourceOptions | null>(null);
   const [testPreset, setTestPreset] = useState<(typeof TEST_SITTING_PRESETS)[number]['id'] | null>(null);
@@ -321,18 +320,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       cancelled = true;
     };
   }, [studySetId]);
-
-  // Companion layout: docked rail at lg+, overlay drawer below. Driven by the
-  // media query itself rather than by a CSS breakpoint, because the two render
-  // DIFFERENT components (`variant="rail"` vs `"drawer"`), not one styled two
-  // ways. Mount-only; the listener is removed on unmount.
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const sync = () => setCompanionRail(mq.matches);
-    sync();
-    mq.addEventListener('change', sync);
-    return () => mq.removeEventListener('change', sync);
-  }, []);
 
   // URL → pane. This is the ROUTED half of the two navigation models: the path's
   // activity becomes `activity`, and `?createNew` opens that activity's creation
@@ -786,10 +773,83 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     void openNote(decision.noteId);
   }, [activity, essays, openNote, selectedNote?.id]);
 
+  /**
+   * FOCUS: a studio is open in a SET room, so the chrome collapses to one bar.
+   *
+   * Course rooms are deliberately excluded — they still need the activity chip
+   * strip and the Materials column, neither of which a set room draws any more.
+   * `focusActivity` is the same answer narrowed to a studio id, so the bar can
+   * take a `WorkspaceActivityId` without a cast: `home` and `add` are not FOCUS
+   * by definition, and TypeScript should get to see that rather than be told.
+   *
+   * Declared HERE, above `openSetChat`, because the companion rail's remembered
+   * state is per surface and this is which surface we are on.
+   */
+  const focusMode = Boolean(studySetId) && isSetRoomFocus(activity, routePath);
+  const focusActivity: WorkspaceActivityId | null =
+    focusMode && activity !== 'home' && activity !== 'add' ? activity : null;
+
+  /**
+   * How much room the AI companion gets, measured off the row below rather than
+   * off the window — see `hooks/useCompanionRail` and issue #105. The three
+   * modes render three different things (a docked panel, a 48px rail, or
+   * nothing but the header's Chat button), so this is state, not a CSS
+   * breakpoint.
+   */
+  const rail = useCompanionRail(focusMode ? 'focus' : 'home');
+
+  /**
+   * A counter the docked panel watches so an "Ask Lantern" moves focus into the
+   * composer even when the panel was already open. Opening the companion is
+   * what focuses it otherwise, and a panel that never closed never opens.
+   */
+  const [companionFocusTick, setCompanionFocusTick] = useState(0);
+
+  /**
+   * Open the companion on this set — from a tool tile, a header button, the
+   * focus bar, anywhere.
+   *
+   * It EXPANDS the rail without remembering: the student asking one question is
+   * not the student choosing to study beside a chat panel, and writing the
+   * preference here would quietly undo a collapse they meant. Where the room
+   * cannot dock, `expand()` leaves the rail collapsed and the open below
+   * becomes the overlay sheet instead.
+   */
   const openSetChat = (message?: string) => {
+    rail.expand();
+    setCompanionFocusTick((tick) => tick + 1);
     if (message) useCompanionStore.getState().openWithMessage(message);
     else useCompanionStore.getState().open();
   };
+
+  /** The student's own expand, from the collapsed rail. This one is a choice. */
+  const expandCompanionRail = () => {
+    rail.expand({ remember: true });
+    setCompanionFocusTick((tick) => tick + 1);
+    useCompanionStore.getState().open();
+  };
+
+  /** The student's own collapse, from the panel header. So is this one. */
+  const collapseCompanionRail = () => {
+    rail.collapse();
+    useCompanionStore.getState().close();
+  };
+
+  /**
+   * When the docked panel goes away — the student collapsed it, or the room
+   * narrowed past the point where it fits — put the companion away with it.
+   *
+   * Without this a window drag would turn an open docked panel into a sheet
+   * thrown over the studio, since the overlay is the same store flag. A cleanup
+   * rather than a comparison of the previous mode: the only thing that has to
+   * be true is that nothing is left open behind a rail.
+   */
+  useEffect(() => {
+    if (rail.mode !== 'docked') return;
+    return () => {
+      useCompanionStore.getState().close();
+    };
+  }, [rail.mode]);
 
   // Build this set's plan from its own reading notes, once, and persist it.
   // Guarded three ways: no set, a plan already in state, or a run in flight. It
@@ -1402,19 +1462,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
    * while you were not on it, which is a control that appears and disappears
    * depending on where you are; in a menu that is simply a row.
    */
-  /**
-   * FOCUS: a studio is open in a SET room, so the chrome collapses to one bar.
-   *
-   * Course rooms are deliberately excluded — they still need the activity chip
-   * strip and the Materials column, neither of which a set room draws any more.
-   * `focusActivity` is the same answer narrowed to a studio id, so the bar can
-   * take a `WorkspaceActivityId` without a cast: `home` and `add` are not FOCUS
-   * by definition, and TypeScript should get to see that rather than be told.
-   */
-  const focusMode = Boolean(studySetId) && isSetRoomFocus(activity, routePath);
-  const focusActivity: WorkspaceActivityId | null =
-    focusMode && activity !== 'home' && activity !== 'add' ? activity : null;
-
   // The left nav chrome steps aside at lg+ while a studio is open — BOTH the
   // sidebar rail and the chats flyout column beside it, which defaults to open
   // and is a further 320px — and comes back when the student leaves, unless
@@ -1562,14 +1609,25 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           }}
         />
       ) : null}
-      {/* Room layout. Stacked below lg, side-by-side with the companion rail at
-          lg+. `min-h-0` + `min-w-0` repeat down every level of this nesting on
+      {/* Room layout, and THE ELEMENT THE COMPANION IS MEASURED AGAINST: its
+          width is what the room actually has, after the shell's sidebar and
+          chats flyout have taken theirs. `rail.rowRef` observes it; nothing
+          here reads the viewport (issue #105).
+          Laid out as a row whenever the companion is beside the studio, and as
+          a column when it is not — the drawer is fixed-position, so a room with
+          no rail is exactly the single-column room it always was.
+          `min-h-0` + `min-w-0` repeat down every level of this nesting on
           purpose: each is a flex child that must be allowed to shrink, or the
           inner scrollers stop scrolling and the panes spill.
           The header block is `shrink-0` — it clips, and a clipping element in a
           flex column is crushed vertically as the content beside it grows unless
           it refuses to shrink. */}
-      <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
+      <div
+        ref={rail.rowRef}
+        className={`flex-1 flex min-h-0 overflow-hidden ${
+          rail.mode === 'none' ? 'flex-col' : 'flex-row'
+        }`}
+      >
         <div
           className={`flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden px-4 md:px-6 ${
             focusActivity ? 'pt-0' : 'pt-4'
@@ -1593,7 +1651,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               onOpenSettings={() => setSettingsOpen(true)}
               menu={roomMenu}
               timer={<StudySetTimer setId={studySetId} />}
-              {...(companionRail ? {} : { onOpenChat: () => openSetChat() })}
+              // Only where there is no rail at all. A collapsed rail already
+              // carries this button, 48px to the right, and two chat buttons on
+              // one bar is the header the focus bar replaced.
+              {...(rail.mode === 'none' ? { onOpenChat: () => openSetChat() } : {})}
             />
           </div>
         ) : studySetId ? (
@@ -1616,7 +1677,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             controls={
               <>
                 <StudySetTimer setId={studySetId} />
-                {!companionRail ? (
+                {rail.mode === 'none' ? (
                   <Button variant="secondary" onClick={() => openSetChat()} aria-label="Chat">
                     <AppIcon name="chatbubbles" size={16} />
                     <span className="ml-1.5">Chat</span>
@@ -1631,7 +1692,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             subtitle="Notes, cards, tests and lectures in one room"
             actions={
               <div className="flex flex-wrap items-center gap-2">
-                {!companionRail ? (
+                {rail.mode === 'none' ? (
                   <Button variant="secondary" onClick={() => openSetChat()} aria-label="Chat">
                     <AppIcon name="chatbubbles" size={16} />
                     <span className="ml-1.5">Chat</span>
@@ -2386,9 +2447,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </div>
         </div>
 
-        {companionRail ? (
-        <aside className="flex w-full lg:w-96 xl:w-[28rem] 2xl:w-[32rem] min-h-0 flex-1 lg:flex-none self-stretch">
-          <div className="flex flex-1 min-h-0 flex-col overflow-hidden border-t border-lantern-border lg:border-t-0 lg:border-l">
+        {rail.mode === 'docked' ? (
+        <aside className={`flex ${rail.dockWidthClass} min-h-0 shrink-0 self-stretch`}>
+          <div className="flex flex-1 min-h-0 flex-col overflow-hidden border-l border-lantern-border">
             <div className="flex-1 min-h-0 overflow-hidden">
               <AICompanionPanel
                 variant="rail"
@@ -2417,23 +2478,44 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 // The rest of the plan, so the picker can offer a cold start
                 // on any topic that is not the Continue row.
                 guidedTopics={guidedTopics}
+                // The close control on a docked rail COLLAPSES it rather than
+                // shutting the companion — the difference the student feels is
+                // that the 48px rail is still there to press. Until this, the
+                // room never passed `closable` at all and a docked panel could
+                // not be dismissed by any means.
+                closable
+                onClose={collapseCompanionRail}
+                closeLabel="Collapse Lantern AI"
+                focusComposerSignal={companionFocusTick}
               />
             </div>
           </div>
         </aside>
         ) : (
-          <AICompanionPanel
-            variant="drawer"
-            drawerMaxWidthClass="max-w-lg"
-            context={companionContext}
-            onAction={onCompanionAction}
-            theme={theme}
-            onTurnInto={(target, noteId) => void handleTurnInto(target, noteId)}
-            onTurnIntoMessage={(target, draft) => void handleTurnIntoMessage(target, draft)}
-            turnIntoExisting={companionNote ? turnIntoExisting(companionNote.id) : undefined}
-            guidedNextTopic={guidedNextTopic}
-            guidedTopics={guidedTopics}
-          />
+          <>
+            {rail.mode === 'collapsed' ? (
+              <CompanionRailButton
+                onExpand={expandCompanionRail}
+                hasAttachment={Boolean(companionNote)}
+              />
+            ) : null}
+            {/* The overlay, and — below the rail's own minimum — the only
+                companion the room has. A scrim at every width, because here it
+                really is modal over the studio. */}
+            <AICompanionPanel
+              variant="drawer"
+              drawerMaxWidthClass="max-w-lg"
+              drawerBackdropClassName="bg-black/40"
+              context={companionContext}
+              onAction={onCompanionAction}
+              theme={theme}
+              onTurnInto={(target, noteId) => void handleTurnInto(target, noteId)}
+              onTurnIntoMessage={(target, draft) => void handleTurnIntoMessage(target, draft)}
+              turnIntoExisting={companionNote ? turnIntoExisting(companionNote.id) : undefined}
+              guidedNextTopic={guidedNextTopic}
+              guidedTopics={guidedTopics}
+            />
+          </>
         )}
       </div>
 
