@@ -135,8 +135,8 @@ Founder decisions on the questions Phase A raised. The classification above stan
    visible at their call sites. A reconciliation job that re-stamps the rows these events
    name is filed as a follow-up and is NOT built in this lane.
 2. **The orphan `initialized` payment row** after a failed link: leave it, as the pilot does.
-   The follow-up issue notes that reconciliation may later want a `metadata` marker to tell
-   an abandoned row from an open one.
+   #113 notes that reconciliation may later want a `metadata` marker to tell an abandoned
+   row from an open one.
 3. **The sites that are right to throw on the webhook path but are also called inline after
    a successful transfer** (`finalizeOrderPayout`, `markPaymentPaidOut`): in Phase B the
    inline callers CATCH and route to `reconcileLaterWrite` semantics, while the webhook path
