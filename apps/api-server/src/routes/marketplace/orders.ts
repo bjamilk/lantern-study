@@ -24,6 +24,7 @@ import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempot
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
 import { FULFILLMENT_MODES, cacheService, dataLayer, requestContentHash } from './context';
 import { respondMarketplaceClientError, respondMarketplaceError } from './errors';
+import { mustWrite } from '../../services/data/writeResult';
 const router = Router();
 
 /**
@@ -332,15 +333,30 @@ router.patch(
           // stays INSIDE the idempotency claim, so a replay re-runs neither this
           // nor the status transition below.
           //
-          // KNOWN ISSUE (tracked, #108): the returned `{error}` is discarded, so
-          // a failed update is invisible and this handler still answers success
-          // — a seller told their meeting point saved may have saved nothing.
-          // Left as-is; R2 moves queries, it does not fix them.
-          await dataLayer.marketplace.updateOrderFieldsAsParty(
-            req.params.id,
-            req.user.id,
-            isSeller,
-            fieldUpdates
+          // FIXED (#108): the returned `{error}` used to be discarded, so a
+          // seller who set a meeting point and a note was told it saved when
+          // neither did — and the order moved state anyway, leaving the buyer
+          // an order that advanced with no collection details on it.
+          //
+          // MUST SUCCEED. Nothing external has happened: the status transition
+          // below has not run, so failing here leaves the order exactly as it
+          // was rather than half-applied. The throw marks this idempotency key
+          // failed for its 10-minute window (services/idempotency.ts), which is
+          // the designed answer to a handler that failed — the client retries
+          // with a new key, and nothing was applied to be replayed.
+          mustWrite(
+            await dataLayer.marketplace.updateOrderFieldsAsParty(
+              req.params.id,
+              req.user.id,
+              isSeller,
+              fieldUpdates
+            ),
+            {
+              table: 'marketplace_orders',
+              op: 'update',
+              orderId: req.params.id,
+              fields: Object.keys(fieldUpdates).sort().join(','),
+            }
           );
         }
         const order = await ordersService.updateOrderStatus(
