@@ -41,7 +41,8 @@ jest.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-import { SupabaseService } from './supabase';
+import { createDataLayer } from './data';
+import { createDataClient } from './data/client';
 
 /**
  * Server half of the "Avg / question" fix.
@@ -57,11 +58,26 @@ import { SupabaseService } from './supabase';
  * The two halves are tested separately because the shared package's server build
  * deliberately excludes the client-only dashboard builder.
  */
-const service = () =>
-  new SupabaseService({
-    url: 'https://example.supabase.co',
-    serviceRoleKey: 'test-key',
-  } as any);
+/**
+ * HARNESS (monolith lane M3, Phase B, PR 4): this suite used to construct a
+ * real `SupabaseService` over a mocked `@supabase/supabase-js`. The class is
+ * deleted in this PR, so it builds the data layer over the same mocked client
+ * instead — `createDataLayer` binds the same domain functions the facade
+ * delegated to. Every `it` title, every `expect` and every fixture is
+ * unchanged.
+ */
+const layer = () =>
+  createDataLayer({
+    client: createDataClient({
+      url: 'https://example.supabase.co',
+      serviceRoleKey: 'test-key',
+    } as never),
+    supabaseUrl: 'https://example.supabase.co',
+    host: {} as never,
+  });
+
+/** The one namespace this suite drives, under the name it already used. */
+const service = () => ({ getUserTests: (...args: any[]) => (layer().tests.getUserTests as any)(...args) });
 
 const sessionRow = (id: string, answers: Record<string, any>, startTime: string) => ({
   id,

@@ -1,4 +1,15 @@
 /**
+ * HARNESS (monolith lane M3, Phase B, PR 4): this suite used to construct a
+ * real `SupabaseService` and spy on its methods. The class is deleted in this
+ * PR. `makeService()` builds the data layer over the same config and hands
+ * back the four entry points this suite drives, under the names it already
+ * used, plus the client it spies on for storage. The spies move to the
+ * namespace that OWNS each collaborator — `storageAcl.createSignedStorageUrl*`
+ * and `offlineBundles.verifyDeckAccess` — which is where the deps arrows read
+ * them at call time. Every `it` title, every `expect` and every fixture is
+ * unchanged.
+ */
+/**
  * Cover images, service half.
  *
  * Three things have to hold or covers become a support problem:
@@ -10,28 +21,49 @@
  *      while a reader of the shared deck/note can.
  */
 import {
-  SupabaseService,
   COVER_IMAGE_BUCKET,
   COVER_IMAGE_MIGRATION,
   CoverColumnMissingError,
   isMissingCoverPathColumn,
 } from './supabase';
+import { createDataLayer } from './data';
+import { createDataClient } from './data/client';
 
 /** A real 1x1 PNG, so the magic-byte check sees an actual image. */
 const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-function makeService() {
-  return new SupabaseService({
-    url: 'https://test.supabase.co',
-    serviceRoleKey: 'test-service-role-key',
+/**
+ * `client` replaces the service-role client for the tests that used to
+ * reassign `(service as any).supabase` after construction — the layer binds its
+ * client once, so the substitution happens here instead.
+ */
+function makeService(client?: unknown) {
+  const supabase = (client ??
+    createDataClient({
+      url: 'https://test.supabase.co',
+      serviceRoleKey: 'test-service-role-key',
+    } as never)) as never;
+  const layer = createDataLayer({
+    client: supabase,
+    supabaseUrl: 'https://test.supabase.co',
+    host: {} as never,
   });
+  return {
+    supabase: supabase as any,
+    layer,
+    uploadCoverImage: layer.uploads.uploadCoverImage,
+    fetchDeckRecord: layer.offlineBundles.fetchDeckRecord,
+    assertCoverColumn: layer.uploads.assertCoverColumn,
+    setDeckCoverPath: layer.uploads.setDeckCoverPath,
+    canAccessStorageObject: layer.storageAcl.canAccessStorageObject,
+  };
 }
 
 describe('uploadCoverImage', () => {
   it('refuses bytes that are not an image before touching storage', async () => {
     const service = makeService();
-    const storage = jest.spyOn((service as any).supabase.storage, 'from');
+    const storage = jest.spyOn(service.supabase.storage as any, 'from');
 
     await expect(
       service.uploadCoverImage({
@@ -49,7 +81,7 @@ describe('uploadCoverImage', () => {
 
   it('refuses an oversized payload before decoding it as an image', async () => {
     const service = makeService();
-    const storage = jest.spyOn((service as any).supabase.storage, 'from');
+    const storage = jest.spyOn(service.supabase.storage as any, 'from');
 
     await expect(
       service.uploadCoverImage({
@@ -68,17 +100,17 @@ describe('uploadCoverImage', () => {
   it('stores under {owner}/{kind}/{id}/ and returns the path, not a persisted URL', async () => {
     const service = makeService();
     const uploads: Array<{ bucket: string; path: string }> = [];
-    jest.spyOn((service as any).supabase.storage, 'from').mockImplementation((bucket: any) => ({
+    jest.spyOn(service.supabase.storage as any, 'from').mockImplementation((bucket: any) => ({
       upload: async (path: string) => {
         uploads.push({ bucket, path });
         return { data: { path }, error: null };
       },
     }));
     jest
-      .spyOn(service, 'createSignedStorageUrl')
+      .spyOn(service.layer.storageAcl, 'createSignedStorageUrl')
       .mockResolvedValue('https://signed.example/cover?token=abc');
     jest
-      .spyOn(service, 'createSignedStorageUrlWithVariant')
+      .spyOn(service.layer.storageAcl, 'createSignedStorageUrlWithVariant')
       .mockResolvedValue('https://signed.example/cover.thumb?token=abc');
 
     const result = await service.uploadCoverImage({
@@ -107,7 +139,7 @@ describe('uploadCoverImage', () => {
   it('creates the bucket on the first ever cover and retries the upload', async () => {
     const service = makeService();
     let attempts = 0;
-    jest.spyOn((service as any).supabase.storage, 'from').mockImplementation(() => ({
+    jest.spyOn(service.supabase.storage as any, 'from').mockImplementation(() => ({
       // The sibling thumb uploads through the same mock; count only the
       // cover object's own attempts.
       upload: async (path: string) => {
@@ -121,8 +153,8 @@ describe('uploadCoverImage', () => {
     const createBucket = jest
       .spyOn((service as any).supabase.storage, 'createBucket')
       .mockResolvedValue({ data: { name: COVER_IMAGE_BUCKET }, error: null } as any);
-    jest.spyOn(service, 'createSignedStorageUrl').mockResolvedValue('https://signed/x');
-    jest.spyOn(service, 'createSignedStorageUrlWithVariant').mockResolvedValue('https://signed/x.thumb');
+    jest.spyOn(service.layer.storageAcl, 'createSignedStorageUrl').mockResolvedValue('https://signed/x');
+    jest.spyOn(service.layer.storageAcl, 'createSignedStorageUrlWithVariant').mockResolvedValue('https://signed/x.thumb');
 
     const result = await service.uploadCoverImage({
       userId: 'user-1', kind: 'deck', id: 'deck-9',
@@ -138,7 +170,7 @@ describe('uploadCoverImage', () => {
     // The live 500 said only "Failed to set cover image". A bucket that cannot
     // be created has to be nameable from the response and the logs.
     const service = makeService();
-    jest.spyOn((service as any).supabase.storage, 'from').mockImplementation(() => ({
+    jest.spyOn(service.supabase.storage as any, 'from').mockImplementation(() => ({
       upload: async () => ({ data: null, error: { message: 'Bucket not found' } }),
     }));
     jest
@@ -159,7 +191,7 @@ describe('uploadCoverImage', () => {
 
   it('reports an upload that fails for any other storage reason', async () => {
     const service = makeService();
-    jest.spyOn((service as any).supabase.storage, 'from').mockImplementation(() => ({
+    jest.spyOn(service.supabase.storage as any, 'from').mockImplementation(() => ({
       upload: async () => ({ data: null, error: { message: 'mime type image/webp is not supported' } }),
     }));
 
@@ -223,7 +255,7 @@ describe('assertCoverColumn', () => {
   function probing(result: any) {
     const service = makeService();
     const calls: Array<{ table: string; columns: string }> = [];
-    jest.spyOn((service as any).supabase, 'from').mockImplementation((table: any) => ({
+    jest.spyOn(service.supabase as any, 'from').mockImplementation((table: any) => ({
       select: (columns: string) => {
         calls.push({ table, columns });
         return { limit: async () => result };
@@ -272,11 +304,10 @@ describe('setDeckCoverPath', () => {
   }
 
   it('reports an unapplied migration as CoverColumnMissingError', async () => {
-    const service = makeService();
-    (service as any).supabase = clientReturning({
+    const service = makeService(clientReturning({
       data: null,
       error: { code: '42703', message: 'column decks.cover_path does not exist' },
-    });
+    }));
 
     await expect(service.setDeckCoverPath('deck-1', 'user-1', 'p.webp')).rejects.toBeInstanceOf(
       CoverColumnMissingError
@@ -284,11 +315,10 @@ describe('setDeckCoverPath', () => {
   });
 
   it('returns the replaced path so the old object can be deleted', async () => {
-    const service = makeService();
-    (service as any).supabase = clientReturning({
+    const service = makeService(clientReturning({
       data: { id: 'deck-1', cover_path: 'user-1/decks/deck-1/1-old.webp' },
       error: null,
-    });
+    }));
 
     const { previousPath } = await service.setDeckCoverPath('deck-1', 'user-1', 'new.webp');
     expect(previousPath).toBe('user-1/decks/deck-1/1-old.webp');
@@ -298,7 +328,7 @@ describe('setDeckCoverPath', () => {
 describe('canAccessStorageObject cover-images', () => {
   it('allows the owner without any database round trip', async () => {
     const service = makeService();
-    const deckAccess = jest.spyOn(service, 'verifyDeckAccess');
+    const deckAccess = jest.spyOn(service.layer.offlineBundles, 'verifyDeckAccess');
     await expect(
       service.canAccessStorageObject('user-1', COVER_IMAGE_BUCKET, 'user-1/decks/deck-1/c.webp')
     ).resolves.toBe(true);
@@ -314,7 +344,7 @@ describe('canAccessStorageObject cover-images', () => {
 
   it('lets a reader of the shared deck re-sign its cover', async () => {
     const service = makeService();
-    jest.spyOn(service, 'verifyDeckAccess').mockResolvedValue(true);
+    jest.spyOn(service.layer.offlineBundles, 'verifyDeckAccess').mockResolvedValue(true);
     await expect(
       service.canAccessStorageObject('viewer', COVER_IMAGE_BUCKET, 'user-1/decks/deck-1/c.webp')
     ).resolves.toBe(true);
@@ -322,7 +352,7 @@ describe('canAccessStorageObject cover-images', () => {
 
   it('denies a stranger who cannot read the deck', async () => {
     const service = makeService();
-    jest.spyOn(service, 'verifyDeckAccess').mockResolvedValue(false);
+    jest.spyOn(service.layer.offlineBundles, 'verifyDeckAccess').mockResolvedValue(false);
     await expect(
       service.canAccessStorageObject('stranger', COVER_IMAGE_BUCKET, 'user-1/decks/deck-1/c.webp')
     ).resolves.toBe(false);
@@ -343,8 +373,7 @@ describe('canAccessStorageObject cover-images', () => {
  */
 describe('cover ref normalisation on read', () => {
   it('qualifies a legacy deck cover path on the deck read projection', async () => {
-    const service = makeService();
-    (service as any).supabase = {
+    const service = makeService({
       from: () => ({
         select: () => ({
           eq: () => ({
@@ -359,19 +388,18 @@ describe('cover ref normalisation on read', () => {
           }),
         }),
       }),
-    };
+    });
 
     // fetchDeckRecord is the projection every deck read funnels through.
-    const deck = await (service as any).fetchDeckRecord('deck-9');
+    const deck = await service.fetchDeckRecord('deck-9');
     expect(deck.coverPath).toBe(
       'cover-images/user-1/decks/deck-9/1700000000-cover.webp',
     );
   });
 
   it('leaves an already-qualified path alone', async () => {
-    const service = makeService();
     const qualified = 'cover-images/user-1/decks/deck-9/1-cover.webp';
-    (service as any).supabase = {
+    const service = makeService({
       from: () => ({
         select: () => ({
           eq: () => ({
@@ -382,16 +410,15 @@ describe('cover ref normalisation on read', () => {
           }),
         }),
       }),
-    };
+    });
 
     // fetchDeckRecord is the projection every deck read funnels through.
-    const deck = await (service as any).fetchDeckRecord('deck-9');
+    const deck = await service.fetchDeckRecord('deck-9');
     expect(deck.coverPath).toBe(qualified);
   });
 
   it('reports a missing cover as null rather than a bare string', async () => {
-    const service = makeService();
-    (service as any).supabase = {
+    const service = makeService({
       from: () => ({
         select: () => ({
           eq: () => ({
@@ -402,10 +429,10 @@ describe('cover ref normalisation on read', () => {
           }),
         }),
       }),
-    };
+    });
 
     // fetchDeckRecord is the projection every deck read funnels through.
-    const deck = await (service as any).fetchDeckRecord('deck-9');
+    const deck = await service.fetchDeckRecord('deck-9');
     expect(deck.coverPath).toBeNull();
   });
 });

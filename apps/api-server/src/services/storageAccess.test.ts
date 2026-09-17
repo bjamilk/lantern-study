@@ -1,21 +1,36 @@
-import { SupabaseService } from './supabase';
+/**
+ * HARNESS (monolith lane M3, Phase B, PR 4): this suite used to construct a
+ * real `SupabaseService` and spy on two of its methods. The class is deleted in
+ * this PR, so it builds a data layer over the same config and spies on the
+ * namespace that owns each predicate — `users.isProfileVisibleToViewer` and
+ * `groups.canViewPeerChatAvatar`, which is where the storage ACL reads them.
+ * Every `it` title, every `expect` and every fixture is unchanged.
+ */
+import { createDataLayer, type DataLayer } from './data';
+import { createDataClient } from './data/client';
 
 describe('canAccessStorageObject profile-avatars', () => {
-  let service: SupabaseService;
+  let layer: DataLayer;
+  let service: DataLayer['storageAcl'];
   let visibilitySpy: jest.SpyInstance;
   let peerChatSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    service = new SupabaseService({
-      url: 'https://test.supabase.co',
-      serviceRoleKey: 'test-service-role-key',
+    layer = createDataLayer({
+      client: createDataClient({
+        url: 'https://test.supabase.co',
+        serviceRoleKey: 'test-service-role-key',
+      } as never),
+      supabaseUrl: 'https://test.supabase.co',
+      host: {} as never,
     });
-    visibilitySpy = jest.spyOn(service, 'isProfileVisibleToViewer');
+    service = layer.storageAcl;
+    visibilitySpy = jest.spyOn(layer.users, 'isProfileVisibleToViewer');
     // When a profile is not visible, canAccessStorageObject falls through to the
     // conversation-peer check (DM / shared group avatars). Without this stub that
     // path issues a real Supabase request and the test dies with "fetch failed".
     // Default to false so "not visible" means "no access" unless a test says otherwise.
-    peerChatSpy = jest.spyOn(service, 'canViewPeerChatAvatar').mockResolvedValue(false);
+    peerChatSpy = jest.spyOn(layer.groups, 'canViewPeerChatAvatar').mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -85,13 +100,19 @@ describe('canAccessStorageObject profile-avatars', () => {
 });
 
 describe('canAccessStorageObject marketplace shop covers', () => {
-  let service: SupabaseService;
+  let layer: DataLayer;
+  let service: DataLayer['storageAcl'];
 
   beforeEach(() => {
-    service = new SupabaseService({
-      url: 'https://test.supabase.co',
-      serviceRoleKey: 'test-service-role-key',
+    layer = createDataLayer({
+      client: createDataClient({
+        url: 'https://test.supabase.co',
+        serviceRoleKey: 'test-service-role-key',
+      } as never),
+      supabaseUrl: 'https://test.supabase.co',
+      host: {} as never,
     });
+    service = layer.storageAcl;
   });
 
   it('allows anyone to read a published shop cover', async () => {
@@ -130,13 +151,19 @@ describe('canAccessStorageObject marketplace shop covers', () => {
 });
 
 describe('storageUrlMatchesObject (exact path ACL)', () => {
-  let service: SupabaseService;
+  let layer: DataLayer;
+  let service: DataLayer['storageAcl'];
 
   beforeEach(() => {
-    service = new SupabaseService({
-      url: 'https://test.supabase.co',
-      serviceRoleKey: 'test-service-role-key',
+    layer = createDataLayer({
+      client: createDataClient({
+        url: 'https://test.supabase.co',
+        serviceRoleKey: 'test-service-role-key',
+      } as never),
+      supabaseUrl: 'https://test.supabase.co',
+      host: {} as never,
     });
+    service = layer.storageAcl;
   });
 
   const matches = (imageUrl: string | null | undefined, bucket: string, path: string) =>

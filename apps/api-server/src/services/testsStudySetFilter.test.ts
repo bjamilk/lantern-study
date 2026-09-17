@@ -49,7 +49,8 @@ jest.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-import { SupabaseService } from './supabase';
+import { createDataLayer } from './data';
+import { createDataClient } from './data/client';
 
 /**
  * "Tests in this set" has to be one query.
@@ -61,11 +62,26 @@ import { SupabaseService } from './supabase';
  * there was no second page to ask for. These tests pin the filter to the query
  * and the totals to the database's own count.
  */
-const service = () =>
-  new SupabaseService({
-    url: 'https://example.supabase.co',
-    serviceRoleKey: 'test-key',
-  } as any);
+/**
+ * HARNESS (monolith lane M3, Phase B, PR 4): this suite used to construct a
+ * real `SupabaseService` over a mocked `@supabase/supabase-js`. The class is
+ * deleted in this PR, so it builds the data layer over the same mocked client
+ * instead — `createDataLayer` binds the same domain functions the facade
+ * delegated to. Every `it` title, every `expect` and every fixture is
+ * unchanged.
+ */
+const layer = () =>
+  createDataLayer({
+    client: createDataClient({
+      url: 'https://example.supabase.co',
+      serviceRoleKey: 'test-key',
+    } as never),
+    supabaseUrl: 'https://example.supabase.co',
+    host: {} as never,
+  });
+
+/** The one namespace this suite drives, under the name it already used. */
+const service = () => ({ getUserTests: (...args: any[]) => (layer().tests.getUserTests as any)(...args) });
 
 const sessionRow = (id: string) => ({
   id,

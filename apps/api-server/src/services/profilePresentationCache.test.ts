@@ -1,5 +1,11 @@
+/**
+ * HARNESS (monolith lane M3, Phase B, PR 4): this suite used to construct a
+ * real `SupabaseService`. The class is deleted in this PR; it drives the data
+ * layer's own function instead. Every `it` title, every `expect` and every
+ * fixture is unchanged.
+ */
 import { cacheService } from './cache';
-import { SupabaseService } from './supabase';
+import { createDataLayer } from './data';
 
 describe('profile presentation cache invalidation', () => {
   afterEach(() => {
@@ -44,11 +50,13 @@ describe('profile presentation cache invalidation', () => {
       throw new Error(`Unexpected table: ${table}`);
     });
 
-    const service = new SupabaseService({
-      url: 'http://localhost:54321',
-      serviceRoleKey: 'test-service-role-key',
-    });
-    (service as unknown as { supabase: { from: typeof from } }).supabase = { from };
+    // The layer takes the client directly, so the stand-in no longer has to be
+    // pushed onto a constructed instance.
+    const service = createDataLayer({
+      client: { from } as never,
+      supabaseUrl: 'http://localhost:54321',
+      host: {} as never,
+    }).users;
 
     jest.spyOn(cacheService, 'invalidateUserCache').mockResolvedValue();
     const invalidateGroupCache = jest

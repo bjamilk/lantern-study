@@ -17,7 +17,6 @@
  *    so an `image_url` pointing anywhere else is refused before the insert.
  *    Without that check a client could name another group's object.
  */
-import { SupabaseService } from './supabase';
 import * as groupMessagesData from './data/groupMessages';
 /**
  * HARNESS (monolith lane M3, Phase B): this suite used to drive
@@ -228,22 +227,41 @@ describe('sendMessage with a board photo', () => {
 });
 
 describe('editing a post never touches its photo', () => {
-  it('is guaranteed by edit_chat_message, which updates text and edited_at only', () => {
+  it('is guaranteed by edit_chat_message, which updates text and edited_at only', async () => {
     // 20260723210655 defines edit_chat_message as
     //   UPDATE public.messages SET text = p_new_text, edited_at = v_now
     // and the service passes only (kind, messageId, actorId, content), so
     // there is no code path from PUT /messages/:messageId to image_url.
-    // FINDING (M3 Phase B, PR 3): this is the ONE assertion in the 31
-    // retargeted suites that is tied to the FACADE's signature rather than to
-    // the behaviour under test — `toHaveLength(4)` is the arity of
-    // `SupabaseService.editChatMessage(kind, messageId, actorId, content)`.
-    // The module's own function takes `(db, deps, kind, messageId, actorId,
-    // content)`, so retargeting it would mean changing the expected length,
-    // which this PR does not do silently. Left on the prototype; PR 4 decides
-    // (either `toHaveLength(6)`, or drop the arity line and keep the source
-    // check, which is what actually proves the point).
-    const editChatMessage = SupabaseService.prototype.editChatMessage as (...args: unknown[]) => unknown;
-    expect(editChatMessage).toHaveLength(4);
-    expect(String(editChatMessage)).not.toContain('image_url');
+    //
+    // REWRITTEN (M3 Phase B, PR 4): this used to assert
+    // `toHaveLength(4)` on `SupabaseService.editChatMessage`, which measured
+    // the FACADE's signature rather than the behaviour. The arity of a deleted
+    // method is not a property worth freezing; what the test was protecting is
+    // WHAT REACHES THE RPC — the four named arguments, the actor id among them
+    // so an edit can never be made anonymously, and no image column anywhere.
+    // That is asserted directly now, by driving the function.
+    const rpc = jest.fn(async (..._args: unknown[]) => ({
+      data: { status: 'not_found' },
+      error: null,
+    }));
+    await groupMessagesData.editChatMessage(
+      { rpc } as never,
+      {} as never,
+      'group',
+      'message-1',
+      'actor-1',
+      'edited text',
+    );
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith('edit_chat_message', {
+      p_message_kind: 'group',
+      p_message_id: 'message-1',
+      p_actor_id: 'actor-1',
+      p_new_text: 'edited text',
+    });
+    const payload = rpc.mock.calls[0][1] as unknown as Record<string, unknown>;
+    expect(Object.keys(payload)).toHaveLength(4);
+    expect(JSON.stringify(payload)).not.toContain('image');
   });
 });
