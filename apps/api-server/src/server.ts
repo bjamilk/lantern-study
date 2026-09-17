@@ -261,7 +261,7 @@ async function initializeServices() {
 
     initializeUserRoutes(dataLayer, cacheService);
     initializeGroupRoutes(dataLayer, cacheService);
-    initializeMessageRoutes(supabaseService, cacheService);
+    initializeMessageRoutes(dataLayer, cacheService);
     initializeNotificationRoutes(dataLayer, cacheService);
     initializeTestRoutes(dataLayer, cacheService);
     initializeGamificationRoutes(dataLayer, cacheService);

@@ -28,9 +28,6 @@ jest.mock('../middleware/auth', () => ({
     next();
   },
 }));
-jest.mock('../services/supabase', () => ({
-  SupabaseService: class {},
-}));
 jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
@@ -98,18 +95,18 @@ describe('board action routes', () => {
     const mod = require('./messages');
     mod.initializeMessageRoutes(
       {
-        getGroupById,
-        getAuthorizedGroupMessage,
-        createBoardRepost,
-        undoBoardRepost,
-        setMessageBookmark,
-        getBookmarkedMessageIdsForGroup,
-        listBookmarkedPosts,
-        importMessageBookmarks,
-        isGroupMember,
-        sendMessage,
-        uploadChatImage,
-        getGroupMessages: jest.fn(async () => []),
+        groups: { getGroupById, getAuthorizedGroupMessage, isGroupMember },
+        boardActions: {
+          createBoardRepost,
+          undoBoardRepost,
+          setMessageBookmark,
+          getBookmarkedMessageIdsForGroup,
+          listBookmarkedPosts,
+          importMessageBookmarks,
+        },
+        chatSend: { sendMessage },
+        uploads: { uploadChatImage },
+        groupMessages: { getGroupMessages: jest.fn(async () => []) },
         getClient: () => {
           throw new Error('routes must not touch the database directly');
         },
