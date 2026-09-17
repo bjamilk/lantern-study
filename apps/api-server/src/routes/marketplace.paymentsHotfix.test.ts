@@ -49,6 +49,8 @@ jest.mock('../services/marketplaceOrders', () => ({
 }));
 
 import router, { initializeMarketplaceRoutes } from './marketplace';
+import * as marketplaceData from '../services/data/marketplace';
+import { bindDataModule } from '../services/data/testStub';
 import { routeLayers } from './marketplace/routeLayers';
 
 type Op = { fn: string; args: any[] };
@@ -86,6 +88,15 @@ function init(resolve: (call: Call) => any = () => ({ data: null, error: null })
   const supabase: any = {
     getClient: () => client,
     createNotification: jest.fn(async () => ({ id: 'n1' })),
+    // The order field update moved into `services/data/marketplace.ts` (lane
+    // R2), so the route reaches it through the layer. This suite drives a FAKE
+    // POSTGREST CLIENT rather than stubbing the data function, so it binds the
+    // real module to that client — the write it asserts on is unchanged.
+    marketplace: {
+      ...bindDataModule(marketplaceData, client),
+      boostMarketplaceListing: jest.fn(async () => ({ id: 'listing-1' })),
+      getMarketplaceListingById: jest.fn(async () => null),
+    },
     boostMarketplaceListing: jest.fn(async () => ({ id: 'listing-1' })),
     getMarketplaceListingById: jest.fn(async () => null),
   };

@@ -36,6 +36,8 @@ import router, {
   initializeMarketplaceRoutes,
   offerExpiryConflict,
 } from './marketplace';
+import * as marketplaceData from '../services/data/marketplace';
+import { bindDataModule } from '../services/data/testStub';
 import { routeLayers } from './marketplace/routeLayers';
 
 const HOUR = 60 * 60 * 1000;
@@ -135,7 +137,11 @@ function initWith(resolve: (call: Call) => any, extra: Record<string, unknown> =
     legacyService: {},
     notifications: { createNotification: jest.fn(async () => ({ id: 'n1' })) },
     // Every per-test stub in this file is a marketplace method.
-    marketplace: { ...extra },
+    // The offer queries moved into `services/data/marketplace.ts` (lane R2),
+    // so the route reaches them through the layer. This suite drives a FAKE
+    // POSTGREST CLIENT rather than stubbing those functions, so it binds the
+    // real module to that client — the chains it asserts on are unchanged.
+    marketplace: { ...bindDataModule(marketplaceData, client), ...extra },
   };
   initializeMarketplaceRoutes(supabase, { get: async () => null, set: async () => {} } as any);
   return { supabase, calls };

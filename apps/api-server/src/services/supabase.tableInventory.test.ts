@@ -59,10 +59,10 @@ const SERVICES_DIR = __dirname;
 const DATA_DIR = path.join(SERVICES_DIR, 'data');
 
 /**
- * The 65 distinct table literals reached through `.from("…")` by the data
+ * The 67 distinct table literals reached through `.from("…")` by the data
  * layer, captured from the untouched 18,257-line `services/supabase.ts`.
  *
- * 57 of them are that original capture. The other eight arrived with monolith
+ * 57 of them are that original capture. The other ten arrived with monolith
  * lane R2, which moves the queries route files still built by hand into
  * `services/data/*`. Each was ALWAYS queried by the server, but only ever from a
  * route file, which this scan does not cover — so the freeze had never seen it,
@@ -70,8 +70,9 @@ const DATA_DIR = path.join(SERVICES_DIR, 'data');
  * the product and no query changed. Each carries a comment naming the route it
  * came from, and enters this list in the same commit as the query that brings
  * it: an inventory-only commit is red either way, because the assertion below is
- * set EQUALITY. The remaining route-only tables are listed in
- * `apps/api-server/docs/route-queries-plan.md`.
+ * set EQUALITY. With PR 3 there are no route-only tables left: every table the
+ * API queries is reached from `services/data/**`, so this scan finally sees the
+ * whole inventory.
  */
 const FROZEN_TABLES: readonly string[] = [
   'achievements',
@@ -109,6 +110,10 @@ const FROZEN_TABLES: readonly string[] = [
   'marketplace_offers',
   'marketplace_orders',
   'marketplace_question_bank_entitlements',
+  // From `routes/marketplace/listings.ts` (lane R2, PR 3). These were the last
+  // two tables the API queried only from a route file.
+  'marketplace_question_banks',
+  'marketplace_study_packs',
   'marketplace_reports',
   'marketplace_review_votes',
   'marketplace_reviews',
@@ -231,9 +236,9 @@ function scan(): Scan {
 describe('services data layer table inventory', () => {
   const scanned = scan();
 
-  it('touches exactly the frozen set of 65 tables', () => {
+  it('touches exactly the frozen set of 67 tables', () => {
     expect([...scanned.tables].sort()).toEqual([...FROZEN_TABLES].sort());
-    expect(FROZEN_TABLES).toHaveLength(65);
+    expect(FROZEN_TABLES).toHaveLength(67);
   });
 
   it('reaches exactly the frozen set of storage bucket literals', () => {
