@@ -8,7 +8,6 @@ import { MarketplaceQuestionBanksService } from './marketplaceQuestionBanks';
 // below stay FLAT and are regrouped by the production adapter
 // (`marketplaceHostFromFlat`), so every assertion still names the same
 // `jest.fn()` and the adapter itself is exercised by these suites.
-import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 import { ATTESTATION_REQUIRED_MESSAGE, RIGHTS_ATTESTATION_VERSION } from '@lantern/shared/moderation';
 import { COURSE_ANCHOR_COPY } from '@lantern/shared/marketplace';
 
@@ -71,7 +70,16 @@ function service(db: ReturnType<typeof makeDb>) {
       category_specific_fields: {},
     })),
   };
-  const svc = new MarketplaceQuestionBanksService(marketplaceHostFromFlat(supabaseService));
+  // The stand-in stays FLAT, because the assertions below name its members;
+  // the service takes the namespaced host, built from the very same
+  // `jest.fn()`s. (This is what the transitional `marketplaceHostFromFlat`
+  // adapter did while the facade still existed — written out here now that it
+  // is deleted.)
+  const host: any = {
+    getClient: supabaseService.getClient,
+    marketplace: { getMarketplaceListingById: supabaseService.getMarketplaceListingById, createMarketplaceListing: supabaseService.createMarketplaceListing, },
+  };
+  const svc = new MarketplaceQuestionBanksService(host);
   // deliverBundle touches offline_bundles; not under test here.
   (svc as any).deliverBundle = jest.fn(async () => undefined);
   return { svc, createMarketplaceListing };

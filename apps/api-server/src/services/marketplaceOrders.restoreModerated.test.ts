@@ -9,7 +9,6 @@ import { MarketplaceOrdersService } from './marketplaceOrders';
 // below stay FLAT and are regrouped by the production adapter
 // (`marketplaceHostFromFlat`), so every assertion still names the same
 // `jest.fn()` and the adapter itself is exercised by these suites.
-import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 
 jest.mock('../utils/marketplaceCache', () => ({
   invalidateListingCaches: jest.fn(async () => undefined),
@@ -38,10 +37,10 @@ function makeDb() {
 function serviceFor(listing: Record<string, unknown>) {
   const db = makeDb();
   const self: any = Object.create(MarketplaceOrdersService.prototype);
-  self.host = marketplaceHostFromFlat({
-    getMarketplaceListingById: jest.fn(async () => listing),
+  self.host = {
     getClient: () => db,
-  } as never);
+    marketplace: { getMarketplaceListingById: jest.fn(async () => listing), },
+  } as never;
   return { self, db };
 }
 

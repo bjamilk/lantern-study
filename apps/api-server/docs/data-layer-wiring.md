@@ -114,3 +114,29 @@ What is left of the facade in production code is its own construction
 (`bootstrap.ts`), the one-entry bridge (`dataLayerHost.ts`) and the
 `legacyService` field on the layer that nothing reads. All three go when the
 class does.
+
+
+## Done (step 18 complete)
+
+`SupabaseService` is deleted. There is no facade, no `DataLayerHost`, no
+`legacyService`: `createRuntimeDataLayer(config)` in
+`services/data/bootstrap.ts` is the one composition root, both processes call
+it, and every route family, middleware and service holds a `DataLayer` or a
+narrow slice of one.
+
+`services/supabase.ts` survives for one release as 57 lines of deprecated
+re-exports — thirteen module-scope names, each forwarded from the
+`services/data/*` module that owns it — so the importers of those names did not
+have to move in the same pull request. Move them; the file goes next release.
+
+What guards the shape from here:
+
+- `data/dataLayer.surface.test.ts` — the frozen namespace/member/arity surface
+  (the equivalence half retired with the facade it compared against);
+- `data/dataLayer.noAnyCast.test.ts` — no `any` cast on a layer handle, empty
+  allowlist;
+- `supabase.tableInventory.test.ts` — the frozen table and bucket inventory,
+  scanning `services/data/**`;
+- `supabase.sendPath.contract.test.ts` — the 18-case send-path contract, now
+  driving `data/chatSend.sendMessage`;
+- `services/postgrestEmbedDisambiguation.test.ts` — the embed ledger.

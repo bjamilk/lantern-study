@@ -16,11 +16,13 @@
  *     namespace that loses a member, or a member that loses a parameter in a
  *     move, is a failing diff rather than a runtime 500.
  *
- *  2. EQUIVALENCE — every one of the names frozen in `supabase.surface.json`
- *     is reachable as EXACTLY ONE `data.<namespace>.<fn>`, or is named in
- *     `NOT_ON_LAYER` below with the reason it is not. A facade method with no
- *     layer home and no allowlist entry fails this test: that is what makes
- *     the deletion of the facade a provable no-op rather than a hope.
+ *  2. EQUIVALENCE — every one of the 381 names frozen in
+ *     `supabase.surface.json` was reachable as exactly one
+ *     `data.<namespace>.<fn>`, or named in `NOT_ON_LAYER` with the reason.
+ *     That is what made the deletion of the facade a provable no-op rather
+ *     than a hope. It ran green through Phases A and B and is RETIRED with the
+ *     class it compared against; the allowlist it ended on is kept below as
+ *     the record of the three names that were never on a namespace.
  *
  * ## The arity caveat (read before trusting a green arity)
  *
@@ -34,15 +36,15 @@
  *
  * ## The gotcha
  *
- * The layer is built here over a Proxy client and a Proxy host: nothing is
- * called, only enumerated, so no query is issued and no facade is constructed.
+ * The layer is built here over a Proxy client: nothing is called, only
+ * enumerated, so no query is issued.
  * If a future `createDataLayer` starts INVOKING a dep during construction,
  * this test is where it will first be noticed.
  */
 import fs from 'fs';
 import path from 'path';
 
-import { createDataLayer, type DataLayer, type DataLayerHost } from './index';
+import { createDataLayer, type DataLayer } from './index';
 
 type Snapshot = {
   root: Array<{ name: string; kind: string }>;
@@ -55,37 +57,33 @@ type Snapshot = {
 const SNAPSHOT_PATH = path.join(__dirname, 'dataLayer.surface.json');
 
 /**
- * Every facade method name that is deliberately NOT reachable as
- * `data.<namespace>.<fn>`, with the reason. Adding an entry here is a
- * REVIEWED decision: it is the one way a name can leave the facade without a
- * home on the layer.
+ * RETIRED (monolith lane M3, Phase B, PR 4). The list below was the allowlist
+ * of
+ * the EQUIVALENCE check: every one of the 381 names frozen in
+ * `supabase.surface.json` had to be reachable as exactly one
+ * `data.<ns>.<fn>`, or be named here with a reason. It ran green on every
+ * commit of Phases A and B and ended with exactly three entries — the two
+ * spellings of the client escape hatch, which live on the layer ROOT, and one
+ * private coercion that is inlined in `data/index.ts`. The facade is deleted,
+ * so there is nothing left to be equivalent to; the FREEZE above is what
+ * carries on.
  */
-const NOT_ON_LAYER: Record<string, string> = {
-  // Lives on the layer ROOT, not in a namespace: `data.getClient()`. The
-  // escape hatch for callers running their own query.
-  getClient: 'layer root — `data.getClient()`',
-  // The facade's second name for the identical body (`return this.supabase`).
-  // The layer has one.
-  getSupabaseClient: 'layer root — the facade`s alias of getClient()',
-  // Three lines of pure coercion ("compact" | "full") that several data
-  // modules take through `deps`. Inlined once in `data/index.ts` rather than
-  // published as a namespace member; no caller outside a `deps` literal.
-  getResponseProfile: 'private helper, inlined in data/index.ts',
-};
+//   getClient            → layer root, `data.getClient()`: the escape hatch
+//                          for callers running their own query;
+//   getSupabaseClient    → layer root, the facade's second name for the
+//                          identical body (`return this.supabase`);
+//   getResponseProfile   → a private three-line coercion ("compact" | "full"),
+//                          inlined in `data/index.ts`, with no caller outside
+//                          a `deps` literal.
 
 function fakeClient(): never {
   return new Proxy({}, { get: () => () => undefined }) as never;
-}
-
-function fakeHost(): DataLayerHost {
-  return new Proxy({}, { get: () => () => undefined }) as unknown as DataLayerHost;
 }
 
 function buildLayer(): DataLayer {
   return createDataLayer({
     client: fakeClient(),
     supabaseUrl: 'http://localhost:54321',
-    host: fakeHost(),
   });
 }
 
@@ -96,13 +94,6 @@ function currentSurface(): Snapshot {
 
   for (const key of Object.keys(layer).sort()) {
     const value = layer[key];
-    // `legacyService` is the facade instance itself, not a namespace — an
-    // object here under a real host and a stub under this one. It is recorded
-    // as a root member so that the day it goes, the diff says so.
-    if (key === 'legacyService') {
-      root.push({ name: key, kind: 'legacy-facade' });
-      continue;
-    }
     if (typeof value === 'object' && value !== null) {
       const members = value as Record<string, unknown>;
       namespaces.push({
@@ -125,17 +116,6 @@ function currentSurface(): Snapshot {
   return { root, namespaces };
 }
 
-/** name → the namespaces that publish it. */
-function namesByNamespace(): Map<string, string[]> {
-  const index = new Map<string, string[]>();
-  for (const { namespace, functions } of currentSurface().namespaces) {
-    for (const { name } of functions) {
-      index.set(name, [...(index.get(name) ?? []), namespace]);
-    }
-  }
-  return index;
-}
-
 describe('the data layer public surface', () => {
   const frozen: Snapshot = JSON.parse(
     fs.readFileSync(SNAPSHOT_PATH, 'utf8'),
@@ -154,52 +134,5 @@ describe('the data layer public surface', () => {
       0,
     );
     expect(total).toBeGreaterThan(350);
-  });
-});
-
-describe('the data layer covers the frozen SupabaseService surface', () => {
-  const facade: { prototypeMethods: Array<{ name: string; arity: number }> } =
-    JSON.parse(
-      fs.readFileSync(path.join(__dirname, '..', 'supabase.surface.json'), 'utf8'),
-    );
-
-  it('reaches every frozen facade method as exactly one data.<ns>.<fn>', () => {
-    const index = namesByNamespace();
-    const homeless: string[] = [];
-    const ambiguous: Array<{ name: string; namespaces: string[] }> = [];
-
-    for (const { name } of facade.prototypeMethods) {
-      const owners = index.get(name);
-      if (!owners) {
-        if (!(name in NOT_ON_LAYER)) homeless.push(name);
-        continue;
-      }
-      if (owners.length > 1) ambiguous.push({ name, namespaces: owners });
-    }
-
-    expect({ homeless, ambiguous }).toEqual({ homeless: [], ambiguous: [] });
-  });
-
-  it('allowlists nothing the layer actually publishes', () => {
-    // An entry that goes stale — the name later lands on the layer after all —
-    // would silently weaken the check above, so it is an error here.
-    const index = namesByNamespace();
-    const stale = Object.keys(NOT_ON_LAYER).filter((name) => index.has(name));
-    expect(stale).toEqual([]);
-  });
-
-  it('allowlists nothing that is not a frozen facade method', () => {
-    const frozenNames = new Set(facade.prototypeMethods.map((m) => m.name));
-    const unknown = Object.keys(NOT_ON_LAYER).filter(
-      (name) => !frozenNames.has(name),
-    );
-    expect(unknown).toEqual([]);
-  });
-
-  it('every allowlist entry carries a reason', () => {
-    const blank = Object.entries(NOT_ON_LAYER)
-      .filter(([, reason]) => !reason.trim())
-      .map(([name]) => name);
-    expect(blank).toEqual([]);
   });
 });

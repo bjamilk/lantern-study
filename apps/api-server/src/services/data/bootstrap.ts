@@ -12,38 +12,28 @@
  * passed `process.env.SUPABASE_URL || ""`, so a worker booted without that
  * variable signed storage URLs against an empty origin.
  *
- * One call, two callers. When `SupabaseService` is deleted this function loses
- * its `legacyService` half and nothing else changes.
+ * One call, two callers.
  *
  * ## What it touches
  *
- * Nothing directly: it constructs the service-role client (through the facade,
- * which owns that construction today) and hands both handles back.
+ * It constructs the one service-role client (`data/client.ts`) and hands back
+ * the layer bound to it. Nothing else in the process may construct a second.
  */
-import { SupabaseService } from '../supabase';
-import { createDataLayerHost } from '../dataLayerHost';
-
+import { createDataClient } from './client';
 import { createDataLayer, type DataLayer } from './index';
 
 export type RuntimeDataLayer = {
   dataLayer: DataLayer;
-  /**
-   * The facade instance the layer's bridge still carries. Transitional: the
-   * remaining `supabase.*.test.ts` suites and the last importers are what keep
-   * it alive, and it goes with the class.
-   */
-  legacyService: SupabaseService;
 };
 
 export function createRuntimeDataLayer(config: {
   url: string;
   serviceRoleKey: string;
 }): RuntimeDataLayer {
-  const legacyService = new SupabaseService(config);
-  const dataLayer = createDataLayer({
-    client: legacyService.getClient(),
-    supabaseUrl: config.url,
-    host: createDataLayerHost(legacyService),
-  });
-  return { dataLayer, legacyService };
+  return {
+    dataLayer: createDataLayer({
+      client: createDataClient(config),
+      supabaseUrl: config.url,
+    }),
+  };
 }

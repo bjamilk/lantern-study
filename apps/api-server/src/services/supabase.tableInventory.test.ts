@@ -1,22 +1,27 @@
 /**
- * Table-inventory freeze for `services/supabase.ts` (monolith lane M1, step 1b).
+ * Table-inventory freeze for the data layer (monolith lane M1, step 1b).
  *
- * The public-surface freeze (`supabase.surface.test.ts`) proves that no METHOD
- * is lost when code moves out of the monolith. It cannot prove that no QUERY is
- * lost: a delegation can keep its name and arity while the moved body reads a
- * different table, or while a whole method body is quietly dropped because two
- * sections looked alike during a copy-paste extraction.
+ * The public-surface freeze proved that no METHOD was lost as code moved out of
+ * the monolith. It could not prove that no QUERY was lost: a delegation can
+ * keep its name and arity while the moved body reads a different table, or
+ * while a whole method body is quietly dropped because two sections looked
+ * alike during a copy-paste extraction.
  *
  * So this test freezes the other half of the contract — the set of Postgres
- * tables the data layer touches — and it deliberately scans the WHOLE data
- * layer, not just `supabase.ts`:
+ * tables the data layer touches. It was written to scan the union
  *
  *   `services/supabase.ts`  ∪  `services/data/**\/*.ts`
  *
- * That union is what makes it survive the extraction. In step 1 the union is
- * `supabase.ts` alone; after every later step the moved `.from("…")` calls land
- * in `services/data/*` and the union is unchanged. A table that appears in
- * NEITHER file after a move is a query that was lost, and this test fails.
+ * and that union is what made it survive the extraction: in step 1 it was
+ * `supabase.ts` alone, and with every later step the moved `.from("…")` calls
+ * landed in `services/data/*` while the union stayed the same. The class is
+ * deleted (lane M3) and `services/supabase.ts` now holds no queries at all, so
+ * in practice this scans `services/data/**` — the file is still in the list
+ * because a query appearing there again is exactly the regression the list is
+ * for. THE FROZEN SET IS UNCHANGED; only this description is.
+ *
+ * A table that appears in NEITHER after a move is a query that was lost, and
+ * this test fails.
  *
  * ## What counts as a table
  *

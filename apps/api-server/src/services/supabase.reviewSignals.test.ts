@@ -337,7 +337,6 @@ describe("getMarketplaceListings rating sort fallback", () => {
     const layer = createDataLayer({
       client: { rpc, from: queuedFrom({ marketplace_listings: queues }) } as never,
       supabaseUrl: "https://example.supabase.co",
-      host: new Proxy({}, { get: () => () => undefined }) as never,
     });
     layer.marketplace.normalizeListingRecordAsync = async (row: any) => row;
     layer.marketplace.attachSellerTrust = async (rows: any[]) => rows;

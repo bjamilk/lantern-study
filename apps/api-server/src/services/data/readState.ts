@@ -57,8 +57,12 @@
  * and both mute writes call `assertChatMuteAccess`. None are wired as local
  * calls. On `SupabaseService` these are prototype methods, so a suite can
  * `jest.spyOn` any of them — a local call would step around the spy and change
- * behaviour under test. The facade builds the `deps` literal INLINE at each
- * call site as arrows over `this`, which keeps the dispatch dynamic.
+ * behaviour under test. *
+ * `deps` is built ONCE per domain in `data/index.ts`, as arrows that read
+ * through the layer at CALL time. (It used to be built INLINE by the
+ * `SupabaseService` facade, as arrows over `this`; the facade is deleted —
+ * monolith lane M3 — and the property that matters, late binding, is the
+ * same.)
  */
 import { logger } from "../../utils/logger";
 import {

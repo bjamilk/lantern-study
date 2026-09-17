@@ -36,7 +36,7 @@ export type IdempotentRequest = Request & {
 
 let clientFactory: (() => SupabaseClient) | null = null;
 
-/** Call once from server bootstrap after SupabaseService is constructed. */
+/** Call once from server bootstrap, after the data layer is built. */
 export function setIdempotencyClient(factory: () => SupabaseClient): void {
   clientFactory = factory;
 }

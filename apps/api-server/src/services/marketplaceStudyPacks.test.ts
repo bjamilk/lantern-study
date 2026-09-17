@@ -19,7 +19,6 @@ import { MarketplaceStudyPacksService } from './marketplaceStudyPacks';
 // below stay FLAT and are regrouped by the production adapter
 // (`marketplaceHostFromFlat`), so every assertion still names the same
 // `jest.fn()` and the adapter itself is exercised by these suites.
-import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 import { PublicError } from '../utils/safeError';
 
 type TableResult = { data: unknown; error?: unknown };
@@ -119,8 +118,21 @@ function makeSupabase(overrides: {
     updateNote,
     resolveArtefactTopic,
   };
+  // The stand-in stays FLAT, because the assertions below name its members;
+  // the service takes the namespaced host, built from the very same
+  // `jest.fn()`s. (This is what the transitional `marketplaceHostFromFlat`
+  // adapter did while the facade still existed — written out here now that it
+  // is deleted.)
+  const host: any = {
+    getClient: supabaseService.getClient,
+    academic: { resolveArtefactTopic: supabaseService.resolveArtefactTopic, },
+    decks: { importDeck: supabaseService.importDeck, replaceDeckCards: supabaseService.replaceDeckCards, },
+    marketplace: { getMarketplaceListingById: supabaseService.getMarketplaceListingById, createMarketplaceListing: supabaseService.createMarketplaceListing, },
+    notes: { createNote: supabaseService.createNote, updateNote: supabaseService.updateNote, },
+    offlineBundles: { saveOfflineBundle: supabaseService.saveOfflineBundle, },
+  };
   return {
-    service: new MarketplaceStudyPacksService(marketplaceHostFromFlat(supabaseService)),
+    service: new MarketplaceStudyPacksService(host),
     supabaseService,
     writes,
     saveOfflineBundle,

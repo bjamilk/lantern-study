@@ -1,3 +1,9 @@
+/**
+ * HARNESS (monolith lane M3, Phase B, PR 4): this suite used to construct a
+ * real `SupabaseService`. The class is deleted in this PR; it drives the data
+ * layer's own function instead. Every `it` title, every `expect` and every
+ * fixture is unchanged.
+ */
 jest.mock('../services/cache', () => ({
   cacheService: {
     deletePattern: jest.fn(),
@@ -15,14 +21,18 @@ jest.mock('@supabase/supabase-js', () => ({
   createClient: () => ({ from: jest.fn() }),
 }));
 
-import { SupabaseService } from './supabase';
+import { createDataLayer } from './data';
+import { createDataClient } from './data/client';
 
 describe('mapTestSessionRowToClient', () => {
   it('maps draft columns into client session fields', () => {
-    const svc = new SupabaseService({
-      url: 'https://example.supabase.co',
-      serviceRoleKey: 'test-key',
-    } as any);
+    const svc = createDataLayer({
+      client: createDataClient({
+        url: 'https://example.supabase.co',
+        serviceRoleKey: 'test-key',
+      } as never),
+      supabaseUrl: 'https://example.supabase.co',
+    }).tests;
 
     const mapped = svc.mapTestSessionRowToClient({
       id: 'draft-1',
@@ -56,10 +66,13 @@ describe('mapTestSessionRowToClient', () => {
   });
 
   it('coerces array user_answers so history hydrate keeps answers', () => {
-    const svc = new SupabaseService({
-      url: 'https://example.supabase.co',
-      serviceRoleKey: 'test-key',
-    } as any);
+    const svc = createDataLayer({
+      client: createDataClient({
+        url: 'https://example.supabase.co',
+        serviceRoleKey: 'test-key',
+      } as never),
+      supabaseUrl: 'https://example.supabase.co',
+    }).tests;
 
     const mapped = svc.mapTestSessionRowToClient({
       id: 'session-1',

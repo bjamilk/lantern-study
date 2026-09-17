@@ -133,3 +133,26 @@ under the namespaces. Never a cast: `data/dataLayer.noAnyCast.test.ts` fails
 the build on an `any` over a handle, and that is the shape #92 shipped.
 
 `DataLayerHost` is down to `{ legacyService }`.
+
+
+## Done
+
+All 56 `services/` files are off the facade, and the facade is deleted. The
+nineteen that could not flip in #92 flipped in three commits (PR #95), the
+infrastructure and routes followed (#96), the suites were retargeted (#97), and
+the class went last (#98).
+
+The host types that came out of it, smallest first:
+
+| type | what it is | who takes it |
+| --- | --- | --- |
+| `DataClientHost` | `Pick<DataLayer, 'getClient'>` | the seven services that only need the client |
+| `ModerationHost`, `ActivityFeedHost`, `CommunityModerationHost` | the client plus one or two namespaces | moderation, the feed, community moderation + study rooms |
+| `CommunitiesHost` | those, plus the unread counts | communities, academicCourses |
+| `MarketplaceServiceHost` | nine namespaces, one to three members each | the six money services, which hand it to each other |
+| `DataLayer` | all of it | routes, middleware, the queue processors |
+
+The rule the sizes encode: take the smallest host that says what you touch. A
+narrow one can be built by a test as a plain object literal the compiler
+checks — which is how three stand-ins that answered no unread-count read at all
+were found.

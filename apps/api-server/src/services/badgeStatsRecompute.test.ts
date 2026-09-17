@@ -43,7 +43,8 @@ jest.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
-import { SupabaseService } from './supabase';
+import { createDataLayer } from './data';
+import { createDataClient } from './data/client';
 
 /**
  * Badge stats used to be incremented on events and never reconciled, so they
@@ -55,11 +56,25 @@ import { SupabaseService } from './supabase';
  * recomputeDerivedUserStats recounts from the source rows instead. These tests
  * pin what it counts, and — just as importantly — what it refuses to guess at.
  */
-const service = () =>
-  new SupabaseService({
-    url: 'https://example.supabase.co',
-    serviceRoleKey: 'test-key',
-  } as any);
+/**
+ * HARNESS (monolith lane M3, Phase B, PR 4): this suite used to construct a
+ * real `SupabaseService` over a mocked `@supabase/supabase-js`. The class is
+ * deleted in this PR, so it builds the data layer over the same mocked client
+ * instead — `createDataLayer` binds the same domain functions the facade
+ * delegated to. Every `it` title, every `expect` and every fixture is
+ * unchanged.
+ */
+const layer = () =>
+  createDataLayer({
+    client: createDataClient({
+      url: 'https://example.supabase.co',
+      serviceRoleKey: 'test-key',
+    } as never),
+    supabaseUrl: 'https://example.supabase.co',
+  });
+
+/** The one namespace this suite drives, under the name it already used. */
+const service = () => ({ recomputeDerivedUserStats: (...args: any[]) => (layer().gamification.recomputeDerivedUserStats as any)(...args) });
 
 const session = (startTime: string, score: number | null) => ({
   start_time: startTime,

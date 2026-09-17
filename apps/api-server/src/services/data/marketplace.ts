@@ -91,10 +91,12 @@
  * bare `self = { supabase, getMarketplaceListingById: …, toListingCardRecords:
  * …, … }` and drive the entry point through
  * `SupabaseService.prototype.<m>.call(self, …)`. A local sibling call would
- * step around exactly the stubs those harnesses install. The facade builds the
- * `deps` literal INLINE at each call site, as arrows that read `this.<method>`
- * at CALL time — an instance field holding the deps reads as `undefined`
- * there, and would bypass every `jest.spyOn` on the class.
+ * step around exactly the stubs those harnesses install. *
+ * `deps` is built ONCE per domain in `data/index.ts`, as arrows that read
+ * through the layer at CALL time. (It used to be built INLINE by the
+ * `SupabaseService` facade, as arrows over `this`; the facade is deleted —
+ * monolith lane M3 — and the property that matters, late binding, is the
+ * same.)
  *
  * The three collaborator services the section reached through
  * `get<X>Service(this)` — marketplace orders, seller tools and learning

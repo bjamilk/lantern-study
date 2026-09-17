@@ -8,7 +8,6 @@ jest.mock('./marketplacePayments', () => ({
 }));
 
 import { MarketplaceQuestionBanksService } from './marketplaceQuestionBanks';
-import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 
 function serviceFor(listingStatus: string) {
   const writes: unknown[] = [];
@@ -27,10 +26,10 @@ function serviceFor(listingStatus: string) {
   const self: any = Object.create(MarketplaceQuestionBanksService.prototype);
   // Flat stand-in, regrouped by the production adapter — the service takes
   // `MarketplaceServiceHost` since M3 Phase B.
-  self.host = marketplaceHostFromFlat({
+  self.host = {
     getClient: () => db,
-    getMarketplaceListingById: jest.fn(async () => ({ id: 'listing-1', user_id: 'seller-1', status: listingStatus })),
-  } as never);
+    marketplace: { getMarketplaceListingById: jest.fn(async () => ({ id: 'listing-1', user_id: 'seller-1', status: listingStatus })), },
+  } as never;
   self.validateContent = () => 1;
   self.getBankForListing = async () => ({ listing_id: 'listing-1', version: 3 });
   return { self, writes };

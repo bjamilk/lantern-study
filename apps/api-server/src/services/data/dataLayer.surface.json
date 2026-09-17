@@ -3,10 +3,6 @@
     {
       "name": "getClient",
       "kind": "function"
-    },
-    {
-      "name": "legacyService",
-      "kind": "legacy-facade"
     }
   ],
   "namespaces": [
