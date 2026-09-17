@@ -21,7 +21,11 @@
  *
  * The listing restore is the opposite: it runs after the buyer has already been
  * refunded, so throwing would undo nothing and roll back a cancellation that
- * must stand. Stock silently lost from a listing needs a human, not a rollback.
+ * must stand. Stock silently lost from a listing needs a human, not a rollback,
+ * so it reports with the stable fingerprint instead.
+ *
+ * Three of the six sat inside a `try/catch` that logged and could never run,
+ * because a failed supabase-js write resolves rather than rejecting.
  */
 import { scriptedDb, writePayload, type Call } from '../testSupport/scriptedDb';
 
@@ -222,52 +226,113 @@ describe('escrow release, with every write succeeding', () => {
   });
 });
 
-describe('TODAY: an order write failing', () => {
-  it('says nothing when the inquiry close-out fails', async () => {
-    const { service } = serviceFor('inquiry_purchased', { status: 'disputed' });
-    await service.resolveDisputeAsAdmin('ord_1', 'release_to_seller', 'admin_1', 'note');
-    expect(logger.warn).not.toHaveBeenCalledWith(
-      'Could not mark inquiry purchased after order completion',
-      expect.anything(),
-    );
-  });
+const BEST_EFFORT = 'Database write failed (best-effort)';
+const MONEY_MOVED = 'Database write failed AFTER the money moved; needs reconciliation';
 
-  it('pays the seller even though the confirmation was never recorded', async () => {
+describe('an order write failing before anything external happened', () => {
+  it('does NOT pay the seller when the confirmation cannot be recorded', async () => {
+    // MUST SUCCEED: the next thing this branch does is release the seller's
+    // money. Paying on a confirmation the order does not record is the wrong
+    // order of events.
     const { service } = serviceFor('buyer_confirmed');
     await expect(
       service.updateOrderStatus('ord_1', 'buyer_1', 'confirm_received'),
-    ).resolves.toEqual(expect.objectContaining({ status: 'completed' }));
-    expect(mockPayoutOnConfirmReceived).toHaveBeenCalled();
-    expect(logger.warn).not.toHaveBeenCalled();
+    ).rejects.toThrow(/marketplace_orders/);
+    expect(mockPayoutOnConfirmReceived).not.toHaveBeenCalled();
   });
 
-  it('says nothing when the dispute mirror fails', async () => {
+  it('names the order and what it was stamping', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
+    const { service } = serviceFor('buyer_confirmed');
+    const error = await service
+      .updateOrderStatus('ord_1', 'buyer_1', 'confirm_received')
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WriteFailedError);
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({ orderId: 'ord_1', reason: 'buyer_confirmed_at' }),
+    );
+  });
+});
+
+describe('an order write failing where the action must still stand', () => {
+  it('still opens the dispute when its ledger mirror fails, and warns', async () => {
     const { service } = serviceFor('txn_disputed', { status: 'paid' });
-    await service.updateOrderStatus('ord_1', 'buyer_1', 'open_dispute');
-    expect(logger.warn).not.toHaveBeenCalled();
+    await expect(
+      service.updateOrderStatus('ord_1', 'buyer_1', 'open_dispute'),
+    ).resolves.toBeDefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      BEST_EFFORT,
+      expect.objectContaining({ table: 'marketplace_transactions', transactionId: 'txn_1' }),
+    );
   });
 
-  it('says nothing when the refund mirror fails', async () => {
+  it('still cancels when the refund mirror fails, and reports at ERROR level', async () => {
+    // A transaction row left at `held` for money that has gone back misreports
+    // both sides' Budget.
     const { service } = serviceFor('txn_refunded', { status: 'paid' });
     await service.updateOrderStatus('ord_1', 'buyer_1', 'cancel');
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      BEST_EFFORT,
+      expect.objectContaining({ table: 'marketplace_transactions', orderId: 'ord_1' }),
+    );
   });
 
-  it('says nothing when the held stock is silently lost', async () => {
-    // The buyer has been refunded and the order is cancelled, but the two units
-    // never went back on the listing: the seller cannot sell them again.
-    const { service } = serviceFor('listing_restore', { status: 'paid' });
-    await service.updateOrderStatus('ord_1', 'buyer_1', 'cancel');
-    expect(logger.error).not.toHaveBeenCalled();
-    expect(captureScopedException).not.toHaveBeenCalled();
+  it('still completes the escrow release when the inquiry close-out fails, and warns', async () => {
+    const { service } = serviceFor('inquiry_purchased', { status: 'disputed' });
+    await service.resolveDisputeAsAdmin('ord_1', 'release_to_seller', 'admin_1', 'note');
+    expect(logger.warn).toHaveBeenCalledWith(
+      BEST_EFFORT,
+      expect.objectContaining({ table: 'marketplace_inquiries', inquiryId: 'inq_1' }),
+    );
   });
 
-  it('says nothing when the dispute outcome stamp fails', async () => {
-    // The trust score counts disputes LOST BY THE SELLER; without the stamp a
-    // seller who won stays punished forever.
+  it('still resolves the dispute when the outcome stamp fails, and reports at ERROR level', async () => {
+    // The trust score counts disputes LOST BY THE SELLER; a missing stamp
+    // leaves a seller who WON punished forever.
     const { service } = serviceFor('dispute_outcome', { status: 'disputed' });
     await service.resolveDisputeAsAdmin('ord_1', 'release_to_seller', 'admin_1', 'note');
-    expect(logger.warn).not.toHaveBeenCalledWith('dispute outcome stamp failed', expect.anything());
+    expect(mockForcePayoutForOrder).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      BEST_EFFORT,
+      expect.objectContaining({ table: 'marketplace_orders', outcome: 'seller' }),
+    );
+  });
+});
+
+describe('stock that could not be given back after a refund', () => {
+  it('does not roll back the cancellation, and reports for reconciliation', async () => {
+    // COMPENSATING: the buyer has already been refunded, so throwing would undo
+    // nothing. The units are lost from the listing, which needs a human.
+    const { service } = serviceFor('listing_restore', { status: 'paid' });
+    await expect(service.updateOrderStatus('ord_1', 'buyer_1', 'cancel')).resolves.toBeDefined();
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({
+        table: 'marketplace_listings',
+        listingId: 'listing_1',
+        restoredQuantity: 2,
+        reason: 'stock_not_restored_after_cancel',
+      }),
+    );
+  });
+
+  it('reports under the stable fingerprint', async () => {
+    const { service } = serviceFor('listing_restore', { status: 'paid' });
+    await service.updateOrderStatus('ord_1', 'buyer_1', 'cancel');
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        fingerprint: ['money-moved-write-failed:marketplace_listings:update'],
+      }),
+    );
+  });
+
+  it('reports the unique-listing twin too', async () => {
+    const { service } = serviceFor('listing_restore', { status: 'paid' }, { ...LISTING, quantity: null });
+    await service.updateOrderStatus('ord_1', 'buyer_1', 'cancel');
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({ reason: 'listing_not_reopened_after_cancel' }),
+    );
   });
 });

@@ -71,7 +71,7 @@
 import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { cacheService } from './cache';
 import { logger } from '../utils/logger';
-import { bestEffortWrite } from './data/writeResult';
+import { bestEffortWrite, mustWrite, reconcileLaterWrite } from './data/writeResult';
 import { isDigitalListingKind } from '@lantern/shared/marketplace';
 // PublicError messages survive production error masking (clientErrorMessage);
 // every throw in this service is written for the end user.
@@ -675,7 +675,14 @@ export class MarketplaceOrdersService {
           throw new PublicError('Order is not ready for buyer confirmation');
         }
         patch.buyer_confirmed_at = now;
-        await this.db.from('marketplace_orders').update({ buyer_confirmed_at: now }).eq('id', orderId);
+        // MUST SUCCEED (#108): the very next thing this branch does is release
+        // the seller's money. Paying a seller on a confirmation the order does
+        // not record is the wrong order of events, and nothing external has
+        // happened yet, so stopping costs only the request.
+        mustWrite(
+          await this.db.from('marketplace_orders').update({ buyer_confirmed_at: now }).eq('id', orderId),
+          { table: 'marketplace_orders', op: 'update', orderId, reason: 'buyer_confirmed_at' },
+        );
         const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
           './marketplacePayments'
         );
@@ -770,10 +777,21 @@ export class MarketplaceOrdersService {
           patch.dispute_reason = options.disputeReason.trim().slice(0, DISPUTE_REASON_MAX);
         }
         if (order.transaction_id) {
-          await this.db
-            .from('marketplace_transactions')
-            .update({ status: 'disputed' })
-            .eq('id', order.transaction_id);
+          // BEST EFFORT (#108): the ledger mirror. The order row below is what
+          // the dispute machinery reads; this row only keeps both sides' Budget
+          // honest, and a dispute must not fail to open over it.
+          bestEffortWrite(
+            await this.db
+              .from('marketplace_transactions')
+              .update({ status: 'disputed' })
+              .eq('id', order.transaction_id),
+            {
+              table: 'marketplace_transactions',
+              op: 'update',
+              orderId,
+              transactionId: order.transaction_id,
+            },
+          );
         }
         break;
       }
@@ -923,19 +941,22 @@ export class MarketplaceOrdersService {
     // don't have to hand-mark it. Best-effort: an inquiry-status miss must
     // never fail an escrow release. Idempotent via the status filter.
     if (completed.inquiry_id) {
-      try {
+      // BEST EFFORT (#108), as the comment above already said — but the
+      // `try/catch` it relied on was dead code, so the warning had never once
+      // run. Idempotent via the status filter.
+      bestEffortWrite(
         await this.db
           .from('marketplace_inquiries')
           .update({ status: 'purchased' })
           .eq('id', completed.inquiry_id)
-          .neq('status', 'purchased');
-      } catch (err) {
-        logger.warn('Could not mark inquiry purchased after order completion', {
+          .neq('status', 'purchased'),
+        {
+          table: 'marketplace_inquiries',
+          op: 'update',
           orderId,
           inquiryId: completed.inquiry_id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+        },
+      );
     }
 
     if (!alreadyCompleted && options.notifyCompletion) {
@@ -991,10 +1012,23 @@ export class MarketplaceOrdersService {
 
   private async refundEscrow(order: MarketplaceOrderRow): Promise<void> {
     if (!order.transaction_id) return;
-    await this.db
-      .from('marketplace_transactions')
-      .update({ status: 'refunded' })
-      .eq('id', order.transaction_id);
+    // BEST EFFORT at ERROR level (#108): a mirror, so it must not fail a
+    // cancellation whose refund has already gone through — but a transaction
+    // row left at `held` for money that has gone back misreports both sides'
+    // Budget until someone notices.
+    bestEffortWrite(
+      await this.db
+        .from('marketplace_transactions')
+        .update({ status: 'refunded' })
+        .eq('id', order.transaction_id),
+      {
+        table: 'marketplace_transactions',
+        op: 'update',
+        orderId: order.id,
+        transactionId: order.transaction_id,
+      },
+      'error',
+    );
   }
 
   /** Cancel/refund: return held units (multi-qty) and/or un-reserve a unique listing. */
@@ -1020,13 +1054,37 @@ export class MarketplaceOrdersService {
       if (listing.status === 'active' || listing.status === 'reserved') {
         restore.status = 'active';
       }
-      await this.db.from('marketplace_listings').update(restore).eq('id', listingId);
+      // COMPENSATING WRITE (#108): every caller reaches here AFTER the buyer
+      // has been refunded and the order cancelled, so throwing would undo
+      // nothing and roll back a cancellation that must stand. But the units are
+      // silently lost from the listing — the seller can never sell them again —
+      // so this is reported with the stable fingerprint rather than swallowed.
+      reconcileLaterWrite(
+        await this.db.from('marketplace_listings').update(restore).eq('id', listingId),
+        {
+          table: 'marketplace_listings',
+          op: 'update',
+          listingId,
+          restoredQuantity: restoreQty,
+          reason: 'stock_not_restored_after_cancel',
+        },
+      );
     } else {
-      await this.db
-        .from('marketplace_listings')
-        .update({ status: 'active', updated_at: now })
-        .eq('id', listingId)
-        .eq('status', 'reserved');
+      // The unique-listing twin: the item stays `reserved` for an order that no
+      // longer exists, so it can never be sold again either.
+      reconcileLaterWrite(
+        await this.db
+          .from('marketplace_listings')
+          .update({ status: 'active', updated_at: now })
+          .eq('id', listingId)
+          .eq('status', 'reserved'),
+        {
+          table: 'marketplace_listings',
+          op: 'update',
+          listingId,
+          reason: 'listing_not_reopened_after_cancel',
+        },
+      );
     }
 
     try {
@@ -1605,7 +1663,12 @@ export class MarketplaceOrdersService {
     // opened — without this stamp every resolution is invisible to trust and a
     // seller who wins a dispute stays punished forever.
     const outcome = resolution === 'refund_buyer' ? 'buyer' : 'seller';
-    try {
+    // BEST EFFORT at ERROR level (#108). Its `try/catch` was dead code, so the
+    // warning had never run. Not thrown, because the resolution itself — the
+    // refund or the payout below — matters more than its bookkeeping; at error
+    // level, because the trust score counts disputes LOST BY THE SELLER, and a
+    // missing stamp leaves a seller who WON punished forever.
+    bestEffortWrite(
       await this.db
         .from('marketplace_orders')
         .update({
@@ -1614,13 +1677,10 @@ export class MarketplaceOrdersService {
           dispute_resolved_by: resolvedBy ?? null,
           dispute_resolution_note: adminNote?.trim() ? adminNote.trim().slice(0, 2000) : null,
         })
-        .eq('id', orderId);
-    } catch (err) {
-      logger.warn('dispute outcome stamp failed', {
-        orderId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+        .eq('id', orderId),
+      { table: 'marketplace_orders', op: 'update', orderId, outcome },
+      'error',
+    );
 
     const resolved =
       resolution === 'release_to_seller'
