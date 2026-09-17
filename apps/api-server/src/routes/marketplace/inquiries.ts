@@ -6,7 +6,7 @@ import { asyncHandler } from '../../middleware/errorHandler';
 import { authMiddleware } from '../../middleware/auth';
 import { logger } from '../../utils/logger';
 import { clientErrorMessage } from '../../utils/safeError';
-import { dataLayer, supabaseService } from './context';
+import { dataLayer } from './context';
 const router = Router();
 // GET /api/v1/marketplace/inquiries - Get user's inquiries (as seller)
 router.get(
@@ -113,7 +113,7 @@ router.post(
 
     // Create notification for seller (best-effort — inquiry + DM already succeeded)
     try {
-      await supabaseService.createInquiryNotification(
+      await dataLayer.marketplace.createInquiryNotification(
         listing.user_id,
         buyerProfile?.name || 'Someone',
         listing.title,

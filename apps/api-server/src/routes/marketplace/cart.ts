@@ -23,7 +23,7 @@ import { invalidateSellerAnalyticsCache } from '../../services/marketplaceOrders
 import { getMarketplaceCartService } from '../../services/marketplaceCart';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { normalizeIdempotencyKey, withIdempotency } from '../../services/idempotency';
-import { cacheService, dataLayer, requestContentHash, supabaseService } from './context';
+import { cacheService, dataLayer, requestContentHash } from './context';
 import { respondMarketplaceClientError } from './errors';
 const router = Router();
 // ============================================================

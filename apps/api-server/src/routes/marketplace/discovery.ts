@@ -12,7 +12,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { handleValidationErrors, validateListingId } from '../../middleware/validation';
 import { logger } from '../../utils/logger';
 import { classifyListing, serializeClassifySuggestion, publicTaxonomyPayload } from '@lantern/shared/marketplace';
-import { cacheService, dataLayer, supabaseService } from './context';
+import { cacheService, dataLayer } from './context';
 const router = Router();
 // ============================================================
 // SAVED SEARCHES ENDPOINTS

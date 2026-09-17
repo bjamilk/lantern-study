@@ -3230,7 +3230,11 @@ export class SupabaseService {
     return testsData.getUserTests(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3284,7 +3288,11 @@ export class SupabaseService {
     return testsData.resolveTestSessionForCaller(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3314,7 +3322,11 @@ export class SupabaseService {
     return testsData.createTest(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3367,7 +3379,11 @@ export class SupabaseService {
     return testsData.createPersonalTest(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3446,7 +3462,11 @@ export class SupabaseService {
     return testsData.resolvePersonalTestSourceTitle(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3483,7 +3503,11 @@ export class SupabaseService {
     return testsData.attachSourceNoteTitles(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3533,7 +3557,11 @@ export class SupabaseService {
     return testsData.createTestDraft(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3574,7 +3602,11 @@ export class SupabaseService {
     return testsData.updateTestDraft(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3619,7 +3651,11 @@ export class SupabaseService {
     return testsData.completeTestDraft(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3658,7 +3694,11 @@ export class SupabaseService {
     return testsData.startTest(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3692,7 +3732,11 @@ export class SupabaseService {
     return testsData.submitTest(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3736,7 +3780,11 @@ export class SupabaseService {
     return testsData.createTestResult(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3768,7 +3816,11 @@ export class SupabaseService {
     return testsData.getTestResults(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3798,7 +3850,11 @@ export class SupabaseService {
     return testsData.getTestQuestions(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>
@@ -3838,7 +3894,11 @@ export class SupabaseService {
     return testsData.deleteCompletedTestSession(
       this.supabase,
       {
-        service: this,
+        recordTestSessionAnswers: async (params) =>
+          (await import("./learningEvents")).recordTestSessionAnswers(
+            this,
+            params,
+          ),
         getTestById: (id, uid) => this.getTestById(id, uid),
         getUserTests: (uid, options) => this.getUserTests(uid, options),
         attachSourceNoteTitles: (rows, uid) =>

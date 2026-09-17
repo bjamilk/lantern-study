@@ -31,7 +31,7 @@
  *   from becoming a sustained signing loop.
  *
  * Ownership predicate
- * - Delegated, one object at a time, to `legacyService().canAccessStorageObject`
+ * - Delegated, one object at a time, to `dataLayer.storageAcl.canAccessStorageObject`
  *   in `services/supabase.ts`. That function is the bucket ACL: it denies by
  *   default for any bucket not on the private allowlist, rejects traversal in
  *   the path, treats the first path segment as the owner id, and then applies
@@ -56,20 +56,12 @@ import { authenticatedRateLimit, storageBurstRateLimit } from '../middleware/rat
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clampSignedUrlTtl } from '../utils/fileValidation';
 import type { AuthenticatedRequest } from '../types';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 
 const router = Router();
 
 let dataLayer: DataLayer;
 
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 
 export function initializeStorageRoutes(layer: DataLayer): void {
   dataLayer = layer;

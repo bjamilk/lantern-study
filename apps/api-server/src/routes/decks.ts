@@ -64,7 +64,6 @@ import { requireDeckAccess } from '../middleware/authorizeResource';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
 import { DeckWithCardsError, validateDeckCards } from '../services/deckWithCards';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -109,13 +108,6 @@ const respondPublicError = (err: unknown, res: any): boolean => {
 
 let dataLayer: DataLayer;
 
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `data.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 let cacheService: CacheService;
 
 export const initializeDeckRoutes = (layer: DataLayer, cache: CacheService) => {
@@ -427,7 +419,7 @@ router.post(
     try {
       // Probe the COLUMN before storing bytes: on a database without the
       // migration this answers 503 without ever leaving an orphan object.
-      await legacyService().assertCoverColumn?.('deck');
+      await dataLayer.uploads.assertCoverColumn('deck');
       uploaded = await dataLayer.uploads.uploadCoverImage({
         userId,
         kind: 'deck',
@@ -520,7 +512,7 @@ router.delete(
 // Collaborators and stats
 // ---------------------------------------------------------------------------
 // Defence in depth on the add path: the route gate asks only for `edit`, but
-// `legacyService().addDeckCollaborator` re-checks `verifyDeckAccess(..., 'owner')`
+// `dataLayer.decks.addDeckCollaborator` re-checks `verifyDeckAccess(..., 'owner')`
 // and throws `'Access denied'` — so an editor who reaches the handler still
 // cannot grant a third party access to someone else's deck. The 403 below is
 // that service-level refusal surfacing, not a redundant branch.

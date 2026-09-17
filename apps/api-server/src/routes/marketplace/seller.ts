@@ -18,7 +18,7 @@ import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { CacheKeys, CacheTTL } from '../../services/cachePolicy';
 import { idempotencyMiddleware, type IdempotentRequest } from '../../middleware/idempotency';
 import { MARKETPLACE_DEFAULT_CURRENCY } from '@lantern/shared/marketplace';
-import { MarketplaceCampusMetadataError, cacheService, dataLayer, resolveRequiredMarketplaceCampus, supabaseService } from './context';
+import { MarketplaceCampusMetadataError, cacheService, dataLayer, resolveRequiredMarketplaceCampus } from './context';
 import { respondMarketplaceClientError } from './errors';
 const router = Router();
 // ============================================================

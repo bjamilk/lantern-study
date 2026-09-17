@@ -710,7 +710,6 @@ export class ChallengeService {
       // cannot double-post.
       {
         const { getActivityFeedService } = await import('./activityFeed');
-        // TRANSITIONAL (M2d): `getActivityFeedService` still takes the `SupabaseService` facade whole.
         await getActivityFeedService(this.data).record({
           actorId: userId,
           verb: 'completed_challenge',

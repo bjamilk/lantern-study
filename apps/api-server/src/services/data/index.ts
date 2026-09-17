@@ -512,7 +512,8 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     isGroupMember: (groupId, uid) => layer.groups.isGroupMember(groupId, uid),
     mapTestSessionRowToClient: (session) => layer.tests.mapTestSessionRowToClient(session),
     resolveArtefactTopic: (input) => layer.academic.resolveArtefactTopic(input),
-    service: host.legacyService,
+    recordTestSessionAnswers: async (params) =>
+      (await import("../learningEvents")).recordTestSessionAnswers(layer, params),
     updateUserStats: (uid, score) => layer.tests.updateUserStats(uid, score),
   };
   const signUrlDeps: uploadsData.SignUrlDeps = {
@@ -549,7 +550,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   layer.groupMessages = createGroupMessagesApi(client, groupMessagesDeps);
   layer.groups = createGroupsApi(client, groupsDeps);
   layer.mappers = createMappersApi(mappersDeps);
-  layer.marketplace = createMarketplaceApi(client, marketplaceDeps, host, ratingColumns);
+  layer.marketplace = createMarketplaceApi(client, marketplaceDeps, ratingColumns);
   layer.notes = createNotesApi(client, notesDeps);
   layer.notifications = createNotificationsApi(client, notificationsDeps);
   layer.offlineBundles = createOfflineBundlesApi(client, offlineBundlesDeps);
@@ -820,7 +821,6 @@ function createMappersApi(mappersDeps: mappersData.MessageRecordDeps) {
 function createMarketplaceApi(
   client: DataClient,
   marketplaceDeps: marketplaceData.MarketplaceDeps,
-  host: DataLayerHost,
   ratingColumns: ReturnType<typeof marketplaceData.createRatingColumnCircuitBreaker>,
 ) {
   return {
@@ -840,7 +840,13 @@ function createMarketplaceApi(
     assertValidBundleItems: marketplaceData.assertValidBundleItems,
     assertValidListingQuantity: marketplaceData.assertValidListingQuantity,
     listingStateError: marketplaceData.listingStateError,
-    assertSellerListingUpdateAllowed: bindDeps(host.legacyService, marketplaceData.assertSellerListingUpdateAllowed),
+    // Takes only `{ getMarketplaceListingById }`, which the domain's own deps
+    // literal already reads through the layer at call time. It used to be
+    // handed `host.legacyService` — the last read of the facade in this file.
+    assertSellerListingUpdateAllowed: bindDeps(
+      marketplaceDeps,
+      marketplaceData.assertSellerListingUpdateAllowed,
+    ),
     getMarketplaceCampuses: bindDb(client, marketplaceData.getMarketplaceCampuses),
     getMarketplaceCampusById: bindDb(client, marketplaceData.getMarketplaceCampusById),
     toListingCardRecords: bindDeps(marketplaceDeps, marketplaceData.toListingCardRecords),

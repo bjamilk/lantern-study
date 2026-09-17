@@ -94,10 +94,6 @@ import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { allowDevAuthBypass, requireGroupMember } from '../middleware/authorizeResource';
 import { handleValidationErrors, validateGroupId, validateBatchMemberIds, validateCreateGroup, validateUpdateGroup, validatePagination, validateSearch } from '../middleware/validation';
 import type { DataLayer } from '../services/data';
-// Type only (erased at compile time): the two services below still take the
-// `SupabaseService` facade, so a flipped route hands them `dataLayer.legacyService`
-// until the `services/` importers are flipped too.
-import type { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
 import { getCommunitiesService } from '../services/communities';
@@ -197,9 +193,6 @@ const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
 // the client and to their `deps`. See `docs/data-layer-wiring.md`.
 let dataLayer: DataLayer;
 let cacheService: CacheService;
-
-/** The facade handle the not-yet-flipped services below still require. */
-const legacyService = () => dataLayer.legacyService as SupabaseService;
 
 // Initialize function to be called from main server
 export const initializeGroupRoutes = (layer: DataLayer, cache: CacheService) => {

@@ -25,7 +25,7 @@
 import { Router } from 'express';
 import { logAdminAction } from '../../services/adminAudit';
 import * as adminData from '../../services/adminData';
-import { dataLayer, escapePostgrestSearch, supabaseService } from './context';
+import { dataLayer, escapePostgrestSearch } from './context';
 import { adminRoute } from './errors';
 
 const router = Router();

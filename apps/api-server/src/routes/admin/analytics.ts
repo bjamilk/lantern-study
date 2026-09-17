@@ -23,7 +23,7 @@ import { Router } from 'express';
 import { probeProvider, getProviderStatus } from '../../services/aiService';
 import { aggregateAiTokenRows, aggregateProductEventRows } from '../../services/adminAggregations';
 import * as adminData from '../../services/adminData';
-import { dataLayer, supabaseService } from './context';
+import { dataLayer } from './context';
 import {
   AI_EVENT_ESTIMATED_COST_USD,
   daysAgoIso,
