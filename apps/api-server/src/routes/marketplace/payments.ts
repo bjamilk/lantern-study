@@ -80,7 +80,7 @@ router.get(
     if (!userId) return;
     const { getMarketplacePaymentsService } = await import('../../services/marketplacePayments');
     const page = req.query?.page ? Number(req.query.page) : 1;
-    const data = await getMarketplacePaymentsService(supabaseService).getSellerPayments(
+    const data = await getMarketplacePaymentsService(dataLayer).getSellerPayments(
       userId,
       Number.isFinite(page) && page > 0 ? page : 1
     );
@@ -97,7 +97,7 @@ router.post(
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplacePaymentsService } = await import('../../services/marketplacePayments');
     try {
-      const result = await getMarketplacePaymentsService(supabaseService).verifyPaymentByReference(
+      const result = await getMarketplacePaymentsService(dataLayer).verifyPaymentByReference(
         req.params.reference,
         req.user.id
       );
@@ -132,7 +132,7 @@ router.post(
           error: 'A verified email is required for Paystack checkout',
         });
       }
-      const session = await getMarketplacePaymentsService(supabaseService).getCheckoutSessionForOrder(
+      const session = await getMarketplacePaymentsService(dataLayer).getCheckoutSessionForOrder(
         req.params.id,
         userId,
         email
@@ -149,7 +149,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplacePaymentsService } = await import('../../services/marketplacePayments');
-    const profile = await getMarketplacePaymentsService(supabaseService).getSellerPayoutProfile(
+    const profile = await getMarketplacePaymentsService(dataLayer).getSellerPayoutProfile(
       req.user.id
     );
     res.json({ success: true, data: profile });
@@ -164,7 +164,7 @@ router.post(
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplacePaymentsService } = await import('../../services/marketplacePayments');
     try {
-      const profile = await getMarketplacePaymentsService(supabaseService).upsertSellerPayoutProfile(
+      const profile = await getMarketplacePaymentsService(dataLayer).upsertSellerPayoutProfile(
         req.user.id,
         {
           accountNumber: req.body?.accountNumber,

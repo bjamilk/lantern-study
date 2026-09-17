@@ -7,7 +7,14 @@
  * Shapes are pinned by docs/phase1-academic-identity-contract.md §2/§3 —
  * web and mobile are built against them, so keep the wire names stable.
  */
-import type { SupabaseService } from './supabase';
+import type { CommunitiesHost } from './communities';
+
+/**
+ * FLIPPED (monolith lane M3, Phase B). This service reaches only `getClient()`
+ * itself, but it hands its host to `getCommunitiesService` (auto-membership
+ * refresh), so it must hold what THAT needs.
+ */
+type AcademicCoursesHost = CommunitiesHost;
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -234,10 +241,10 @@ function sortUserCourses(rows: UserCourseRecord[]): UserCourseRecord[] {
 }
 
 export class AcademicCoursesService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: AcademicCoursesHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   // ---------- Institutions ----------
@@ -738,7 +745,7 @@ export class AcademicCoursesService {
    */
   private async syncCommunities(userId: string): Promise<void> {
     const { getCommunitiesService } = await import('./communities');
-    await getCommunitiesService(this.supabaseService).refreshAutoMemberships(userId);
+    await getCommunitiesService(this.host).refreshAutoMemberships(userId);
   }
 
   /**
@@ -856,7 +863,7 @@ export class AcademicCoursesService {
 
 let service: AcademicCoursesService | null = null;
 
-export function getAcademicCoursesService(supabaseService: SupabaseService): AcademicCoursesService {
-  if (!service) service = new AcademicCoursesService(supabaseService);
+export function getAcademicCoursesService(host: AcademicCoursesHost): AcademicCoursesService {
+  if (!service) service = new AcademicCoursesService(host);
   return service;
 }

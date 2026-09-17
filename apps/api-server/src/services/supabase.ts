@@ -4002,8 +4002,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -4035,8 +4041,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -4134,8 +4146,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -4174,8 +4192,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -4235,8 +4259,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -4302,8 +4332,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -4341,8 +4377,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -4385,8 +4427,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -4460,8 +4508,14 @@ export class SupabaseService {
       this.supabase,
       {
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
@@ -5749,7 +5803,12 @@ export class SupabaseService {
           const { getMarketplaceOrdersService } = await import(
             "./marketplaceOrders"
           );
-          return getMarketplaceOrdersService(this).createOrderFromBuyNow(
+          const { marketplaceHostFromFlat } = await import(
+            "./marketplaceServiceHost"
+          );
+          return getMarketplaceOrdersService(
+            marketplaceHostFromFlat(this),
+          ).createOrderFromBuyNow(
             lid,
             buyerId,
             couponCode,
@@ -5775,7 +5834,12 @@ export class SupabaseService {
         consumeBoostCredit: async (sellerId) => {
           const { getMarketplaceSellerToolsService } =
             await import("./marketplaceSellerTools");
-          return getMarketplaceSellerToolsService(this).consumeBoostCredit(
+          const { marketplaceHostFromFlat } = await import(
+            "./marketplaceServiceHost"
+          );
+          return getMarketplaceSellerToolsService(
+            marketplaceHostFromFlat(this),
+          ).consumeBoostCredit(
             sellerId,
           );
         },
@@ -5868,7 +5932,12 @@ export class SupabaseService {
           const { getMarketplaceOrdersService } = await import(
             "./marketplaceOrders"
           );
-          return getMarketplaceOrdersService(this).createOrderFromOfferAccept(
+          const { marketplaceHostFromFlat } = await import(
+            "./marketplaceServiceHost"
+          );
+          return getMarketplaceOrdersService(
+            marketplaceHostFromFlat(this),
+          ).createOrderFromOfferAccept(
             offerId,
             actorId,
           );
@@ -6131,7 +6200,14 @@ export class SupabaseService {
         notifyListingBackAvailable: async (listing, previousStatus) => {
           const { notifyListingBackAvailable } =
             await import("./marketplaceFavoriteAlerts");
-          await notifyListingBackAvailable(this, listing, previousStatus);
+          const { marketplaceHostFromFlat } = await import(
+            "./marketplaceServiceHost"
+          );
+          await notifyListingBackAvailable(
+            marketplaceHostFromFlat(this),
+            listing,
+            previousStatus,
+          );
         },
       },
       listingId,
@@ -6938,8 +7014,14 @@ export class SupabaseService {
           this.createNotification(uid, notification),
         getNote: (nid, uid) => this.getNote(nid, uid),
         recordActivity: async (input) => {
-          const { getActivityFeedService } = await import("./activityFeed");
-          await getActivityFeedService(this).record(input);
+          const { getActivityFeedService, feedHostFromFlat } = await import(
+            "./activityFeed"
+          );
+          // The feed takes a layer host since M3 Phase B, and this class is not
+          // one: it spells the DM block list flat. `feedHostFromFlat` adapts it,
+          // TYPED — a cast here is how the #92 regression shipped. Both this
+          // call and the helper go when the class does.
+          await getActivityFeedService(feedHostFromFlat(this)).record(input);
         },
         recordLearningConnection: async (input) => {
           const { getLearningConnectionsService } = await import(

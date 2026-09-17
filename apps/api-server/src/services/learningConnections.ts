@@ -13,7 +13,14 @@
  * accepted DM, a review) has already committed, and a metric row must never
  * roll it back.
  */
-import type { SupabaseService } from './supabase';
+/**
+ * FLIPPED (monolith lane M3, Phase B): this module took the whole
+ * `SupabaseService` facade and reached exactly one member on it, `getClient()`.
+ * It takes `DataClientHost` instead, so a flipped caller hands over
+ * `dataLayer`; the facade satisfies the type structurally, so the call sites
+ * this lane has not reached yet keep working unchanged.
+ */
+import type { DataClientHost } from './data';
 import { logger } from '../utils/logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,10 +51,10 @@ export interface ConnectionInput {
 }
 
 export class LearningConnectionsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: DataClientHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   /**
@@ -150,8 +157,8 @@ export function isoWeekStart(date: Date): string {
 let service: LearningConnectionsService | null = null;
 
 export function getLearningConnectionsService(
-  supabaseService: SupabaseService
+  host: DataClientHost
 ): LearningConnectionsService {
-  if (!service) service = new LearningConnectionsService(supabaseService);
+  if (!service) service = new LearningConnectionsService(host);
   return service;
 }

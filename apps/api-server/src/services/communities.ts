@@ -16,7 +16,25 @@
  * SEPARATE query with its own cache key; conflating them would poison every
  * user's group list with groups they are not in.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
+import type { ActivityFeedHost } from './activityFeed';
+import type { CommunityModerationHost } from './communityModeration';
+
+/**
+ * What the community surface needs from the layer: the client, the
+ * platform-admin gate, the viewer's group unread counts, the DM block list,
+ * and whatever it hands on to `studyRooms` and the activity feed.
+ *
+ * FLIPPED (monolith lane M3, Phase B). Narrow on purpose rather than the whole
+ * `DataLayer`: a suite can build one of these as a plain object literal and
+ * have the compiler CHECK it, which is what the three stand-ins in
+ * `communities*.test.ts` now do — they used to be flat objects cast with
+ * `as never`.
+ */
+export type CommunitiesHost = ActivityFeedHost &
+  CommunityModerationHost & {
+    readState: Pick<DataLayer['readState'], 'getAllGroupUnreadCounts'>;
+  };
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import { cacheService } from './cache';
@@ -239,10 +257,10 @@ type MembershipRow = {
 };
 
 export class CommunitiesService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: CommunitiesHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   private assertUuid(id: string, label = 'id'): void {
@@ -945,11 +963,11 @@ export class CommunitiesService {
     if (joined.size > 0) {
       unread =
         (await cacheService.get<Record<string, number>>(CacheKeys.unreadGroups(viewerId))) ??
-        (await this.supabaseService.getAllGroupUnreadCounts(viewerId));
+        (await this.host.readState.getAllGroupUnreadCounts(viewerId));
     }
 
     const rooms = isMember
-      ? await getStudyRoomsService(this.supabaseService).list(viewerId, {
+      ? await getStudyRoomsService(this.host).list(viewerId, {
           communityId,
           courseId: community.course_id ?? undefined,
         })
@@ -1051,7 +1069,7 @@ export class CommunitiesService {
     });
     const allowed =
       academicallyAllowed ||
-      (await this.supabaseService.isPlatformAdmin(userId).catch(() => false));
+      (await this.host.client.isPlatformAdmin(userId).catch(() => false));
     if (!allowed) {
       throw Object.assign(
         new PublicError(
@@ -1263,7 +1281,7 @@ export class CommunitiesService {
     // Phase 3 M: joined_community had no writer. Addressed to the community
     // itself — joining is news to the room you joined, not to the internet.
     const { getActivityFeedService } = await import('./activityFeed');
-    await getActivityFeedService(this.supabaseService).record({
+    await getActivityFeedService(this.host).record({
       actorId: userId,
       verb: 'joined_community',
       objectType: 'community',
@@ -1356,7 +1374,7 @@ export class CommunitiesService {
       viewerId,
       createdBy
     );
-    const viewerIsPlatformAdmin = await this.supabaseService
+    const viewerIsPlatformAdmin = await this.host.client
       .isPlatformAdmin(viewerId)
       .catch(() => false);
     const viewerModerates =
@@ -1404,7 +1422,7 @@ export class CommunitiesService {
         ? encodeMembersCursor(String(last.joined_at), String(last.user_id))
         : null;
 
-    const blocked = await this.supabaseService.listBlockedUserIds(viewerId).catch(() => []);
+    const blocked = await this.host.directMessages.listBlockedUserIds(viewerId).catch(() => []);
     const blockedSet = new Set(blocked || []);
 
     const members = rawRows
@@ -1562,7 +1580,7 @@ export class CommunitiesService {
 
     const [{ data: profiles }, blocked] = await Promise.all([
       this.db.from('profiles').select('id, name, avatar_url, programme, institution_id').in('id', ids),
-      this.supabaseService.listBlockedUserIds(viewerId).catch(() => [] as string[]),
+      this.host.directMessages.listBlockedUserIds(viewerId).catch(() => [] as string[]),
     ]);
     const blockedSet = new Set(blocked || []);
     const profileById = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -1651,7 +1669,7 @@ export class CommunitiesService {
 
     try {
       const { getActivityFeedService } = await import('./activityFeed');
-      await getActivityFeedService(this.supabaseService).record({
+      await getActivityFeedService(this.host).record({
         actorId: userId,
         verb: 'joined_group',
         objectType: 'group',
@@ -1674,7 +1692,7 @@ export class CommunitiesService {
 
 let service: CommunitiesService | null = null;
 
-export function getCommunitiesService(supabaseService: SupabaseService): CommunitiesService {
-  if (!service) service = new CommunitiesService(supabaseService);
+export function getCommunitiesService(host: CommunitiesHost): CommunitiesService {
+  if (!service) service = new CommunitiesService(host);
   return service;
 }

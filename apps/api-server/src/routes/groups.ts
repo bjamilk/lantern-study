@@ -130,7 +130,7 @@ async function isBarredFromCommunity(
     communityId: input.communityId as string | null | undefined,
   });
   if (!discovery.communityId) return false;
-  const member = await getCommunitiesService(legacyService()).isActiveMember(
+  const member = await getCommunitiesService(dataLayer).isActiveMember(
     userId,
     discovery.communityId,
   );
@@ -684,7 +684,7 @@ router.delete(
     // it (messages cascade on the group). It is minted with no admins, so the
     // check above already refuses today — this makes the rule explicit rather
     // than an accident of how the lounge happens to be configured.
-    if (await getCommunitiesService(legacyService()).isCommunityLounge(groupId)) {
+    if (await getCommunitiesService(dataLayer).isCommunityLounge(groupId)) {
       return res.status(403).json({
         success: false,
         error: 'This is a community chat and cannot be deleted.',
@@ -1049,7 +1049,7 @@ router.post(
     // Academic feed (Phase 3 · M): visible to the group, not to followers — a
     // join is news to the room you joined, not to the internet.
     const { getActivityFeedService } = await import('../services/activityFeed');
-    await getActivityFeedService(legacyService()).record({
+    await getActivityFeedService(dataLayer).record({
       actorId: userId,
       verb: 'joined_group',
       objectType: 'group',

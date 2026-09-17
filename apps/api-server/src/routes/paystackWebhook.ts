@@ -64,11 +64,9 @@ const router = Router();
 
 let dataLayer: DataLayer | null = null;
 
-// TRANSITIONAL (M2a): `getMarketplacePaymentsService` still takes the
-// `SupabaseService` facade whole, so this route hands it
-// `dataLayer.legacyService`. The seam disappears when the `services/`
-// importers are flipped.
-const legacyService = () => dataLayer?.legacyService ?? null;
+// The readiness check the handler makes before it does anything: the webhook
+// answers 503 rather than 500 when the layer has not been injected yet.
+const layerOrNull = () => dataLayer;
 
 export function initializePaystackWebhookRoutes(layer: DataLayer): void {
   dataLayer = layer;
@@ -81,7 +79,7 @@ export function initializePaystackWebhookRoutes(layer: DataLayer): void {
 router.post(
   '/',
   asyncHandler(async (req: any, res: any) => {
-    if (!legacyService()) {
+    if (!layerOrNull()) {
       return res.status(503).json({ success: false, error: 'Service unavailable' });
     }
 
@@ -103,7 +101,7 @@ router.post(
 
     try {
       const { getMarketplacePaymentsService } = await import('../services/marketplacePayments');
-      const result = await getMarketplacePaymentsService(legacyService()!).handleWebhook(
+      const result = await getMarketplacePaymentsService(dataLayer!).handleWebhook(
         rawBody,
         signature
       );

@@ -196,10 +196,10 @@ const sendChatMutationResult = (
 let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-// TRANSITIONAL (M2c): five collaborators in `services/` still take the whole
-// `SupabaseService` facade — `communityModeration`, `learningEvents`,
-// `messageReactions`, `activityFeed` and `learningConnections`. Until those
-// importers are flipped too, this route hands them `dataLayer.legacyService`.
+// TRANSITIONAL (M2c): one collaborator in `services/` still takes the whole
+// `SupabaseService` facade — `messageReactions`. `communityModeration`,
+// `learningEvents`, `activityFeed` and `learningConnections` were flipped in
+// M3 Phase B and are handed `dataLayer` itself.
 // Read through a function, not captured at init, so an overridden
 // `legacyService` on the injected layer is honoured. Seven call sites; they go
 // away with the facade.
@@ -1055,7 +1055,7 @@ router.post(
       postKind === 'announcement' &&
       (group as { communityId?: string | null })?.communityId
     ) {
-      await getCommunityModerationService(legacyService())
+      await getCommunityModerationService(dataLayer)
         .enforceAnnouncementCap((group as { communityId: string }).communityId)
         .catch(() => []);
     }
@@ -1069,7 +1069,7 @@ router.post(
     // learning_events: group_question_posted (type QUESTION only; plain chat
     // is not learning activity). course_id from the group. Never throws.
     if (String(message?.type || '').toUpperCase() === 'QUESTION') {
-      await recordLearningEvent(legacyService(), {
+      await recordLearningEvent(dataLayer, {
         userId,
         eventType: 'group_question_posted',
         targetType: 'question',
@@ -1800,7 +1800,7 @@ router.post(
     // 'up' counts. Actor = the question's author (they did the helping).
     if (voteType === 'up' && authorized.sender_id) {
       const { getLearningConnectionsService } = await import('../services/learningConnections');
-      await getLearningConnectionsService(legacyService()).record({
+      await getLearningConnectionsService(dataLayer).record({
         actorId: authorized.sender_id,
         beneficiaryId: userId,
         kind: 'question_voted',
@@ -2096,7 +2096,7 @@ router.put(
     // on VERIFIED — an answer being confirmed correct is the newsworthy moment.
     if (questionStatus === 'VERIFIED' && authorized.type === 'QUESTION') {
       const { getActivityFeedService } = await import('../services/activityFeed');
-      await getActivityFeedService(legacyService()).record({
+      await getActivityFeedService(dataLayer).record({
         actorId: userId,
         verb: 'answered_question',
         objectType: 'question',
@@ -2115,7 +2115,7 @@ router.put(
     // question_verified connection.
     if (questionStatus === 'VERIFIED' && authorized.type === 'QUESTION' && authorized.sender_id) {
       const { getLearningConnectionsService } = await import('../services/learningConnections');
-      await getLearningConnectionsService(legacyService()).record({
+      await getLearningConnectionsService(dataLayer).record({
         actorId: authorized.sender_id,
         beneficiaryId: userId,
         kind: 'question_verified',

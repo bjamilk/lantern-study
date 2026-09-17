@@ -187,7 +187,7 @@ async function withInstitution<T extends { institutionId?: string | null }>(user
   const cacheKey = `institution:${institutionId}`;
   let institution = (await cacheService.get(cacheKey)) as { id: string; name: string; slug: string } | null;
   if (!institution) {
-    institution = await getAcademicCoursesService(legacyService()).resolveInstitution(institutionId);
+    institution = await getAcademicCoursesService(dataLayer).resolveInstitution(institutionId);
     if (institution) await cacheService.set(cacheKey, institution, 600);
   }
   return { ...user, institution: institution ?? null };
@@ -360,7 +360,7 @@ router.get(
         const { getCreatorsService } = await import('../services/creators');
         const { data: authUser } = await dataLayer.getClient()
           .auth.admin.getUserById(userId);
-        await getCreatorsService(legacyService()).syncVerificationLevel(
+        await getCreatorsService(dataLayer).syncVerificationLevel(
           userId,
           (authUser?.user as { email_confirmed_at?: string | null } | undefined)?.email_confirmed_at ?? null
         );
@@ -419,7 +419,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { getModerationService } = await import('../services/moderation');
-    const state = await getModerationService(legacyService()).getModerationState(userId);
+    const state = await getModerationService(dataLayer).getModerationState(userId);
     res.json({ success: true, data: state });
   })
 );
@@ -810,7 +810,7 @@ router.put(
       } else {
         try {
           selectedInstitutionId = (
-            await getAcademicCoursesService(legacyService()).assertSelectableInstitution(
+            await getAcademicCoursesService(dataLayer).assertSelectableInstitution(
               String(updateData.institutionId)
             )
           ).id;
@@ -850,7 +850,7 @@ router.put(
     if (updateData.bio !== undefined) {
       const { getCreatorsService } = await import('../services/creators');
       try {
-        updateData.bio = getCreatorsService(legacyService()).normalizeBio(updateData.bio);
+        updateData.bio = getCreatorsService(dataLayer).normalizeBio(updateData.bio);
       } catch (error) {
         if (error instanceof PublicError) {
           return res.status(400).json({ success: false, error: error.message });
@@ -889,7 +889,7 @@ router.put(
     // Best-effort inside the service; a stale membership must not fail a save.
     if (ACADEMIC_PROFILE_FIELDS.some((field) => updateData[field] !== undefined)) {
       const { getCommunitiesService } = await import('../services/communities');
-      await getCommunitiesService(legacyService()).refreshAutoMemberships(userId);
+      await getCommunitiesService(dataLayer).refreshAutoMemberships(userId);
     }
 
     // Write-through: a chosen institution also seeds the marketplace campus
@@ -1094,7 +1094,7 @@ router.post(
     // `cover-images`, so an uploaded CV outlived the account — and the route
     // reported success anyway. The purge is now a paginated recursive walk, and
     // `deleteUserAccountFully` returns what it actually managed to erase.
-    const result = await deleteUserAccountFully(legacyService(), userId);
+    const result = await deleteUserAccountFully(dataLayer, userId);
     if (!result.found) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
@@ -1205,7 +1205,7 @@ router.delete(
     // paginated, covering `job-resumes`, `cover-images` and solely-owned
     // `job-company-logos`, and reporting what it could not remove instead of
     // returning a bare success.
-    const result = await deleteUserAccountFully(legacyService(), userId);
+    const result = await deleteUserAccountFully(dataLayer, userId);
     const deleted = result.found;
 
     if (!deleted) {
@@ -1216,7 +1216,7 @@ router.delete(
     }
 
     if (requestingUserId !== userId && (await isLivePlatformAdmin(requestingUserId))) {
-      await logAdminAction(legacyService(), {
+      await logAdminAction(dataLayer, {
         actorId: requestingUserId,
         action: 'user_delete',
         targetType: 'user',
@@ -2254,7 +2254,7 @@ router.post(
     if (!userId) return;
     const { getCreatorsService } = await import('../services/creators');
     try {
-      const data = await getCreatorsService(legacyService()).follow(userId, req.params.userId);
+      const data = await getCreatorsService(dataLayer).follow(userId, req.params.userId);
       res.json({ success: true, data });
     } catch (err: any) {
       // Only user-facing PublicErrors become 4xx; DB/internal errors must keep
@@ -2279,7 +2279,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { getCreatorsService } = await import('../services/creators');
-    const data = await getCreatorsService(legacyService()).unfollow(userId, req.params.userId);
+    const data = await getCreatorsService(dataLayer).unfollow(userId, req.params.userId);
     res.json({ success: true, data });
   })
 );
@@ -2295,7 +2295,7 @@ router.get(
     if (!viewerId) return;
     const { getCreatorsService } = await import('../services/creators');
     const page = req.query?.page ? Number(req.query.page) : 1;
-    const data = await getCreatorsService(legacyService()).listFollowers(
+    const data = await getCreatorsService(dataLayer).listFollowers(
       req.params.userId,
       page,
       30,
@@ -2316,7 +2316,7 @@ router.get(
     if (!viewerId) return;
     const { getCreatorsService } = await import('../services/creators');
     const page = req.query?.page ? Number(req.query.page) : 1;
-    const data = await getCreatorsService(legacyService()).listFollowing(
+    const data = await getCreatorsService(dataLayer).listFollowing(
       req.params.userId,
       page,
       30,

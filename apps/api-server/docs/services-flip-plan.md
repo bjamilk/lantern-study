@@ -102,3 +102,34 @@ which means every caller of theirs must hold one first: `communities`
 `activityFeed` (`listBlockedUserIds`), `moderation` (`createNotification`),
 `marketplacePayments`, `marketplaceQuestionBanks`, `marketplaceStudyPacks`,
 `marketplaceOrders` and `marketplaceSellerTools`.
+
+
+## Phase B, PR 1: all nineteen are flipped
+
+No `services/*` module names `SupabaseService` as a value or a parameter type
+any more. Three groups, three commits, in the order the dynamic-import-aware
+graph allows:
+
+| group | services | host |
+| --- | --- | --- |
+| leaves | courseTopics, learningConnections, learningEvents, marketplaceCoupons, adminAudit, userDataLifecycle | `DataClientHost` (`Pick<DataLayer, "getClient">`) |
+| community | activityFeed, communityModeration, studyRooms, communities, academicCourses | `ActivityFeedHost`, `CommunityModerationHost`, `CommunitiesHost` |
+| money | marketplaceOrders, marketplacePayments, marketplaceSellerTools, marketplaceQuestionBanks, marketplaceStudyPacks, marketplaceFavoriteAlerts, moderation, creators | `MarketplaceServiceHost` (+ `ModerationHost`) |
+
+Two rules came out of it.
+
+1. NARROW BEATS `DataLayer`. A host of one to three members per namespace can
+   be built by a test as a plain object literal the compiler CHECKS. That is
+   how the community suites lost their `as never` casts — and how the compiler
+   found three stand-ins that answered no unread-count read at all.
+2. A SHARED type where the graph is cyclic. The money services hand their own
+   host to each other, so per-service aliases would reference each other in a
+   cycle; one `MarketplaceServiceHost` states the union once.
+
+Where a caller still holds the facade — four `deps` arrows inside
+`services/supabase.ts` — it goes through a typed adapter
+(`feedHostFromFlat`, `marketplaceHostFromFlat`) that regroups the flat spelling
+under the namespaces. Never a cast: `data/dataLayer.noAnyCast.test.ts` fails
+the build on an `any` over a handle, and that is the shape #92 shipped.
+
+`DataLayerHost` is down to `{ legacyService }`.

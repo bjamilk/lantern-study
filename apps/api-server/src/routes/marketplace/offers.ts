@@ -475,7 +475,7 @@ router.put(
                     ?.email || '';
                 if (email) {
                   checkout = (await getMarketplacePaymentsService(
-                    supabaseService
+                    dataLayer
                   ).createCheckoutForExistingOrder({
                     orderId: finalized.orderId,
                     buyerId,

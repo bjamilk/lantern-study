@@ -6,7 +6,6 @@
 import { Router, Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import type { SupabaseService } from '../services/supabase';
 import type { DataLayer } from '../services/data';
 import { getActivityFeedService } from '../services/activityFeed';
 import { getTopicMasteryService } from '../services/topicMastery';
@@ -18,14 +17,6 @@ const router = Router();
 export const masteryRouter = Router();
 
 let dataLayer: DataLayer;
-
-// TRANSITIONAL (M2a): the services called below still take the `SupabaseService`
-// facade whole, so a flipped route hands them `dataLayer.legacyService`. The seam
-// disappears when the `services/` importers are flipped.
-// `dataLayer?` because a route module can be imported before its injector
-// runs (several suites drive a handler without calling it), exactly as the
-// old module-level `supabaseService` read as undefined there.
-const legacyService = () => dataLayer?.legacyService as SupabaseService;
 
 export const initializeFeedRoutes = (layer: DataLayer): void => {
   dataLayer = layer;
@@ -40,7 +31,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getActivityFeedService(legacyService()).getFeed(userId, {
+    const data = await getActivityFeedService(dataLayer).getFeed(userId, {
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       before: str(req.query.before),
     });
@@ -55,7 +46,7 @@ router.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getLearningConnectionsService(legacyService()).summaryForUser(userId);
+    const data = await getLearningConnectionsService(dataLayer).summaryForUser(userId);
     res.json({ success: true, data });
   })
 );

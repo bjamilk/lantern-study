@@ -149,7 +149,7 @@ router.get(
     const profileScope = isOwner ? 'owner' : 'public';
 
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-    const sellerTools = getMarketplaceSellerToolsService(supabaseService);
+    const sellerTools = getMarketplaceSellerToolsService(dataLayer);
     const cacheKey = CacheKeys.sellerProfile(userId, profileScope);
     const cached = await cacheService.get<any>(cacheKey);
     if (cached) {
@@ -292,7 +292,7 @@ router.patch(
     const { shopName, bio, coverImageUrl } = req.body || {};
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
     try {
-      const shop = await getMarketplaceSellerToolsService(supabaseService).updateShop(userId, {
+      const shop = await getMarketplaceSellerToolsService(dataLayer).updateShop(userId, {
         shopName,
         bio,
         coverImageUrl,
@@ -315,7 +315,7 @@ router.get(
   '/shops',
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-    const result = await getMarketplaceSellerToolsService(supabaseService).listShops({
+    const result = await getMarketplaceSellerToolsService(dataLayer).listShops({
       campusId: typeof req.query.campus === 'string' ? req.query.campus : null,
       q: typeof req.query.q === 'string' ? req.query.q : null,
       page: req.query.page ? Number(req.query.page) : 1,
@@ -334,7 +334,7 @@ router.get(
     if (cached) {
       return res.json({ success: true, data: cached });
     }
-    const analytics = await getMarketplaceOrdersService(supabaseService).getSellerAnalytics(
+    const analytics = await getMarketplaceOrdersService(dataLayer).getSellerAnalytics(
       req.user.id
     );
     await cacheService.set(cacheKey, analytics, 120);
@@ -347,7 +347,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const segment = typeof req.query.segment === 'string' ? req.query.segment : undefined;
-    const buyers = await getMarketplaceOrdersService(supabaseService).getSellerBuyersWithSegments(
+    const buyers = await getMarketplaceOrdersService(dataLayer).getSellerBuyersWithSegments(
       req.user.id,
       segment
     );
@@ -360,7 +360,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceCouponsService } = await import('../../services/marketplaceCoupons');
-    const coupons = await getMarketplaceCouponsService(supabaseService).listForSeller(req.user.id);
+    const coupons = await getMarketplaceCouponsService(dataLayer).listForSeller(req.user.id);
     res.json({ success: true, data: coupons });
   })
 );
@@ -377,7 +377,7 @@ router.post(
     const { getMarketplaceCouponsService } = await import('../../services/marketplaceCoupons');
     try {
       const result = await req.runIdempotent!(async () => {
-        const coupon = await getMarketplaceCouponsService(supabaseService).createCoupon(req.user!.id!, {
+        const coupon = await getMarketplaceCouponsService(dataLayer).createCoupon(req.user!.id!, {
           code,
           discountType,
           discountValue: Number(discountValue),
@@ -410,7 +410,7 @@ router.post(
     }
     const { getMarketplaceCouponsService } = await import('../../services/marketplaceCoupons');
     try {
-      const result = await getMarketplaceCouponsService(supabaseService).validateForListing(
+      const result = await getMarketplaceCouponsService(dataLayer).validateForListing(
         code,
         listing,
         req.user.id
@@ -437,7 +437,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-    const prefs = await getMarketplaceSellerToolsService(supabaseService).getPreferences(req.user.id);
+    const prefs = await getMarketplaceSellerToolsService(dataLayer).getPreferences(req.user.id);
     res.json({ success: true, data: prefs });
   })
 );
@@ -447,7 +447,7 @@ router.put(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-    const prefs = await getMarketplaceSellerToolsService(supabaseService).updatePreferences(
+    const prefs = await getMarketplaceSellerToolsService(dataLayer).updatePreferences(
       req.user.id,
       {
         hallDropoffEnabled: req.body?.hallDropoffEnabled,
@@ -470,7 +470,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-    const data = await getMarketplaceSellerToolsService(supabaseService).getPublicFulfillment(
+    const data = await getMarketplaceSellerToolsService(dataLayer).getPublicFulfillment(
       req.params.userId,
     );
     res.json({ success: true, data });
@@ -482,7 +482,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-    const nudge = await getMarketplaceSellerToolsService(supabaseService).getPickupNudge(
+    const nudge = await getMarketplaceSellerToolsService(dataLayer).getPickupNudge(
       req.params.userId,
       req.user?.id
     );
@@ -497,7 +497,7 @@ router.post(
     const { message, segment, buyerIds } = req.body || {};
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
     try {
-      const result = await getMarketplaceSellerToolsService(supabaseService).sendCampaign(
+      const result = await getMarketplaceSellerToolsService(dataLayer).sendCampaign(
         req.user.id,
         { message, segment, buyerIds }
       );
@@ -536,7 +536,7 @@ router.post(
     }
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
     try {
-      const bundle = await getMarketplaceSellerToolsService(supabaseService).createBundle(
+      const bundle = await getMarketplaceSellerToolsService(dataLayer).createBundle(
         req.user.id,
         {
           title,
@@ -565,7 +565,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-    const status = await getMarketplaceSellerToolsService(supabaseService).getOnboardingStatus(
+    const status = await getMarketplaceSellerToolsService(dataLayer).getOnboardingStatus(
       req.user.id
     );
     res.json({ success: true, data: status });
@@ -577,7 +577,7 @@ router.post(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-    const prefs = await getMarketplaceSellerToolsService(supabaseService).completeOnboarding(
+    const prefs = await getMarketplaceSellerToolsService(dataLayer).completeOnboarding(
       req.user.id
     );
     res.json({ success: true, data: prefs });

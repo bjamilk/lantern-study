@@ -258,7 +258,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
   const { error } = await adminData.setUserSettings(dataLayer, id, nextSettings);
   if (error) throw error;
 
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action:
       status === 'banned'
@@ -319,13 +319,13 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
 router.post('/users/:id/strikes', validateUuidParam('id'), handleValidationErrors, moderationRoute(async (req: any, res: any) => {
   const { id } = req.params;
   const { reason, severity, reportId } = req.body || {};
-  const result = await getModerationService(supabaseService).addStrike(id, {
+  const result = await getModerationService(dataLayer).addStrike(id, {
     reason,
     severity,
     reportId,
     createdBy: req.user.id,
   });
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'strike_add',
     targetType: 'user',
@@ -344,7 +344,7 @@ router.post('/users/:id/strikes', validateUuidParam('id'), handleValidationError
 
 // GET /api/v1/admin/users/:id/strikes
 router.get('/users/:id/strikes', validateUuidParam('id'), handleValidationErrors, moderationRoute(async (req: any, res: any) => {
-  const moderation = getModerationService(supabaseService);
+  const moderation = getModerationService(dataLayer);
   const [strikes, state] = await Promise.all([
     moderation.listStrikes(req.params.id),
     moderation.getModerationState(req.params.id),
@@ -409,7 +409,7 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
 
   const currentlyAdmin = userData.user.app_metadata?.is_platform_admin === true;
   if (currentlyAdmin && isPlatformAdmin !== true) {
-    const adminCount = await countPlatformAdmins(supabaseService);
+    const adminCount = await countPlatformAdmins(dataLayer);
     if (adminCount <= 1) {
       return res.status(400).json({ success: false, error: 'Cannot remove the last platform admin.' });
     }
@@ -437,7 +437,7 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
     await adminData.revokePlatformAdmin(dataLayer, id);
   }
 
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: isPlatformAdmin ? 'user_role_grant' : 'user_role_revoke',
     targetType: 'user',
@@ -471,7 +471,7 @@ router.get('/users/:id', adminRoute(async (req: any, res: any) => {
   const authMap = await getAuthUserInfoForUserIds([id]);
   const [{ groupCount, listingCount, deckCount, aiEvents7d }, activeStrikes] = await Promise.all([
     adminData.getUserCounts(dataLayer, id, last7d),
-    getModerationService(supabaseService).countActiveStrikes(id).catch(() => 0),
+    getModerationService(dataLayer).countActiveStrikes(id).catch(() => 0),
   ]);
 
   const suspendedUntil = isSuspensionActive(profile?.settings?.suspended_until)
@@ -516,7 +516,7 @@ router.post('/notifications', validateAdminNotification, handleValidationErrors,
   }
   const notification = await dataLayer.notifications.createNotification(userId, { message, link, type, force: true });
   await cacheService.deletePattern(`notifications:${userId}:*`);
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'notification_send',
     targetType: 'user',
@@ -534,7 +534,7 @@ router.post('/notifications/bulk', validateAdminBulkNotification, handleValidati
   for (const uid of userIds) {
     await cacheService.deletePattern(`notifications:${uid}:*`);
   }
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'notification_send',
     targetType: 'bulk',
@@ -551,7 +551,7 @@ router.post('/users/:id/points', validateAdminPointsAdjust, handleValidationErro
     return res.status(400).json({ success: false, error: 'points must be a number' });
   }
   const result = await dataLayer.gamification.awardPoints(id, points, reason || 'Admin adjustment', source);
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'points_award',
     targetType: 'user',
@@ -568,7 +568,7 @@ router.post('/users/:id/badge', mappedRoute(respondBadgeError, async (req: any, 
   if (!badgeId) return res.status(400).json({ success: false, error: 'badgeId is required' });
   const result = await dataLayer.gamification.awardBadge(id, badgeId, req.user.id);
   await cacheService.deletePattern(`gamification:user:badges:${id}:*`);
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'badge_award',
     targetType: 'user',
@@ -591,7 +591,7 @@ router.post('/ai/quota/reset', adminRoute(async (req: any, res: any) => {
   const { userId, feature } = req.body;
   if (!userId) return res.status(400).json({ success: false, error: 'userId is required' });
   await resetAIUsageForUser(userId, feature || undefined);
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'ai_quota_reset',
     targetType: 'user',
@@ -612,7 +612,7 @@ router.post('/ai/quota/reset', adminRoute(async (req: any, res: any) => {
 router.get('/ai/companion/:userId', adminRoute(async (req: any, res: any) => {
   const { userId } = req.params;
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'ai_companion_history_view',
     targetType: 'user',

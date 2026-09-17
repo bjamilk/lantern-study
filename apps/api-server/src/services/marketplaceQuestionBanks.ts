@@ -6,7 +6,13 @@
  * offline_bundles, where the existing offline runtime (web Offline Mode,
  * mobile offlineStore, cross-device sync) takes over. No new client runtime.
  */
-import type { SupabaseService } from './supabase';
+/**
+ * FLIPPED (monolith lane M3, Phase B): takes `MarketplaceServiceHost` — the
+ * shared, narrow host of the money cluster — instead of the whole
+ * `SupabaseService`. See `services/marketplaceServiceHost.ts` for why the six
+ * money services share one type and how the last facade-side callers adapt.
+ */
+import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { PublicError } from '../utils/safeError';
 import {
   COURSE_ANCHOR_COPY,
@@ -79,10 +85,10 @@ export interface UpdateQuestionBankProvenance {
 }
 
 export class MarketplaceQuestionBanksService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: MarketplaceServiceHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   /** Deterministic per listing so re-grants and restores upsert, never duplicate. */
@@ -170,7 +176,7 @@ export class MarketplaceQuestionBanksService {
     // group's name and collective work, so a rank-and-file member cannot list it.
     let courseId: string | null = input.courseId || null;
     if (input.groupId) {
-      const group = await this.supabaseService.getGroupById(input.groupId, userId);
+      const group = await this.host.groups.getGroupById(input.groupId, userId);
       if (!group) throw new PublicError('Group not found or access denied');
       const g = group as unknown as {
         permissions?: Record<string, { admin?: boolean }>;
@@ -212,10 +218,10 @@ export class MarketplaceQuestionBanksService {
       if (!marketplacePaystackEnabled()) {
         throw new PublicError('Paid question banks require in-app payments, which are not enabled');
       }
-      await getMarketplacePaymentsService(this.supabaseService).assertSellerCanReceivePayout(userId);
+      await getMarketplacePaymentsService(this.host).assertSellerCanReceivePayout(userId);
     }
 
-    const listing = await this.supabaseService.createMarketplaceListing(
+    const listing = await this.host.marketplace.createMarketplaceListing(
       {
         title,
         description: input.description || '',
@@ -263,11 +269,11 @@ export class MarketplaceQuestionBanksService {
     // Creator counters (Phase 2 · J) — question banks count as published
     // products too. Never throws.
     const { getCreatorsService } = await import('./creators');
-    await getCreatorsService(this.supabaseService).refreshStats(userId);
+    await getCreatorsService(this.host).refreshStats(userId);
 
     // Academic feed (Phase 3 · M) — best-effort; the listing is already live.
     const { getActivityFeedService } = await import('./activityFeed');
-    await getActivityFeedService(this.supabaseService).record({
+    await getActivityFeedService(this.host).record({
       actorId: userId,
       verb: 'published_bank',
       objectType: 'listing',
@@ -281,7 +287,7 @@ export class MarketplaceQuestionBanksService {
     // become an under-review content_report on the listing; never blocks publish.
     if (contentFlags.length > 0) {
       try {
-        await getModerationService(this.supabaseService).recordListingFlags(
+        await getModerationService(this.host).recordListingFlags(
           listing.id,
           userId,
           contentFlags,
@@ -373,7 +379,7 @@ export class MarketplaceQuestionBanksService {
         new Set(questions.map((q) => q?.type).filter(Boolean))
       );
     }
-    await this.supabaseService.saveOfflineBundle(userId, {
+    await this.host.offlineBundles.saveOfflineBundle(userId, {
       bundleId: this.bundleIdForListing(listingId),
       config: { ...config, groupName: config.groupName || title, source: 'marketplace' },
       questions,
@@ -391,7 +397,7 @@ export class MarketplaceQuestionBanksService {
       surface?: LearningSurface;
     } = {}
   ) {
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing || listing.listing_kind !== 'question_bank') {
       throw new PublicError('Question bank not found');
     }
@@ -417,7 +423,7 @@ export class MarketplaceQuestionBanksService {
 
     // learning_events: bank_downloaded (after the entitlement + bundle landed;
     // restore/self-heal re-grants do not go through here). Never throws.
-    await recordLearningEvent(this.supabaseService, {
+    await recordLearningEvent(this.host, {
       userId,
       eventType: 'bank_downloaded',
       targetType: 'listing',
@@ -515,7 +521,7 @@ export class MarketplaceQuestionBanksService {
     const bank = await this.getBankForListing(listingId);
     if (!bank) throw new PublicError('Question bank not found');
 
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing) throw new PublicError('Listing not found');
     if (listing.user_id !== userId) {
       throw new PublicError('Only the seller can update this question bank');
@@ -579,7 +585,7 @@ export class MarketplaceQuestionBanksService {
    * stripped. Safe for guests — it never reveals correct answers.
    */
   async getQuestionBankPreview(listingId: string, viewerId?: string) {
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing || listing.listing_kind !== 'question_bank') {
       throw new PublicError('Question bank not found');
     }
@@ -729,7 +735,7 @@ export class MarketplaceQuestionBanksService {
     // the score itself lives in marketplace_question_bank_scores (join on
     // listing_id + user_id) and per-question correctness in the session's
     // question_answered rows (listing_id set from config.bundleId). Never throws.
-    await recordLearningEvent(this.supabaseService, {
+    await recordLearningEvent(this.host, {
       userId,
       eventType: 'bank_score_recorded',
       targetType: 'listing',
@@ -752,7 +758,7 @@ export class MarketplaceQuestionBanksService {
       const sellerId = (listing as { user_id?: string } | null)?.user_id;
       if (sellerId) {
         const { getLearningConnectionsService } = await import('./learningConnections');
-        await getLearningConnectionsService(this.supabaseService).record({
+        await getLearningConnectionsService(this.host).record({
           actorId: sellerId,
           beneficiaryId: userId,
           kind: 'pack_scored',
@@ -860,8 +866,8 @@ export class MarketplaceQuestionBanksService {
 let service: MarketplaceQuestionBanksService | null = null;
 
 export function getMarketplaceQuestionBanksService(
-  supabaseService: SupabaseService
+  host: MarketplaceServiceHost
 ): MarketplaceQuestionBanksService {
-  if (!service) service = new MarketplaceQuestionBanksService(supabaseService);
+  if (!service) service = new MarketplaceQuestionBanksService(host);
   return service;
 }

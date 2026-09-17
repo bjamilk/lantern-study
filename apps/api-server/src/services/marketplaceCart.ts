@@ -175,9 +175,7 @@ export class MarketplaceCartService {
     if (items.length === 0) {
       throw new PublicError('Cart is empty');
     }
-
-    // TRANSITIONAL (M2d): `getMarketplaceOrdersService` still takes the `SupabaseService` facade whole.
-    const ordersService = getMarketplaceOrdersService(this.data.legacyService);
+    const ordersService = getMarketplaceOrdersService(this.data);
     const orders: MarketplaceOrderRow[] = [];
     const failures: Array<{ listingId: string; error: string }> = [];
     const succeededListingIds: string[] = [];

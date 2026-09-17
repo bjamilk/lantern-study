@@ -45,7 +45,7 @@
  * `20260915100000_rls_ownership_and_visibility_hardening.sql` is the schema
  * half of the same hotfix.
  */
-import type { SupabaseService } from './supabase';
+import type { CommunityModerationHost } from './communityModeration';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -86,12 +86,12 @@ const TITLE_MAX = 120;
  */
 async function assertCommunityAccess(
   db: any,
-  supabaseService: SupabaseService,
+  host: CommunityModerationHost,
   userId: string,
   communityId: string,
 ): Promise<void> {
   const { getCommunityModerationService } = await import('./communityModeration');
-  const actor = await getCommunityModerationService(supabaseService).resolveActor(
+  const actor = await getCommunityModerationService(host).resolveActor(
     userId,
     communityId,
   );
@@ -163,12 +163,12 @@ function mapRoom(row: SessionRow, participantCount: number): StudyRoom {
 }
 
 export class StudyRoomsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: CommunityModerationHost) {}
 
   private lastSweepAt = 0;
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   /**
@@ -247,7 +247,7 @@ export class StudyRoomsService {
       bad('Pick a course (or community) to open a study room');
     }
     if (communityId) {
-      await assertCommunityAccess(this.db, this.supabaseService, userId, communityId);
+      await assertCommunityAccess(this.db, this.host, userId, communityId);
     }
 
     const existing = await this.findReusable(courseId, communityId, topic);
@@ -311,7 +311,7 @@ export class StudyRoomsService {
     const communityId = uuidOrNull(opts.communityId);
     const courseId = uuidOrNull(opts.courseId);
     if (communityId) {
-      await assertCommunityAccess(this.db, this.supabaseService, userId, communityId);
+      await assertCommunityAccess(this.db, this.host, userId, communityId);
     }
     // Untyped on purpose: threading PostgREST's builder generics through a
     // helper sends tsc into "excessively deep" territory.
@@ -409,7 +409,7 @@ export class StudyRoomsService {
     // only the way IN is gated.
     const roomCommunityId = (data as SessionRow).community_id;
     if (roomCommunityId && !joined) {
-      await assertCommunityAccess(this.db, this.supabaseService, userId, roomCommunityId);
+      await assertCommunityAccess(this.db, this.host, userId, roomCommunityId);
     }
 
     return {
@@ -535,8 +535,8 @@ export class StudyRoomsService {
 
 let service: StudyRoomsService | null = null;
 
-export function getStudyRoomsService(supabaseService: SupabaseService): StudyRoomsService {
-  if (!service) service = new StudyRoomsService(supabaseService);
+export function getStudyRoomsService(host: CommunityModerationHost): StudyRoomsService {
+  if (!service) service = new StudyRoomsService(host);
   return service;
 }
 

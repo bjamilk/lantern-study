@@ -18,7 +18,17 @@
  * database is told the tool is not available yet, and nobody is silently
  * un-muted or silently un-moderated.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
+
+/**
+ * The service-role client plus the platform-admin gate, which is
+ * `client.isPlatformAdmin` on the layer and a flat method on the facade.
+ *
+ * FLIPPED (monolith lane M3, Phase B): a caller hands over `dataLayer`.
+ */
+export type CommunityModerationHost = Pick<DataLayer, 'getClient'> & {
+  client: Pick<DataLayer['client'], 'isPlatformAdmin'>;
+};
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import { cacheService } from './cache';
@@ -80,10 +90,10 @@ export interface CommunityActor {
 }
 
 export class CommunityModerationService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: CommunityModerationHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   private assertUuid(id: unknown, label: string): string {
@@ -132,7 +142,7 @@ export class CommunityModerationService {
 
     const row = (membership ?? null) as { role?: string | null; muted_until?: string | null } | null;
     const createdBy = (community as { created_by?: string | null }).created_by ?? null;
-    const isPlatformAdmin = await this.supabaseService
+    const isPlatformAdmin = await this.host.client
       .isPlatformAdmin(userId)
       .catch(() => false);
 
@@ -228,7 +238,7 @@ export class CommunityModerationService {
     if (error) throw error;
 
     await cacheService.delete(`communities:mine:${targetUserId}`);
-    await logAdminAction(this.supabaseService, {
+    await logAdminAction(this.host, {
       actorId,
       action: 'community_role_set',
       targetType: 'community_member',
@@ -304,7 +314,7 @@ export class CommunityModerationService {
       throw error;
     }
 
-    await logAdminAction(this.supabaseService, {
+    await logAdminAction(this.host, {
       actorId,
       action: mutedUntil ? 'community_member_mute' : 'community_member_unmute',
       targetType: 'community_member',
@@ -387,7 +397,7 @@ export class CommunityModerationService {
     }
     if (updateError) throw updateError;
 
-    await logAdminAction(this.supabaseService, {
+    await logAdminAction(this.host, {
       actorId,
       action: 'community_post_remove',
       targetType: 'community_post',
@@ -511,7 +521,7 @@ export class CommunityModerationService {
       throw updateError;
     }
 
-    await logAdminAction(this.supabaseService, {
+    await logAdminAction(this.host, {
       actorId,
       action: clearing ? 'community_post_unanswer' : 'community_post_answer',
       targetType: 'community_post',
@@ -640,7 +650,7 @@ export class CommunityModerationService {
         max_uses: maxUses,
       });
       if (!error) {
-        await logAdminAction(this.supabaseService, {
+        await logAdminAction(this.host, {
           actorId,
           action: 'community_invite_create',
           targetType: 'community',
@@ -715,7 +725,7 @@ export class CommunityModerationService {
       .eq('code', code)
       .eq('community_id', communityId);
     if (error) throw error;
-    await logAdminAction(this.supabaseService, {
+    await logAdminAction(this.host, {
       actorId,
       action: 'community_invite_revoke',
       targetType: 'community',
@@ -784,9 +794,9 @@ export class CommunityModerationService {
 let instance: CommunityModerationService | null = null;
 
 export function getCommunityModerationService(
-  supabaseService: SupabaseService,
+  host: CommunityModerationHost,
 ): CommunityModerationService {
-  if (!instance) instance = new CommunityModerationService(supabaseService);
+  if (!instance) instance = new CommunityModerationService(host);
   return instance;
 }
 

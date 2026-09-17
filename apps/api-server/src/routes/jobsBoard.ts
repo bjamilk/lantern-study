@@ -1047,7 +1047,7 @@ router.post(
       "../services/moderation"
     );
     try {
-      const data = await getModerationService(legacyService()).createReport({
+      const data = await getModerationService(dataLayer).createReport({
         reporterId: userId,
         targetType: "job_posting",
         targetId: req.params.id,

@@ -33,7 +33,7 @@ router.get(
   '/discover',
   optionalAuthMiddleware,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    const data = await getCreatorsService(legacyService()).discoverCreators({
+    const data = await getCreatorsService(dataLayer).discoverCreators({
       institutionId: typeof req.query.institutionId === 'string' ? req.query.institutionId : undefined,
       courseId: typeof req.query.courseId === 'string' ? req.query.courseId : undefined,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
@@ -50,7 +50,7 @@ router.get(
   handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const data = await getCreatorsService(legacyService()).getCreatorProfile(
+      const data = await getCreatorsService(dataLayer).getCreatorProfile(
         req.params.userId,
         req.user?.id
       );

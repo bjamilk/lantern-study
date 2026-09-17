@@ -221,7 +221,7 @@ export async function purgeScheduledAccountDeletions(
       // but it is logged at error level with the failing buckets so support can
       // finish the storage cleanup by hand.
       // TRANSITIONAL (M2d): `deleteUserAccountFully` still takes the `SupabaseService` facade whole.
-      const result = await deleteUserAccountFully(layer.legacyService, row.id);
+      const result = await deleteUserAccountFully(layer, row.id);
       if (result.found) count += 1;
       if (result.found && !result.ok) {
         logger.error('Scheduled account deletion partially completed', {

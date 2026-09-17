@@ -67,10 +67,9 @@ function fakeDb(tables: Record<string, Responder> = {}) {
 }
 
 const service = (db: ReturnType<typeof fakeDb>) =>
-  // TRANSITIONAL (M2d): the service builds an `AcademicCoursesService`, which
-  // still takes the facade, so the stub carries `legacyService` as well — the
-  // same object, exactly as the facade handed itself to both before.
-  new LibrarySearchService({ getClient: () => db, legacyService: { getClient: () => db } } as any);
+  // `AcademicCoursesService` takes a layer host since M3 Phase B, built from
+  // the same stub — no `legacyService` leg any more.
+  new LibrarySearchService({ getClient: () => db } as any);
 
 const USER = '0b0b0b0b-0b0b-4b0b-8b0b-0b0b0b0b0b0b';
 const COURSE_BIO = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

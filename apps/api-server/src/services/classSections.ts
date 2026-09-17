@@ -145,13 +145,11 @@ export class ClassSectionsService {
   }
 
   private courses() {
-    // TRANSITIONAL (M2d): `getAcademicCoursesService` still takes the `SupabaseService` facade whole.
-    return getAcademicCoursesService(this.data.legacyService);
+    return getAcademicCoursesService(this.data);
   }
 
   private topics() {
-    // TRANSITIONAL (M2d): `getCourseTopicsService` still takes the `SupabaseService` facade whole.
-    return getCourseTopicsService(this.data.legacyService);
+    return getCourseTopicsService(this.data);
   }
 
   private async withSectionSelect(

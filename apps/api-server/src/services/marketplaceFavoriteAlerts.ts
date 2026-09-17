@@ -1,9 +1,15 @@
-import type { SupabaseService } from './supabase';
+/**
+ * FLIPPED (monolith lane M3, Phase B): takes `MarketplaceServiceHost` — the
+ * shared, narrow host of the money cluster — instead of the whole
+ * `SupabaseService`. See `services/marketplaceServiceHost.ts` for why the six
+ * money services share one type and how the last facade-side callers adapt.
+ */
+import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { resolveEffectivePrice } from './marketplaceOrders';
 import { logger } from '../utils/logger';
 
 async function notifyFavoriters(
-  supabaseService: SupabaseService,
+  host: MarketplaceServiceHost,
   listingId: string,
   sellerId: string,
   payload: {
@@ -13,7 +19,7 @@ async function notifyFavoriters(
     dataExtra?: Record<string, unknown>;
   }
 ): Promise<number> {
-  const db = supabaseService.getClient();
+  const db = host.getClient();
   const { data: favorites, error } = await db
     .from('marketplace_favorites')
     .select('user_id')
@@ -35,7 +41,7 @@ async function notifyFavoriters(
 
     if (existing && existing.length > 0) continue;
 
-    const notification = await supabaseService.createNotification(fav.user_id, {
+    const notification = await host.notifications.createNotification(fav.user_id, {
       type: payload.type,
       message: payload.message,
       link: `marketplace:listing:${listingId}`,
@@ -51,14 +57,14 @@ async function notifyFavoriters(
 }
 
 export async function notifyListingBackAvailable(
-  supabaseService: SupabaseService,
+  host: MarketplaceServiceHost,
   listing: { id: string; user_id: string; title: string },
   previousStatus: string
 ): Promise<void> {
   if (!['sold', 'inactive'].includes(previousStatus)) return;
 
   try {
-    const sent = await notifyFavoriters(supabaseService, listing.id, listing.user_id, {
+    const sent = await notifyFavoriters(host, listing.id, listing.user_id, {
       type: 'marketplace_favorite_alert',
       message: `Back available: "${listing.title}" is listed again`,
       dataKey: 'back_available',
@@ -72,7 +78,7 @@ export async function notifyListingBackAvailable(
 }
 
 export async function notifyFavoritePriceDrop(
-  supabaseService: SupabaseService,
+  host: MarketplaceServiceHost,
   listing: {
     id: string;
     user_id: string;
@@ -92,7 +98,7 @@ export async function notifyFavoritePriceDrop(
   if (nextEffective >= prevEffective || prevEffective <= 0) return;
 
   try {
-    const sent = await notifyFavoriters(supabaseService, listing.id, listing.user_id, {
+    const sent = await notifyFavoriters(host, listing.id, listing.user_id, {
       type: 'marketplace_favorite_alert',
       message: `Price drop on "${listing.title}": now ₦${nextEffective.toLocaleString()} (was ₦${prevEffective.toLocaleString()})`,
       dataKey: 'price_drop',

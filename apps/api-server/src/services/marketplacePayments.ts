@@ -104,9 +104,15 @@
  *   `Math.min` in `@lantern/shared/marketplace` so a seller payout can never go
  *   negative.
  *
- * Gotcha: the service is a module-level singleton bound to the first
- * `SupabaseService` passed in, so tests must construct the class directly
- * rather than re-calling the factory.
+ * Gotcha: the service is a module-level singleton bound to the first HOST
+ * passed in, so tests must construct the class directly rather than
+ * re-calling the factory.
+ */
+/**
+ * FLIPPED (monolith lane M3, Phase B): takes `MarketplaceServiceHost` — the
+ * shared, narrow host of the money cluster — instead of the whole
+ * `SupabaseService`. See `services/marketplaceServiceHost.ts` for why the six
+ * money services share one type and how the last facade-side callers adapt.
  */
 import {
   computeMarketplaceCheckoutFees,
@@ -116,7 +122,7 @@ import {
   resolveMarketplaceFees,
   resolveMarketplaceServiceFeeBps,
 } from '@lantern/shared/marketplace';
-import type { SupabaseService } from './supabase';
+import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -191,12 +197,12 @@ const MAX_PAYOUT_ATTEMPT_SCAN = 25;
 export class MarketplacePaymentsService {
   private orders: MarketplaceOrdersService;
 
-  constructor(private readonly supabaseService: SupabaseService) {
-    this.orders = new MarketplaceOrdersService(supabaseService);
+  constructor(private readonly host: MarketplaceServiceHost) {
+    this.orders = new MarketplaceOrdersService(host);
   }
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   // --- Seller payout profiles ------------------------------------------------
@@ -287,7 +293,7 @@ export class MarketplacePaymentsService {
       throw new PublicError('Paystack marketplace checkout is not enabled');
     }
 
-    const listing = await this.supabaseService.getMarketplaceListingById(input.listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(input.listingId);
     if (!listing) throw new PublicError('Listing not found');
     await this.assertSellerCanReceivePayout(listing.user_id);
 
@@ -497,7 +503,7 @@ export class MarketplacePaymentsService {
     quantity?: number;
   }) {
     // Use RPC with initial status awaiting_payment if supported; fallback pending_payment then patch.
-    const listing = await this.supabaseService.getMarketplaceListingById(input.listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(input.listingId);
     if (!listing) throw new PublicError('Listing not found');
     if (listing.user_id === input.buyerId) throw new PublicError('Cannot buy your own listing');
 
@@ -509,7 +515,7 @@ export class MarketplacePaymentsService {
 
     if (input.couponCode) {
       const { getMarketplaceCouponsService } = await import('./marketplaceCoupons');
-      const validated = await getMarketplaceCouponsService(this.supabaseService).validateForListing(
+      const validated = await getMarketplaceCouponsService(this.host).validateForListing(
         input.couponCode,
         listing,
         input.buyerId
@@ -1051,7 +1057,7 @@ export class MarketplacePaymentsService {
     try {
       if (kind === 'study_pack') {
         const { getMarketplaceStudyPacksService } = await import('./marketplaceStudyPacks');
-        await getMarketplaceStudyPacksService(this.supabaseService).grantEntitlement(
+        await getMarketplaceStudyPacksService(this.host).grantEntitlement(
           order.listing_id,
           order.buyer_id,
           order.id
@@ -1064,7 +1070,7 @@ export class MarketplacePaymentsService {
         });
       } else {
         const { getMarketplaceQuestionBanksService } = await import('./marketplaceQuestionBanks');
-        await getMarketplaceQuestionBanksService(this.supabaseService).grantEntitlement(
+        await getMarketplaceQuestionBanksService(this.host).grantEntitlement(
           order.listing_id,
           order.buyer_id,
           order.id
@@ -2198,9 +2204,9 @@ export class MarketplacePaymentsService {
 
 let paymentsSingleton: MarketplacePaymentsService | null = null;
 
-export function getMarketplacePaymentsService(supabase: SupabaseService): MarketplacePaymentsService {
+export function getMarketplacePaymentsService(host: MarketplaceServiceHost): MarketplacePaymentsService {
   if (!paymentsSingleton) {
-    paymentsSingleton = new MarketplacePaymentsService(supabase);
+    paymentsSingleton = new MarketplacePaymentsService(host);
   }
   return paymentsSingleton;
 }

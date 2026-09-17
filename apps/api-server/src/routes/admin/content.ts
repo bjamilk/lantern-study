@@ -58,7 +58,7 @@ router.patch('/groups/:id', adminRoute(async (req: any, res: any) => {
   const { isArchived, reason } = req.body as { isArchived: boolean; reason?: string };
   const { error } = await adminData.setGroupArchived(dataLayer, id, isArchived === true);
   if (error) throw error;
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: isArchived ? 'group_archive' : 'group_suspend',
     targetType: 'group',
@@ -89,7 +89,7 @@ router.delete('/messages/:id', adminRoute(async (req: any, res: any) => {
   const { reason } = req.body || {};
   const { error } = await adminData.deleteMessage(dataLayer, id);
   if (error) throw error;
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'message_delete',
     targetType: 'message',
@@ -134,7 +134,7 @@ router.delete('/decks/:id', adminRoute(async (req: any, res: any) => {
   const { reason } = req.body || {};
   const { error } = await adminData.removeDeck(dataLayer, id, new Date().toISOString());
   if (error) throw error;
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'deck_remove',
     targetType: 'deck',
@@ -208,7 +208,7 @@ router.patch('/jobs/postings/:id', adminRoute(async (req: any, res: any) => {
     { status: status as 'active' | 'suspended_by_admin' | 'removed_by_admin' | 'closed' | 'paused' },
     { asAdmin: true }
   );
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: status === 'active' ? 'job_activate' : status === 'suspended_by_admin' ? 'job_suspend' : 'job_status',
     targetType: 'job_posting',
@@ -225,7 +225,7 @@ router.delete('/jobs/postings/:id', adminRoute(async (req: any, res: any) => {
     { status: 'removed_by_admin' },
     { asAdmin: true }
   );
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'job_remove',
     targetType: 'job_posting',
@@ -254,7 +254,7 @@ router.patch('/jobs/companies/:id/verification', adminRoute(async (req: any, res
     status,
     note
   );
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'job_company_verification',
     targetType: 'job_company',
@@ -268,7 +268,7 @@ router.patch('/jobs/postings/:id/school-approval', adminRoute(async (req: any, r
   const { getJobsBoardService } = await import('../../services/jobsBoard');
   const approve = req.body?.approve !== false;
   const posting = await getJobsBoardService(dataLayer).schoolApprovePosting(req.params.id, approve);
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: approve ? 'job_school_approve' : 'job_school_reject',
     targetType: 'job_posting',

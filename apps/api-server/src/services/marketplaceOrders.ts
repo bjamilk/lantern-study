@@ -62,7 +62,13 @@
  * - Every throw here is a `PublicError`, whose message survives production
  *   error masking; they are written for the end user to read.
  */
-import type { SupabaseService } from './supabase';
+/**
+ * FLIPPED (monolith lane M3, Phase B): takes `MarketplaceServiceHost` — the
+ * shared, narrow host of the money cluster — instead of the whole
+ * `SupabaseService`. See `services/marketplaceServiceHost.ts` for why the six
+ * money services share one type and how the last facade-side callers adapt.
+ */
+import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { cacheService } from './cache';
 import { logger } from '../utils/logger';
 import { isDigitalListingKind } from '@lantern/shared/marketplace';
@@ -124,10 +130,10 @@ export type SellerAnalyticsRow = Record<string, any>;
 export type SellerBuyerContactRow = Record<string, any>;
 
 export class MarketplaceOrdersService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly host: MarketplaceServiceHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   private assertListingInStock(
@@ -246,7 +252,7 @@ export class MarketplaceOrdersService {
   `;
 
   async assertNoOpenOrderForListing(listingId: string): Promise<void> {
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing) throw new PublicError('Listing not found');
     // Multi-qty: remaining quantity is the stock; unique (null qty) allows one open order.
     if (listing.quantity != null) {
@@ -354,7 +360,7 @@ export class MarketplaceOrdersService {
     quantityInput?: number
   ): Promise<MarketplaceOrderRow> {
     const quantity = Math.max(1, Math.floor(Number(quantityInput) || 1));
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing) throw new PublicError('Listing not found');
     if (listing.user_id === buyerId) throw new PublicError('Cannot buy your own listing');
 
@@ -377,7 +383,7 @@ export class MarketplaceOrdersService {
 
     if (couponCode) {
       const { getMarketplaceCouponsService } = await import('./marketplaceCoupons');
-      const validated = await getMarketplaceCouponsService(this.supabaseService).validateForListing(
+      const validated = await getMarketplaceCouponsService(this.host).validateForListing(
         couponCode,
         listing,
         buyerId
@@ -681,7 +687,7 @@ export class MarketplaceOrdersService {
           './marketplacePayments'
         );
         if (marketplacePaystackEnabled() && order.payment_id) {
-          return getMarketplacePaymentsService(this.supabaseService).payoutOnConfirmReceived(
+          return getMarketplacePaymentsService(this.host).payoutOnConfirmReceived(
             orderId,
             userId
           );
@@ -718,7 +724,7 @@ export class MarketplaceOrdersService {
             './marketplacePayments'
           );
           if (marketplacePaystackEnabled() && order.payment_id) {
-            await getMarketplacePaymentsService(this.supabaseService).refundPaymentForOrder(
+            await getMarketplacePaymentsService(this.host).refundPaymentForOrder(
               orderId,
               userId
             );
@@ -897,7 +903,7 @@ export class MarketplaceOrdersService {
       (completed.listing as { title?: string } | null)?.title || 'Marketplace item';
 
     if (completed.transaction_id) {
-      await this.supabaseService.logMarketplaceBudgetTransactions({
+      await this.host.marketplace.logMarketplaceBudgetTransactions({
         listingId: completed.listing_id,
         listingTitle,
         amount: Number(completed.amount),
@@ -965,7 +971,7 @@ export class MarketplaceOrdersService {
     // every idempotent replay is pointless work.
     if (!alreadyCompleted) {
       const { getLearningConnectionsService } = await import('./learningConnections');
-      await getLearningConnectionsService(this.supabaseService).record({
+      await getLearningConnectionsService(this.host).record({
         actorId: completed.seller_id,
         beneficiaryId: completed.buyer_id,
         kind: 'order_completed',
@@ -994,7 +1000,7 @@ export class MarketplaceOrdersService {
     if (!listingId) return;
     const restoreQty = Math.max(1, Math.floor(Number(heldQuantity) || 1));
     const now = new Date().toISOString();
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing) return;
 
     if (listing.quantity != null) {
@@ -1509,7 +1515,7 @@ export class MarketplaceOrdersService {
     }
   ): Promise<void> {
     try {
-      await this.supabaseService.createNotification(userId, payload);
+      await this.host.notifications.createNotification(userId, payload);
     } catch (err) {
       logger.warn('Failed to send marketplace order notification', err);
     }
@@ -1619,7 +1625,7 @@ export class MarketplaceOrdersService {
     // Trust reflects the outcome immediately, not at the next unrelated event.
     try {
       const { getCreatorsService } = await import('./creators');
-      await getCreatorsService(this.supabaseService).refreshStats(order.seller_id);
+      await getCreatorsService(this.host).refreshStats(order.seller_id);
     } catch {
       /* counters are best-effort */
     }
@@ -1635,7 +1641,7 @@ export class MarketplaceOrdersService {
       './marketplacePayments'
     );
     if (marketplacePaystackEnabled() && order.payment_id) {
-      await getMarketplacePaymentsService(this.supabaseService).forcePayoutForOrder(order.id);
+      await getMarketplacePaymentsService(this.host).forcePayoutForOrder(order.id);
     }
     return this.finalizeEscrowRelease(order.id, {
       actorId: null,
@@ -1651,7 +1657,7 @@ export class MarketplaceOrdersService {
   ): Promise<MarketplaceOrderRow> {
     const orderId = order.id;
     const now = new Date().toISOString();
-    const listing = await this.supabaseService.getMarketplaceListingById(order.listing_id);
+    const listing = await this.host.marketplace.getMarketplaceListingById(order.listing_id);
     const listingTitle = listing?.title || 'Marketplace item';
     const noteSuffix = adminNote?.trim() ? ` Note: ${adminNote.trim()}` : '';
 
@@ -1659,7 +1665,7 @@ export class MarketplaceOrdersService {
       './marketplacePayments'
     );
     if (marketplacePaystackEnabled() && order.payment_id) {
-      await getMarketplacePaymentsService(this.supabaseService).refundPaymentForOrder(
+      await getMarketplacePaymentsService(this.host).refundPaymentForOrder(
         orderId,
         order.buyer_id,
         true
@@ -1703,9 +1709,9 @@ export class MarketplaceOrdersService {
 
 let marketplaceOrdersService: MarketplaceOrdersService | null = null;
 
-export function getMarketplaceOrdersService(supabaseService: SupabaseService): MarketplaceOrdersService {
+export function getMarketplaceOrdersService(host: MarketplaceServiceHost): MarketplaceOrdersService {
   if (!marketplaceOrdersService) {
-    marketplaceOrdersService = new MarketplaceOrdersService(supabaseService);
+    marketplaceOrdersService = new MarketplaceOrdersService(host);
   }
   return marketplaceOrdersService;
 }

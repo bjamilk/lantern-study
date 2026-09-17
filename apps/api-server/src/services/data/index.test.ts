@@ -38,26 +38,8 @@ import * as marketplaceData from './marketplace';
 const client = { marker: 'client' } as never;
 const legacyService = { marker: 'facade' } as never;
 
-// Only the entries these tests exercise; the rest of the bridge is a jest.fn().
-const host = {
-  legacyService,
-  resolveTopicForArtefact: jest.fn(async () => null),
-  normalizeMessageRecord: jest.fn((row: unknown) => row),
-  normalizeListingRecord: jest.fn((l: unknown) => l),
-  normalizeListingRecordAsync: jest.fn(async (l: unknown) => l),
-  ratingColumnsAvailable: jest.fn(() => true),
-  noteRatingColumnsMissing: jest.fn(),
-  signSimilarListingCards: jest.fn(async (l: unknown) => l),
-  calculateTestScore: jest.fn(() => 0),
-  generateTestQuestions: jest.fn(() => []),
-  recordLearningConnection: jest.fn(async () => undefined),
-  createOrderFromBuyNow: jest.fn(async () => ({})),
-  createOrderFromOfferAccept: jest.fn(async () => ({})),
-  consumeBoostCredit: jest.fn(async () => true),
-  notifyListingBackAvailable: jest.fn(async () => undefined),
-  deleteUserAccountFully: jest.fn(async () => ({ found: true })),
-  exportUserDataArchive: jest.fn(async () => ({})),
-} as unknown as DataLayerHost;
+// The whole bridge, as of M3 Phase B: the facade handle and nothing else.
+const host: DataLayerHost = { legacyService };
 
 const build = () =>
   createDataLayer({ client, supabaseUrl: 'https://example.supabase.co', host });
@@ -175,20 +157,26 @@ describe('createDataLayer', () => {
     expect(call.slice(1)).toEqual([[], 'user-1']);
   });
 
-  it('routes a dep with no data-layer home through the host bridge', async () => {
+  it('builds the collaborator deps itself, and keeps them lazy', async () => {
     const layer = build();
     await layer.marketplace.getMarketplaceListingById('listing-1');
     const deps = (marketplaceData.getMarketplaceListingById as jest.Mock).mock
       .calls[0][1];
 
-    // `marketplaceOrders` takes the whole facade, so this one is still the
-    // bridge's. The five bodies that used to be here moved into the data
-    // modules in lane M3 and are read through `layer` like any sibling.
-    await deps.createOrderFromBuyNow('listing-1', 'buyer-1');
-    expect(host.createOrderFromBuyNow).toHaveBeenCalledWith(
-      'listing-1',
-      'buyer-1',
-    );
+    // These four used to come off `DataLayerHost`, which built them from the
+    // facade; their services take a layer host since M3 Phase B, so the layer
+    // builds them. They must still be FUNCTIONS that import on call — an
+    // eager import here would put the cycle back in the boot path.
+    for (const dep of [
+      'createOrderFromBuyNow',
+      'createOrderFromOfferAccept',
+      'consumeBoostCredit',
+      'notifyListingBackAvailable',
+    ]) {
+      expect(typeof deps[dep]).toBe('function');
+    }
+    // The bridge is down to the facade handle itself.
+    expect(Object.keys(host)).toEqual(['legacyService']);
   });
 
   it('holds the rating-column circuit breaker PER LAYER', async () => {

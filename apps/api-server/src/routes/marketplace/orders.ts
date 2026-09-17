@@ -88,7 +88,7 @@ router.post(
               // R5a: explicit PublicError — this is the buyer's problem to fix.
               throw new PublicError('A verified email is required for Paystack checkout');
             }
-            return getMarketplacePaymentsService(supabaseService).createBuyNowCheckoutSession({
+            return getMarketplacePaymentsService(dataLayer).createBuyNowCheckoutSession({
               listingId: id,
               buyerId,
               buyerEmail: email,
@@ -139,7 +139,7 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     const userId = req.user.id;
     const role = req.query.role === 'seller' ? 'seller' : 'buyer';
-    const orders = await getMarketplaceOrdersService(supabaseService).getOrdersForUser(
+    const orders = await getMarketplaceOrdersService(dataLayer).getOrdersForUser(
       userId,
       role
     );
@@ -151,7 +151,7 @@ router.get(
   '/orders/inquiry/:inquiryId',
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
-    const order = await getMarketplaceOrdersService(supabaseService).getOrderForInquiry(
+    const order = await getMarketplaceOrdersService(dataLayer).getOrderForInquiry(
       req.params.inquiryId,
       req.user.id
     );
@@ -181,7 +181,7 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: any, res: any) => {
     try {
-      const order = await getMarketplaceOrdersService(supabaseService).getOrderById(
+      const order = await getMarketplaceOrdersService(dataLayer).getOrderById(
         req.params.id,
         req.user.id
       );
@@ -252,7 +252,7 @@ router.patch(
     }
 
     try {
-      const ordersService = getMarketplaceOrdersService(supabaseService);
+      const ordersService = getMarketplaceOrdersService(dataLayer);
       const existingOrder = await ordersService.getOrderById(req.params.id, req.user.id);
       if (!existingOrder) {
         return res.status(404).json({ success: false, error: 'Order not found or access denied' });
@@ -377,7 +377,7 @@ router.post(
         });
       }
       const result = await req.runIdempotent!(async () => {
-        const data = await getMarketplaceOrdersService(supabaseService).createPaymentLinkOrder(
+        const data = await getMarketplaceOrdersService(dataLayer).createPaymentLinkOrder(
           req.params.id,
           req.user!.id!
         );
@@ -399,7 +399,7 @@ router.post(
   asyncHandler(async (req: any, res: any) => {
     const { proofUrl } = req.body || {};
     try {
-      const order = await getMarketplaceOrdersService(supabaseService).submitPaymentProof(
+      const order = await getMarketplaceOrdersService(dataLayer).submitPaymentProof(
         req.params.id,
         req.user.id,
         proofUrl

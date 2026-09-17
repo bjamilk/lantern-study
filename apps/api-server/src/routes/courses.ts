@@ -79,7 +79,7 @@ router.get(
     const cacheKey = `${COURSE_SEARCH_CACHE_PREFIX}${institutionId || 'all'}:${q.toLowerCase()}:${limit}`;
     const courses = await cacheService.cached(
       cacheKey,
-      () => getAcademicCoursesService(legacyService()).searchCourses({ institutionId, q, limit }),
+      () => getAcademicCoursesService(dataLayer).searchCourses({ institutionId, q, limit }),
       { ttl: COURSE_SEARCH_CACHE_TTL_SECONDS }
     );
 
@@ -98,7 +98,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const { course, created } = await getAcademicCoursesService(legacyService()).findOrCreateCourse(userId, {
+      const { course, created } = await getAcademicCoursesService(dataLayer).findOrCreateCourse(userId, {
         institutionId: req.body?.institutionId ?? null,
         code: req.body?.code,
         title: req.body?.title,

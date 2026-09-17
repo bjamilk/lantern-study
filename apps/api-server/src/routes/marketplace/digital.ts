@@ -16,7 +16,7 @@ import { getMarketplaceStudyPacksService } from '../../services/marketplaceStudy
 import { surfaceFromRequest } from '../../services/learningEvents';
 import { PublicError } from '../../utils/safeError';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
-import { supabaseService, cacheService } from './context';
+import { dataLayer, cacheService } from './context';
 const router = Router();
 // ============================================================
 // QUESTION BANKS (digital study bundles)
@@ -37,7 +37,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const result = await getMarketplaceQuestionBanksService(supabaseService).publishQuestionBank(
+      const result = await getMarketplaceQuestionBanksService(dataLayer).publishQuestionBank(
         userId,
         {
           title: req.body?.title,
@@ -83,7 +83,7 @@ router.post(
 
     try {
       const result = await getMarketplaceQuestionBanksService(
-        supabaseService
+        dataLayer
       ).downloadQuestionBank(req.params.id, userId, { surface: surfaceFromRequest(req) });
       res.json({ success: true, data: result });
     } catch (err: any) {
@@ -104,7 +104,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const result = await getMarketplaceQuestionBanksService(supabaseService).restoreEntitlements(
+    const result = await getMarketplaceQuestionBanksService(dataLayer).restoreEntitlements(
       userId
     );
     res.json({ success: true, data: result });
@@ -121,7 +121,7 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     try {
       const data = await getMarketplaceQuestionBanksService(
-        supabaseService
+        dataLayer
       ).getQuestionBankPreview(req.params.id, req.user?.id);
       res.json({ success: true, data });
     } catch (err: any) {
@@ -144,7 +144,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const data = await getMarketplaceQuestionBanksService(supabaseService).recordScore(
+      const data = await getMarketplaceQuestionBanksService(dataLayer).recordScore(
         req.params.id,
         userId,
         req.body?.correct,
@@ -168,7 +168,7 @@ router.get(
   validateListingId,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
-    const data = await getMarketplaceQuestionBanksService(supabaseService).getLeaderboard(
+    const data = await getMarketplaceQuestionBanksService(dataLayer).getLeaderboard(
       req.params.id,
       req.user?.id,
       req.query?.limit ? Number(req.query.limit) : undefined
@@ -185,7 +185,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const data = await getMarketplaceQuestionBanksService(supabaseService).listMyQuestionBanks(
+    const data = await getMarketplaceQuestionBanksService(dataLayer).listMyQuestionBanks(
       userId
     );
     res.json({ success: true, data });
@@ -200,7 +200,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const data = await getMarketplaceQuestionBanksService(supabaseService).listAvailableUpdates(
+    const data = await getMarketplaceQuestionBanksService(dataLayer).listAvailableUpdates(
       userId
     );
     res.json({ success: true, data });
@@ -219,7 +219,7 @@ router.post(
 
     try {
       const result = await getMarketplaceQuestionBanksService(
-        supabaseService
+        dataLayer
       ).updateQuestionBankContent(req.params.id, userId, req.body?.content, {
         // Every republish re-requires the rights attestation (400 without it).
         attestation: req.body?.attestation,
@@ -247,7 +247,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const result = await getMarketplaceStudyPacksService(supabaseService).publishStudyPack(userId, {
+      const result = await getMarketplaceStudyPacksService(dataLayer).publishStudyPack(userId, {
         title: req.body?.title,
         description: req.body?.description,
         price: req.body?.price,
@@ -289,7 +289,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const result = await getMarketplaceStudyPacksService(supabaseService).downloadStudyPack(
+      const result = await getMarketplaceStudyPacksService(dataLayer).downloadStudyPack(
         req.params.id,
         userId,
         { surface: surfaceFromRequest(req) }
@@ -313,7 +313,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const result = await getMarketplaceStudyPacksService(supabaseService).restoreEntitlements(userId);
+    const result = await getMarketplaceStudyPacksService(dataLayer).restoreEntitlements(userId);
     res.json({ success: true, data: result });
   })
 );
@@ -326,7 +326,7 @@ router.get(
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     try {
-      const data = await getMarketplaceStudyPacksService(supabaseService).getStudyPackPreview(
+      const data = await getMarketplaceStudyPacksService(dataLayer).getStudyPackPreview(
         req.params.id,
         req.user?.id
       );
@@ -348,7 +348,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const data = await getMarketplaceStudyPacksService(supabaseService).listMyStudyPacks(userId);
+    const data = await getMarketplaceStudyPacksService(dataLayer).listMyStudyPacks(userId);
     res.json({ success: true, data });
   })
 );
@@ -361,7 +361,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const data = await getMarketplaceStudyPacksService(supabaseService).listAvailableUpdates(userId);
+    const data = await getMarketplaceStudyPacksService(dataLayer).listAvailableUpdates(userId);
     res.json({ success: true, data });
   })
 );
@@ -377,7 +377,7 @@ router.post(
     if (!userId) return;
 
     try {
-      const result = await getMarketplaceStudyPacksService(supabaseService).updateStudyPackContent(
+      const result = await getMarketplaceStudyPacksService(dataLayer).updateStudyPackContent(
         req.params.id,
         userId,
         req.body?.content,
@@ -411,7 +411,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const data = await getMarketplaceStudyPacksService(supabaseService).listPurchases(userId);
+    const data = await getMarketplaceStudyPacksService(dataLayer).listPurchases(userId);
     res.json({ success: true, data });
   })
 );

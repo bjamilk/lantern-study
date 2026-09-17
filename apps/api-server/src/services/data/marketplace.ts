@@ -103,6 +103,7 @@
  * Their `await import(...)` stays in the facade, so the module specifier a test
  * mocks is unchanged.
  */
+import type { ConnectionInput as LearningConnectionInput } from "../learningConnections";
 import { logger } from "../../utils/logger";
 import {
   buildMarketplaceBudgetTxIds,
@@ -385,14 +386,14 @@ export type MarketplaceDeps = {
     listing: { id: string; user_id: string; title: string },
     previousStatus: string,
   ) => Promise<void>;
-  recordLearningConnection: (input: {
-    actorId: string;
-    beneficiaryId: string;
-    kind: string;
-    objectType?: string | null;
-    objectId?: string | null;
-    courseId?: string | null;
-  }) => Promise<void>;
+  /**
+   * TYPED (M3 Phase B): this used to be a hand-written shape with
+   * `kind: string`, and the bridge that supplied it passed `input as never` to
+   * get past the mismatch — so a `kind` outside `CONNECTION_KINDS`, which
+   * `record()` silently DROPS at runtime, compiled fine. It is the service's
+   * own input type now, and the cast is gone.
+   */
+  recordLearningConnection: (input: LearningConnectionInput) => Promise<void>;
 };
 
 export async function getMarketplaceCampuses(

@@ -12,7 +12,45 @@
  * those actions already succeeded by the time we get here, so `record()` never
  * throws — a missing feed row must not roll back a real publish.
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
+
+/**
+ * What the feed needs from its host: the service-role client, and the DM block
+ * list the reader filters by.
+ *
+ * FLIPPED (monolith lane M3, Phase B). It took the whole `SupabaseService`,
+ * where the block list is spelled flat (`listBlockedUserIds`); on the layer it
+ * belongs to the `directMessages` namespace, so unlike the one-member services
+ * this type is NOT satisfied by the facade. The call sites that still hold one
+ * build a small typed adapter (`feedHostFromFacade` in `services/supabase.ts`)
+ * rather than casting, and each adapter dies when its holder is flipped.
+ */
+export type ActivityFeedHost = Pick<DataLayer, 'getClient'> & {
+  directMessages: Pick<DataLayer['directMessages'], 'listBlockedUserIds'>;
+};
+
+/**
+ * The same host, built from a holder that spells the block list FLAT — which
+ * is every caller still holding the `SupabaseService` facade.
+ *
+ * It exists so those call sites can stay TYPED while they wait their turn: the
+ * alternative is `as any` on the handle, and an `any` on a handle is exactly
+ * what shipped the #92 regression. No facade import here on purpose — the
+ * parameter is structural, so this module still names no facade. Every use of
+ * it disappears when its caller is flipped, and the helper goes with the last
+ * one.
+ */
+export function feedHostFromFlat(flat: {
+  getClient: () => ReturnType<DataLayer['getClient']>;
+  listBlockedUserIds: (userId: string) => Promise<string[]>;
+}): ActivityFeedHost {
+  return {
+    getClient: () => flat.getClient(),
+    directMessages: {
+      listBlockedUserIds: (userId) => flat.listBlockedUserIds(userId),
+    },
+  };
+}
 import { logger } from '../utils/logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,10 +99,10 @@ export interface FeedItem {
 }
 
 export class ActivityFeedService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: ActivityFeedHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   /**
@@ -144,7 +182,7 @@ export class ActivityFeedService {
         .neq('pending', true)
         .limit(200)
         .then((r) => (r.data || []).map((x: any) => x.group_id)),
-      this.supabaseService.listBlockedUserIds(viewerId).catch(() => [] as string[]),
+      this.host.directMessages.listBlockedUserIds(viewerId).catch(() => [] as string[]),
     ]);
 
     const select =
@@ -226,7 +264,7 @@ export class ActivityFeedService {
 
 let service: ActivityFeedService | null = null;
 
-export function getActivityFeedService(supabaseService: SupabaseService): ActivityFeedService {
-  if (!service) service = new ActivityFeedService(supabaseService);
+export function getActivityFeedService(host: ActivityFeedHost): ActivityFeedService {
+  if (!service) service = new ActivityFeedService(host);
   return service;
 }

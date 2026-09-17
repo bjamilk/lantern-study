@@ -1,4 +1,11 @@
-import { SupabaseService } from './supabase';
+/**
+ * FLIPPED (monolith lane M3, Phase B): this module took the whole
+ * `SupabaseService` facade and reached exactly one member on it, `getClient()`.
+ * It takes `DataClientHost` instead, so a flipped caller hands over
+ * `dataLayer`; the facade satisfies the type structurally, so the call sites
+ * this lane has not reached yet keep working unchanged.
+ */
+import type { DataClientHost } from './data';
 import { getRedisClient, redisKey } from './redisStore';
 
 const BAN_CACHE_TTL_SEC = 60;
@@ -59,7 +66,7 @@ export type AdminAuditAction =
   | 'community_invite_revoke';
 
 export async function logAdminAction(
-  supabaseService: SupabaseService,
+  host: DataClientHost,
   params: {
     actorId: string;
     action: AdminAuditAction;
@@ -70,7 +77,7 @@ export async function logAdminAction(
   }
 ): Promise<void> {
   try {
-    await supabaseService.getClient().from('admin_audit_log').insert({
+    await host.getClient().from('admin_audit_log').insert({
       actor_id: params.actorId,
       action: params.action,
       target_type: params.targetType,
@@ -117,7 +124,7 @@ export function blockStateFromSettings(settings: unknown, now: Date = new Date()
  * BAN_CACHE_TTL_SEC (the cache value is '1' banned / '0' clear / 's:<iso>'
  * suspended-until so an expiring suspension re-evaluates on every read).
  */
-export async function getUserBlockState(supabaseService: SupabaseService, userId: string): Promise<UserBlockState> {
+export async function getUserBlockState(host: DataClientHost, userId: string): Promise<UserBlockState> {
   const redis = await getRedisClient();
   const cacheKey = redisKey(`ban:${userId}`);
   if (redis?.isOpen) {
@@ -131,7 +138,7 @@ export async function getUserBlockState(supabaseService: SupabaseService, userId
     }
   }
 
-  const { data, error } = await supabaseService
+  const { data, error } = await host
     .getClient()
     .from('profiles')
     .select('settings')
@@ -149,13 +156,13 @@ export async function getUserBlockState(supabaseService: SupabaseService, userId
 }
 
 /** Blocked from using the service: banned OR currently suspended. */
-export async function isUserBanned(supabaseService: SupabaseService, userId: string): Promise<boolean> {
-  const state = await getUserBlockState(supabaseService, userId);
+export async function isUserBanned(host: DataClientHost, userId: string): Promise<boolean> {
+  const state = await getUserBlockState(host, userId);
   return state.banned || state.suspendedUntil !== null;
 }
 
-export async function countPlatformAdmins(supabaseService: SupabaseService): Promise<number> {
-  const { count } = await supabaseService
+export async function countPlatformAdmins(host: DataClientHost): Promise<number> {
+  const { count } = await host
     .getClient()
     .from('platform_admins')
     .select('user_id', { count: 'exact', head: true });

@@ -87,13 +87,13 @@ router.delete('/marketplace/listings/:id', adminRoute(async (req: any, res: any)
   // One write sets status removed_by_admin AND the takedown columns
   // (rights_status 'takedown', takedown_reason/at/by) and notifies the seller
   // force:true, so the seller sees why and can appeal from My Listings.
-  const removed = await getModerationService(supabaseService).takedownListing(id, {
+  const removed = await getModerationService(dataLayer).takedownListing(id, {
     reason,
     actorId: req.user.id,
   });
   if (!removed) return res.status(404).json({ success: false, error: 'Listing not found' });
 
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'listing_remove',
     targetType: 'listing',
@@ -118,7 +118,7 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
   const { data: current } = await adminData.getListingForModeration(dataLayer, id);
   if (!current) return res.status(404).json({ success: false, error: 'Listing not found' });
 
-  const moderation = getModerationService(supabaseService);
+  const moderation = getModerationService(dataLayer);
   // Restoring from a takedown must not blindly re-list a unique item that was
   // reserved/sold before it was removed (double-sell) — derive the real status.
   const statusToWrite =
@@ -153,7 +153,7 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
       .catch((e) => logger.warn('suspend notification failed', { id, e }));
   }
 
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: status === 'active' ? 'listing_activate' : 'listing_suspend',
     targetType: 'listing',
@@ -172,7 +172,7 @@ router.get('/marketplace/orders', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const status = (req.query.status as string) || 'disputed';
 
-  const { data, total } = await getMarketplaceOrdersService(supabaseService).getOrdersForAdmin({
+  const { data, total } = await getMarketplaceOrdersService(dataLayer).getOrdersForAdmin({
     status,
     page,
     limit,
@@ -199,14 +199,14 @@ router.patch('/marketplace/orders/:id/dispute', mappedRoute(respondDisputeError,
     });
   }
 
-  const order = await getMarketplaceOrdersService(supabaseService).resolveDisputeAsAdmin(
+  const order = await getMarketplaceOrdersService(dataLayer).resolveDisputeAsAdmin(
     id,
     resolution,
     note,
     req.user.id
   );
 
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action:
       resolution === 'release_to_seller'
@@ -251,7 +251,7 @@ router.patch('/marketplace/orders/:id/dispute', mappedRoute(respondDisputeError,
 // `listing` / `listing_id` aliases for listing targets so the existing console
 // keeps rendering.
 router.get('/reports', moderationRoute(async (req: any, res: any) => {
-  const result = await getModerationService(supabaseService).listReports({
+  const result = await getModerationService(dataLayer).listReports({
     status: normalizeReportStatus((req.query.status as string) || 'open'),
     targetType: (req.query.targetType as string) || undefined,
     page: parseInt(req.query.page as string) || 1,
@@ -270,7 +270,7 @@ router.put('/reports/:id', validateUuidParam('id'), handleValidationErrors, mode
   const action = typeof body.action === 'string' ? legacy[body.action] ?? body.action : body.action;
   const note = body.note ?? body.adminNote;
 
-  const result = await getModerationService(supabaseService).applyReportAction(
+  const result = await getModerationService(dataLayer).applyReportAction(
     id,
     { action, note, severity: body.severity },
     req.user.id
@@ -290,14 +290,14 @@ router.put('/reports/:id', validateUuidParam('id'), handleValidationErrors, mode
 
 // GET /api/v1/admin/appeals — listings whose seller appealed a takedown
 router.get('/appeals', moderationRoute(async (_req: any, res: any) => {
-  const data = await getModerationService(supabaseService).listAppeals();
+  const data = await getModerationService(dataLayer).listAppeals();
   res.json({ success: true, data });
 }));
 
 // PUT /api/v1/admin/marketplace/listings/:id/appeal { decision: upheld|reversed, note? }
 router.put('/marketplace/listings/:id/appeal', validateUuidParam('id'), handleValidationErrors, moderationRoute(async (req: any, res: any) => {
   const { id } = req.params;
-  const result = await getModerationService(supabaseService).decideAppeal(
+  const result = await getModerationService(dataLayer).decideAppeal(
     id,
     req.body?.decision,
     req.body?.note,
@@ -315,7 +315,7 @@ router.put('/marketplace/listings/:id/appeal', validateUuidParam('id'), handleVa
 // jobs admin console reads (`posting: { id, title, status }`).
 router.get('/jobs/reports', moderationRoute(async (req: any, res: any) => {
   const status = (req.query.status as string) || 'pending';
-  const result = await getModerationService(supabaseService).listReports({
+  const result = await getModerationService(dataLayer).listReports({
     status,
     targetType: 'job_posting',
     page: parseInt(req.query.page as string) || 1,
@@ -340,7 +340,7 @@ router.patch('/jobs/reports/:id', validateUuidParam('id'), handleValidationError
   // resolved = reviewed, no automatic action on the posting (the jobs tools
   // handle suspend/remove) — mark resolved + audit.
   if (status === 'dismissed') {
-    const result = await getModerationService(supabaseService).applyReportAction(
+    const result = await getModerationService(dataLayer).applyReportAction(
       req.params.id,
       { action: 'dismiss', note },
       req.user.id
@@ -354,7 +354,7 @@ router.patch('/jobs/reports/:id', validateUuidParam('id'), handleValidationError
   });
   if (error) throw error;
   if (!updated) return res.status(404).json({ success: false, error: 'Report not found' });
-  await logAdminAction(supabaseService, {
+  await logAdminAction(dataLayer, {
     actorId: req.user.id,
     action: 'report_resolve',
     targetType: 'report',

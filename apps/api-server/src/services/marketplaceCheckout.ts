@@ -51,11 +51,8 @@ export class MarketplaceCheckoutService {
   ) {
     const cart = await getMarketplaceCartService(this.data).listCart(buyerId);
     if (cart.length === 0) throw new PublicError('Cart is empty');
-
-    // TRANSITIONAL (M2d): `getMarketplaceOrdersService` still takes the `SupabaseService` facade whole.
-    const ordersService = getMarketplaceOrdersService(this.data.legacyService);
-    // TRANSITIONAL (M2d): `getMarketplaceSellerToolsService` still takes the `SupabaseService` facade whole.
-    const sellerTools = getMarketplaceSellerToolsService(this.data.legacyService);
+    const ordersService = getMarketplaceOrdersService(this.data);
+    const sellerTools = getMarketplaceSellerToolsService(this.data);
     const addresses = getMarketplaceAddressesService(this.data);
 
     const modeBySeller = new Map(
@@ -147,8 +144,7 @@ export class MarketplaceCheckoutService {
       const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
         './marketplacePayments'
       );
-      // TRANSITIONAL (M2d): `getMarketplacePaymentsService` still takes the `SupabaseService` facade whole.
-      const payments = getMarketplacePaymentsService(this.data.legacyService);
+      const payments = getMarketplacePaymentsService(this.data);
       const paystackOn = marketplacePaystackEnabled();
 
       for (const line of prepared) {
