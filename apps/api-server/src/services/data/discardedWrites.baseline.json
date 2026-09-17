@@ -1,9 +1,7 @@
 {
   "queue/processors/index.ts": 1,
   "routes/auth.ts": 2,
-  "services/challengeService.ts": 2,
   "services/communities.ts": 3,
-  "services/companionConversations.ts": 1,
   "services/creators.ts": 1,
   "services/data/categories.ts": 1,
   "services/data/directMessages.ts": 1,
@@ -12,9 +10,5 @@
   "services/marketplaceAlerts.ts": 2,
   "services/marketplaceFavoriteMilestones.ts": 1,
   "services/marketplaceSellerTools.ts": 1,
-  "services/referrals.ts": 3,
-  "services/studyPackFactory.ts": 4,
-  "services/studyPresence.ts": 2,
-  "services/studyRooms.ts": 2,
-  "services/studySets.ts": 2
+  "services/referrals.ts": 3
 }
