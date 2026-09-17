@@ -61,7 +61,18 @@ import {
 } from '../middleware/aiRateLimit';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { generateDailyQuiz } from '../services/aiService';
-import { SupabaseService } from '../services/supabase';
+
+/**
+ * The real REL-02 predicate, taken from the module that OWNS it. It used to be
+ * borrowed off `SupabaseService.prototype`, which was only ever a way to reach
+ * this same body through the facade; the facade's method is a one-line
+ * delegation here and the route now calls `dataLayer.notes.isNoteQuizProtected`.
+ * `requireActual` because this file mocks several sibling modules — the data
+ * module itself must stay real, since the whole point is to exercise the true
+ * protection rule rather than a stub that always agrees.
+ */
+const notesData = jest.requireActual('../services/data/notes');
+const isNoteQuizProtected = (quiz: unknown) => notesData.isNoteQuizProtected(quiz);
 
 const DENIED = {
   error: 'Daily AI limit reached. Try again tomorrow.',
@@ -245,7 +256,7 @@ describe('POST /:noteId/quiz regenerate pre-check', () => {
       getNote: jest.fn(async () => NOTE),
       getNoteAttachments: jest.fn(async () => []),
       getNoteQuiz: jest.fn(async () => existingQuiz),
-      isNoteQuizProtected: SupabaseService.prototype.isNoteQuizProtected,
+      isNoteQuizProtected,
       upsertNoteQuiz: jest.fn(async (_u: string, noteId: string, p: any) => ({
         noteId,
         questions: p.questions,
