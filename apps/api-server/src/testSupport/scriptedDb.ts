@@ -17,6 +17,10 @@
  * nothing throws.
  */
 export type Op = { fn: string; args: unknown[] };
+/**
+ * One finished chain. An `rpc(name, params)` call is recorded as the pseudo
+ * table `rpc:<name>` with terminal `rpc`, so one resolver covers both.
+ */
 export type Call = { table: string; ops: Op[]; terminal: string };
 export type CallResult = { data?: unknown; error?: unknown } | undefined;
 
@@ -66,6 +70,11 @@ export function scriptedDb(resolve: (call: Call) => CallResult) {
       chain.maybeSingle = () => settle('maybeSingle');
       chain.then = (ok: any, err: any) => settle('then').then(ok, err);
       return chain;
+    },
+    rpc(name: string, params?: unknown) {
+      const call: Call = { table: `rpc:${name}`, ops: [{ fn: 'rpc', args: [params] }], terminal: 'rpc' };
+      calls.push(call);
+      return Promise.resolve(resolve(call) ?? { data: null, error: null });
     },
   };
   return { client, calls };
