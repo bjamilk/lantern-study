@@ -44,6 +44,8 @@ jest.mock('../middleware/rateLimit', () => ({
 import { companionChat } from '../services/aiService';
 import { buildTrustedCompanionContext } from '../services/companionContext';
 import router, { initializeAICompanionRoutes } from './aiCompanion';
+import * as aiCompanionData from '../services/data/aiCompanion';
+import { bindDataModule } from '../services/data/testStub';
 import { stubDataLayer } from '../services/data/testStub';
 
 const chatMock = companionChat as jest.MockedFunction<any>;
@@ -98,7 +100,18 @@ function makeService() {
       return chain;
     },
   };
-  return { getClient: () => client } as any;
+  // The companion's message queries moved into `services/data/aiCompanion.ts`
+  // (lane R2), so the route reaches them through the layer rather than building
+  // them itself. Binding the real module to this same fake client leaves the
+  // chain this suite asserts on exactly as it was.
+  //
+  // FLAT, not under an `aiCompanion` key: this stand-in is handed to
+  // `stubDataLayer`, whose proxy maps EVERY namespace onto the flat object (see
+  // its own gotcha), so a nested key would never be read.
+  return {
+    getClient: () => client,
+    ...bindDataModule(aiCompanionData, client),
+  } as any;
 }
 
 /** The route body — the last handler on the layer. */
