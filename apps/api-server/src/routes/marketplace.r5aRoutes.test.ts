@@ -140,7 +140,7 @@ describe('R5a (a): GET /categories/custom awaits the cache read', () => {
       set: jest.fn(async () => {}),
       deletePattern: jest.fn(async () => {}),
     };
-    initializeMarketplaceRoutes({ getCustomCategories } as any, cache);
+    initializeMarketplaceRoutes({ categories: { getCustomCategories } } as any, cache);
 
     const { res } = await runRoute('get', '/categories/custom', { params: {}, body: {}, headers: {} });
 
@@ -159,7 +159,7 @@ describe('R5a (a): GET /categories/custom awaits the cache read', () => {
       set: jest.fn(async () => {}),
       deletePattern: jest.fn(async () => {}),
     };
-    initializeMarketplaceRoutes({ getCustomCategories } as any, cache);
+    initializeMarketplaceRoutes({ categories: { getCustomCategories } } as any, cache);
 
     const { res } = await runRoute('get', '/categories/custom', { params: {}, body: {}, headers: {} });
 

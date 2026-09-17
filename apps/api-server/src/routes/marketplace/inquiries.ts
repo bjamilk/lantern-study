@@ -6,7 +6,7 @@ import { asyncHandler } from '../../middleware/errorHandler';
 import { authMiddleware } from '../../middleware/auth';
 import { logger } from '../../utils/logger';
 import { clientErrorMessage } from '../../utils/safeError';
-import { supabaseService } from './context';
+import { dataLayer, supabaseService } from './context';
 const router = Router();
 // GET /api/v1/marketplace/inquiries - Get user's inquiries (as seller)
 router.get(
@@ -20,9 +20,9 @@ router.get(
 
     let inquiries;
     if (role === 'buyer') {
-      inquiries = await supabaseService.getBuyerInquiries(userId);
+      inquiries = await dataLayer.marketplace.getBuyerInquiries(userId);
     } else {
-      inquiries = await supabaseService.getSellerInquiries(userId, status);
+      inquiries = await dataLayer.marketplace.getSellerInquiries(userId, status);
     }
 
     res.json({
@@ -62,7 +62,7 @@ router.post(
     logger.debug('Creating inquiry', { buyerId, listingId: finalListingId });
 
     // Get listing to find seller
-    const listing = await supabaseService.getMarketplaceListingById(finalListingId);
+    const listing = await dataLayer.marketplace.getMarketplaceListingById(finalListingId);
     if (!listing) {
       return res.status(404).json({
         success: false,
@@ -82,7 +82,7 @@ router.post(
     const sortedIds = [buyerId, listing.user_id].sort();
     const threadId = sortedIds.join('-');
 
-    const existingInquiry = await supabaseService.getInquiryByListingAndBuyer(finalListingId, buyerId);
+    const existingInquiry = await dataLayer.marketplace.getInquiryByListingAndBuyer(finalListingId, buyerId);
     if (existingInquiry) {
       return res.status(200).json({
         success: true,
@@ -95,7 +95,7 @@ router.post(
     }
 
     // createInquiry ensures the dm_threads row exists (FK), then inserts the inquiry.
-    const inquiry = await supabaseService.createInquiry(
+    const inquiry = await dataLayer.marketplace.createInquiry(
       finalListingId,
       buyerId,
       listing.user_id,
@@ -104,12 +104,12 @@ router.post(
     );
 
     // Deliver the buyer message into the DM thread (thread already ensured above).
-    await supabaseService.sendDirectMessage(buyerId, listing.user_id, dmMessage, {
+    await dataLayer.directMessages.sendDirectMessage(buyerId, listing.user_id, dmMessage, {
       bypassPrivacy: true,
     });
 
     // Get buyer name for notification
-    const buyerProfile = await supabaseService.fetchUserProfile(buyerId);
+    const buyerProfile = await dataLayer.users.fetchUserProfile(buyerId);
 
     // Create notification for seller (best-effort — inquiry + DM already succeeded)
     try {
@@ -156,7 +156,7 @@ router.put(
     logger.debug('Updating inquiry status', { id, userId, status });
 
     try {
-      const inquiry = await supabaseService.updateInquiryStatus(id, status, userId);
+      const inquiry = await dataLayer.marketplace.updateInquiryStatus(id, status, userId);
 
       res.json({
         success: true,
@@ -182,7 +182,7 @@ router.get(
     const userId = req.user?.id;
     logger.debug('Fetching inquiry by thread', { threadId, userId });
 
-    const inquiry = await supabaseService.getInquiryByThread(threadId);
+    const inquiry = await dataLayer.marketplace.getInquiryByThread(threadId);
     if (!inquiry) {
       return res.json({ success: true, data: null });
     }

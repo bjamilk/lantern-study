@@ -97,7 +97,7 @@
  * unchanged.
  */
 import { Router } from 'express';
-import { SupabaseService } from '../../services/supabase';
+import type { DataLayer } from '../../services/data';
 import { CacheService } from '../../services/cache';
 import { initializeMarketplaceContext } from './context';
 
@@ -126,8 +126,8 @@ router.use(discoveryRoutes);
 router.use(sellerRoutes);
 
 // Initialize function to be called from main server.
-export const initializeMarketplaceRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  initializeMarketplaceContext(supabase, cache);
+export const initializeMarketplaceRoutes = (layer: DataLayer, cache: CacheService) => {
+  initializeMarketplaceContext(layer, cache);
 };
 
 export {

@@ -18,7 +18,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../middleware/errorHandler';
 import { authMiddleware } from '../../middleware/auth';
 import { requireAuthUserId } from '../../utils/requestAuth';
-import { supabaseService } from './context';
+import { dataLayer, supabaseService } from './context';
 import { respondMarketplaceError } from './errors';
 const router = Router();
 // ============================================================
@@ -124,7 +124,7 @@ router.post(
     try {
       const email =
         (typeof req.user?.email === 'string' && req.user.email) ||
-        (await supabaseService.getClient().auth.admin.getUserById(userId)).data.user?.email ||
+        (await dataLayer.getClient().auth.admin.getUserById(userId)).data.user?.email ||
         '';
       if (!email) {
         return res.status(400).json({

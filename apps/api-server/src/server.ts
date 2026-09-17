@@ -270,7 +270,7 @@ async function initializeServices() {
     initializeUserStatsRoutes(dataLayer, cacheService);
     initializeDashboardRoutes(dataLayer, cacheService);
     initializePreferencesRoutes(dataLayer, cacheService);
-    initializeMarketplaceRoutes(supabaseService, cacheService);
+    initializeMarketplaceRoutes(dataLayer, cacheService);
     initializePaystackWebhookRoutes(dataLayer);
     initializeJobsBoardRoutes(supabaseService, cacheService);
     initializeSitemapRoutes(dataLayer, cacheService);

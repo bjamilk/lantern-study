@@ -12,7 +12,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { handleValidationErrors, validateListingId } from '../../middleware/validation';
 import { logger } from '../../utils/logger';
 import { classifyListing, serializeClassifySuggestion, publicTaxonomyPayload } from '@lantern/shared/marketplace';
-import { supabaseService, cacheService } from './context';
+import { cacheService, dataLayer, supabaseService } from './context';
 const router = Router();
 // ============================================================
 // SAVED SEARCHES ENDPOINTS
@@ -47,7 +47,7 @@ router.get(
 
     logger.debug('Fetching user favorites', { userId });
 
-    const favorites = await supabaseService.getUserFavorites(userId);
+    const favorites = await dataLayer.marketplace.getUserFavorites(userId);
 
     res.json({
       success: true,
@@ -73,7 +73,7 @@ router.post(
 
     logger.debug('Adding to favorites', { userId, listingId });
 
-    const result = await supabaseService.addFavorite(userId, listingId);
+    const result = await dataLayer.marketplace.addFavorite(userId, listingId);
 
     try {
       const { notifySellerFavoriteMilestone } = await import('../../services/marketplaceFavoriteMilestones');
@@ -99,7 +99,7 @@ router.delete(
 
     logger.debug('Removing from favorites', { userId, listingId });
 
-    await supabaseService.removeFavorite(userId, listingId);
+    await dataLayer.marketplace.removeFavorite(userId, listingId);
 
     res.json({
       success: true,
@@ -116,7 +116,7 @@ router.get(
     const userId = req.user?.id;
     const { listingId } = req.params;
 
-    const isFavorited = await supabaseService.isListingFavorited(userId, listingId);
+    const isFavorited = await dataLayer.marketplace.isListingFavorited(userId, listingId);
 
     res.json({
       success: true,
@@ -149,7 +149,7 @@ router.post(
       return parts.length > 0 ? parts.join(', ') : 'All listings';
     })();
 
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('saved_searches')
       .insert({
         user_id: userId,
@@ -173,7 +173,7 @@ router.get(
   asyncHandler(async (req: any, res: any) => {
     const userId = req.user.id;
 
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('saved_searches')
       .select('*')
       .eq('user_id', userId)
@@ -193,7 +193,7 @@ router.delete(
     const userId = req.user.id;
     const { id } = req.params;
 
-    const { error } = await supabaseService.getClient()
+    const { error } = await dataLayer.getClient()
       .from('saved_searches')
       .delete()
       .eq('id', id)
@@ -219,7 +219,7 @@ router.patch(
       return res.status(400).json({ success: false, error: 'notify or name required' });
     }
 
-    const { data, error } = await supabaseService.getClient()
+    const { data, error } = await dataLayer.getClient()
       .from('saved_searches')
       .update(patch)
       .eq('id', id)
@@ -244,7 +244,7 @@ router.get(
     const { id } = req.params;
     const peek = req.query.peek === '1' || req.query.peek === 'true';
 
-    const result = await supabaseService.getSavedSearchMatches(userId, id, { peek });
+    const result = await dataLayer.marketplace.getSavedSearchMatches(userId, id, { peek });
     if (!result) {
       return res.status(404).json({ success: false, error: 'Saved search not found' });
     }
@@ -294,7 +294,7 @@ router.post(
 // missing, so `cached` was always a pending Promise — always truthy. The route
 // therefore always took the cache-hit branch and answered `{success:true,
 // data:{}}`: an object, not the array clients expect. Custom categories never
-// reached any client, `supabaseService.getCustomCategories()` was unreachable,
+// reached any client, `dataLayer.categories.getCustomCategories()` was unreachable,
 // and the POST sibling kept writing rows nobody could list. The `set` and the
 // sibling's `deletePattern` were unawaited floating promises too.
 router.get(
@@ -306,7 +306,7 @@ router.get(
       return res.json({ success: true, data: cached });
     }
 
-    const categories = await supabaseService.getCustomCategories();
+    const categories = await dataLayer.categories.getCustomCategories();
     await cacheService.set(cacheKey, categories, 300); // 5 min cache
     res.json({ success: true, data: categories });
   })
@@ -329,7 +329,7 @@ router.post(
       return res.status(400).json({ success: false, error: 'Category name must be 50 characters or less' });
     }
 
-    const category = await supabaseService.createCustomCategory(trimmedName, userId);
+    const category = await dataLayer.categories.createCustomCategory(trimmedName, userId);
     await cacheService.deletePattern('marketplace:custom_categories');
     res.status(201).json({ success: true, data: category });
   })
@@ -349,12 +349,12 @@ router.get(
       return res.json({ success: true, data: cached });
     }
 
-    const listing = await supabaseService.getMarketplaceListingById(id);
+    const listing = await dataLayer.marketplace.getMarketplaceListingById(id);
     if (!listing) {
       return res.status(404).json({ success: false, error: 'Listing not found' });
     }
 
-    const result = await supabaseService.getRelatedMarketplaceListings(listing, 6);
+    const result = await dataLayer.marketplace.getRelatedMarketplaceListings(listing, 6);
     await cacheService.set(similarCacheKey, result, 300);
     res.json({ success: true, data: result });
   })

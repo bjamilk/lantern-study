@@ -303,8 +303,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
     // Lift the auth-layer ban, or an unbanned user could never sign in again.
     authBanApplied = await adminData.applyAuthBan(supabaseService, id, 'none');
   } else if (status === 'suspended') {
-    await supabaseService
-      .createNotification(id, {
+    await dataLayer.notifications.createNotification(id, {
         type: 'warning',
         message: `Your account has been suspended by Lantern moderation until ${new Date(suspendedUntil!).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.${reason ? ` Reason: ${reason}.` : ''} Contact support@lanternstudy.com to appeal.`,
         link: 'settings:account',

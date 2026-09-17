@@ -14,7 +14,7 @@ import { handleValidationErrors, validateListingId } from '../../middleware/vali
 import { logger } from '../../utils/logger';
 import { invalidateListingCaches } from '../../utils/marketplaceCache';
 import { computeMarketplaceReviewSummary } from '@lantern/shared/marketplace';
-import { supabaseService, cacheService } from './context';
+import { cacheService, dataLayer, supabaseService } from './context';
 const router = Router();
 // ============================================================
 // REVIEWS
@@ -39,7 +39,7 @@ const handleReviewVote = (helpful: boolean) =>
       return res.status(400).json({ success: false, error: 'Invalid review id' });
     }
     try {
-      const result = await supabaseService.setMarketplaceReviewVote(
+      const result = await dataLayer.marketplace.setMarketplaceReviewVote(
         id,
         reviewId,
         req.user.id,
@@ -64,7 +64,7 @@ router.get(
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const { id } = req.params;
-    const reviews = await supabaseService.getMarketplaceReviews(id, req.user?.id);
+    const reviews = await dataLayer.marketplace.getMarketplaceReviews(id, req.user?.id);
     res.json({
       success: true,
       data: reviews,
@@ -114,7 +114,7 @@ router.post(
 
     let review;
     try {
-      review = await supabaseService.addMarketplaceReview(id, userId, { rating, comment });
+      review = await dataLayer.marketplace.addMarketplaceReview(id, userId, { rating, comment });
     } catch (err: any) {
       // Eligibility (403) and validation (400) failures are expected outcomes,
       // not server errors — keep the app's {success, error} shape.
