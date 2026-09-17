@@ -507,11 +507,12 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   // the NOTES section it sat in. Same query, new file: the row moved with it
   // rather than the count changing — supabase.ts drops to zero.
   'services/data/notes.ts::notes': 1,
-  'services/supabase.ts::test_results': 1,
-  // Two of the four `test_sessions->test_results` embeds moved verbatim out of
-  // supabase.ts into the tests repository (monolith lane M1c, step 11). Same
-  // queries, new file: the rows moved with them rather than the count changing.
-  'services/data/tests.ts::test_results': 2,
+  // All four `test_sessions->test_results` embeds now live in the tests
+  // repository: two moved verbatim out of supabase.ts in monolith lane M1c
+  // (step 11) and the last one — `fetchTestResults` — in lane M1h. Same
+  // queries, new file: the rows moved with them rather than any count growing
+  // (supabase.ts drops from 1 to zero as data/tests.ts goes from 2 to 3).
+  'services/data/tests.ts::test_results': 3,
 
   // --- Account lifecycle export. Single FK each today.
   'services/userDataLifecycle.ts::flashcards': 1,

@@ -4441,33 +4441,7 @@ export class SupabaseService {
   }
 
   private async updateUserStats(userId: string, score: number): Promise<void> {
-    // Update user stats (simplified)
-    const { data: user, error: userError } = await this.supabase
-      .from("profiles")
-      .select("stats")
-      .eq("id", userId)
-      .single();
-
-    if (userError) throw userError;
-
-    const currentStats = user?.stats || {};
-    const testsTaken = (currentStats.testsTaken || 0) + 1;
-    const totalScore = (currentStats.totalScore || 0) + score;
-    const averageScore = totalScore / testsTaken;
-
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({
-        stats: {
-          ...currentStats,
-          testsTaken,
-          totalScore,
-          averageScore,
-        },
-      })
-      .eq("id", userId);
-
-    if (error) throw error;
+    return testsData.updateUserStats(this.supabase, userId, score);
   }
 
   // Group Functions
@@ -5159,98 +5133,27 @@ export class SupabaseService {
     messageId: string;
     excludeUserIds?: string[];
   }): Promise<void> {
-    const { groupId, senderId, content, messageId, excludeUserIds } = params;
-    const [{ data: members, error: membersError }, groupMeta, sender] =
-      await Promise.all([
-        this.supabase
-          .from("group_members")
-          .select("user_id")
-          .eq("group_id", groupId)
-          .eq("pending", false),
-        this.getGroupById(groupId),
-        this.getUserById(senderId),
-      ]);
-
-    if (membersError) throw membersError;
-
-    const excluded = new Set(excludeUserIds || []);
-    const recipientIds = (members || [])
-      .map((m) => m.user_id)
-      .filter((id) => id && id !== senderId && !excluded.has(id));
-    if (!recipientIds.length) return;
-
-    const groupName = groupMeta?.name || "a group";
-    const actorLabel =
-      sender?.name || (sender?.username ? `@${sender.username}` : "Someone");
-    const preview =
-      content.length > 50 ? `${content.substring(0, 50)}…` : content;
-
-    await Promise.all(
-      recipientIds.map((recipientId) =>
-        this.createNotification(recipientId, {
-          message: `New message in ${groupName} from ${actorLabel}: "${preview}"`,
-          link: `/chat/${groupId}`,
-          type: "group_message",
-          data: { groupId, messageId, senderId, preview },
-        }).catch((err) => {
-          logger.error("Failed to create group message notification", {
-            err,
-            groupId,
-            recipientId,
-            messageId,
-          });
-        }),
-      ),
+    return chatSendData.notifyGroupMessageRecipients(
+      this.supabase,
+      {
+        createNotification: (uid, notification) =>
+          this.createNotification(uid, notification as any),
+        getGroupById: (gid, uid) => this.getGroupById(gid, uid),
+        getUserById: (uid) => this.getUserById(uid),
+      },
+      params,
     );
   }
 
   async fetchMessages(groupId: string): Promise<Message[]> {
-    const cacheKey = `group:${groupId}:messages`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("messages")
-          .select(
-            `
-          id,
-          group_id,
-          sender_id,
-          type,
-          text,
-          question_data,
-          flagged_as_similar_user_ids,
-          timestamp,
-          edited_at,
-          removed_at,
-          upvotes,
-          downvotes,
-          is_archived,
-          image_url,
-          profiles!sender_id (
-            id,
-            name,
-            username,
-            avatar_url
-          )
-        `,
-          )
-          .eq("group_id", groupId)
-          .order("timestamp", { ascending: true });
-
-        if (error) throw error;
-
-        // The question pool is read from here, so it needs the same
-        // verification progress the chat card shows.
-        const withPeerUpvotes = await this.attachPeerUpvotes(data as any[]);
-
-        return withPeerUpvotes.map((msg: any) =>
-          mapChatMessageRow(msg, this.normalizeMessageRecord(msg)),
-        );
+    return groupMessagesData.fetchMessages(
+      this.supabase,
+      {
+        attachPeerUpvotes: (messages) => this.attachPeerUpvotes(messages),
+        normalizeMessageRecord: (row) => this.normalizeMessageRecord(row),
       },
-      { ttl: 30 },
-    ); // Cache for 30 seconds
+      groupId,
+    );
   }
 
   private parseMessageContent(msg: any): Partial<Message> {
@@ -5270,44 +5173,7 @@ export class SupabaseService {
 
   // Test Results Functions
   async fetchTestResults(userId: string): Promise<TestResult[]> {
-    const cacheKey = `user:${userId}:test-results`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("test_sessions")
-          .select(
-            `
-          *,
-          test_results (*)
-        `,
-          )
-          .eq("user_id", userId)
-          .order("start_time", { ascending: false });
-
-        if (error) throw error;
-
-        return data.flatMap((session: any) =>
-          session.test_results.map((result: any) => ({
-            id: result.id,
-            session: {
-              ...session,
-              startTime: session.start_time,
-              endTime: session.end_time,
-              isOffline: session.is_offline,
-              config: session.config,
-              questions: session.questions,
-              userAnswers: session.user_answers,
-            },
-            score: result.score,
-            totalQuestions: result.total_questions,
-            correctAnswersCount: result.correct_answers_count,
-          })),
-        );
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return testsData.fetchTestResults(this.supabase, userId);
   }
 
   // ===========================================================================

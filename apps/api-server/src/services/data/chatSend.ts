@@ -969,6 +969,77 @@ export async function getDmThread(
   );
 }
 
+/**
+ * Notify active members after a group message is persisted
+ * (message-before-notification ordering).
+ *
+ * Moved verbatim out of `services/supabase.ts` (monolith lane M1h): it is a
+ * send-path fan-out and `sendMessage` right below is its only caller, through
+ * `deps` — `supabase.sendPath.contract.test.ts` stubs the dep by name and
+ * asserts the step order, and `supabase.boardMessages.test.ts` drives THIS
+ * function through the prototype to prove a board post issues zero per-post
+ * fan-out. Both pass unchanged.
+ */
+export async function notifyGroupMessageRecipients(
+  db: DataClient,
+  deps: Pick<
+    ChatSendDeps,
+    "getGroupById" | "getUserById" | "createNotification"
+  >,
+  params: {
+    groupId: string;
+    senderId: string;
+    content: string;
+    messageId: string;
+    excludeUserIds?: string[];
+  },
+): Promise<void> {
+  const { groupId, senderId, content, messageId, excludeUserIds } = params;
+  const [{ data: members, error: membersError }, groupMeta, sender] =
+    await Promise.all([
+      db
+        .from("group_members")
+        .select("user_id")
+        .eq("group_id", groupId)
+        .eq("pending", false),
+      deps.getGroupById(groupId),
+      deps.getUserById(senderId),
+    ]);
+
+  if (membersError) throw membersError;
+
+  const excluded = new Set(excludeUserIds || []);
+  const recipientIds = (members || [])
+    .map((m) => m.user_id)
+    .filter((id) => id && id !== senderId && !excluded.has(id));
+  if (!recipientIds.length) return;
+
+  const groupName = groupMeta?.name || "a group";
+  const actorLabel =
+    sender?.name || (sender?.username ? `@${sender.username}` : "Someone");
+  const preview =
+    content.length > 50 ? `${content.substring(0, 50)}…` : content;
+
+  await Promise.all(
+    recipientIds.map((recipientId) =>
+      deps.createNotification(recipientId, {
+        message: `New message in ${groupName} from ${actorLabel}: "${preview}"`,
+        link: `/chat/${groupId}`,
+        type: "group_message",
+        data: { groupId, messageId, senderId, preview },
+      }).catch((err) => {
+        logger.error("Failed to create group message notification", {
+          err,
+          groupId,
+          recipientId,
+          messageId,
+        });
+      }),
+    ),
+  );
+}
+
+
 export async function notifyMentionedUsers(
   deps: Pick<ChatSendDeps, "getGroupById" | "getUserById" | "createNotification">,
   params: {
