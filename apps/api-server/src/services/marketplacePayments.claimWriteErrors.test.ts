@@ -206,35 +206,55 @@ describe('with every write succeeding', () => {
   });
 });
 
-describe('TODAY: the release itself failing', () => {
-  it('says nothing when the payout claim could not be given back', async () => {
-    // The order is left at `paying` for good: the payout CAS only moves
+const BEST_EFFORT = 'Database write failed (best-effort)';
+
+describe('the release itself failing', () => {
+  it('reports at ERROR level when the payout claim could not be given back', async () => {
+    // The order is left at `paying` for good: the CAS only moves
     // `pending → paying`, nothing expires it, and no transfer webhook is coming
-    // because no transfer was made.
+    // because no transfer was made. Loud, but not thrown — the caller is
+    // carrying the error that caused the release.
     const { service } = await serviceFor('payout_claim', 'release');
     await expect(service.forcePayoutForOrder('ord_1')).rejects.toThrow(/payout profile/i);
-    expect(logger.error).not.toHaveBeenCalledWith(
-      'Failed to release order payout claim',
-      expect.anything(),
+    expect(logger.error).toHaveBeenCalledWith(
+      BEST_EFFORT,
+      expect.objectContaining({
+        table: 'marketplace_orders',
+        orderId: 'ord_1',
+        reason: 'release_payout_claim',
+        code: '40001',
+      }),
     );
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('says nothing when the refund hold could not be given back', async () => {
+  it('reports at ERROR level when the refund hold could not be given back', async () => {
     // Left at `refund_hold`, which refuses the payout AND every later refund.
     const { service } = await serviceFor('refund_hold', 'release');
     await expect(service.refundPaymentForOrder('ord_1', 'buyer_1')).rejects.toThrow(
       /refund declined/,
     );
-    expect(logger.error).not.toHaveBeenCalledWith('Failed to release refund hold', expect.anything());
+    expect(logger.error).toHaveBeenCalledWith(
+      BEST_EFFORT,
+      expect.objectContaining({ orderId: 'ord_1', reason: 'release_refund_hold' }),
+    );
   });
 
-  it('says nothing when the mismatch stamp could not be written', async () => {
-    // The Sentry event still fires, but the durable half of the only trace that
-    // money was captured without settling an order is silently lost.
+  it('reports at ERROR level when the mismatch stamp could not be written', async () => {
+    // Best-effort, because a failed stamp must never break the webhook — but at
+    // error level, because this row is the durable half of the only trace that
+    // money was captured without settling an order.
     const { service } = await serviceFor('mismatch', 'release');
     await expect(service.handleWebhook(MISMATCHED_CHARGE, 'sig')).resolves.toEqual(
       expect.objectContaining({ ok: true }),
     );
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      BEST_EFFORT,
+      expect.objectContaining({
+        table: 'marketplace_payments',
+        paymentId: 'pay_1',
+        source: 'webhook',
+      }),
+    );
   });
 });

@@ -1613,18 +1613,27 @@ export class MarketplacePaymentsService {
    * reason behind so a stuck payout is diagnosable rather than invisible.
    */
   private async releaseOrderPayoutClaim(orderId: string, reason: string): Promise<void> {
-    try {
+    // BEST EFFORT at ERROR level (#108). The `try/catch` this used to rely on
+    // was dead code — a failed supabase-js write resolves — so the log it
+    // promised never appeared.
+    //
+    // It must not throw: the caller is already on its way out with the error
+    // that caused the release, and that is the one that matters. But it must be
+    // LOUD, because the claim is a single slot with no expiry: an order left at
+    // `paying` can never be claimed again (the CAS only moves `pending →
+    // paying`), no transfer webhook is coming because no transfer was made, and
+    // nothing sweeps it. The seller is simply never paid until a human or the
+    // reconciliation job (#113) intervenes. No money is at risk — this runs
+    // only where nothing moved.
+    bestEffortWrite(
       await this.db
         .from('marketplace_orders')
         .update({ payout_status: 'pending', payout_failed_reason: reason.slice(0, 500) })
         .eq('id', orderId)
-        .eq('payout_status', 'paying');
-    } catch (err) {
-      logger.error('Failed to release order payout claim', {
-        orderId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+        .eq('payout_status', 'paying'),
+      { table: 'marketplace_orders', op: 'update', orderId, reason: 'release_payout_claim' },
+      'error',
+    );
   }
 
   /**
@@ -2098,18 +2107,21 @@ export class MarketplacePaymentsService {
   /** Give a refund hold back to the payout machine when the refund did not happen. */
   private async releaseRefundHold(orderId: string, held: boolean): Promise<void> {
     if (!held) return;
-    try {
+    // BEST EFFORT at ERROR level (#108), same dead-`catch` story as
+    // `releaseOrderPayoutClaim`, and a worse stuck state: an order left at
+    // `refund_hold` refuses the payout AND every later refund ("A refund for
+    // this order is already in progress"), with no expiry and nothing to
+    // release it. Never thrown, because the caller is carrying the refund error
+    // that caused this release.
+    bestEffortWrite(
       await this.db
         .from('marketplace_orders')
         .update({ payout_status: 'pending' })
         .eq('id', orderId)
-        .eq('payout_status', 'refund_hold');
-    } catch (err) {
-      logger.error('Failed to release refund hold', {
-        orderId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+        .eq('payout_status', 'refund_hold'),
+      { table: 'marketplace_orders', op: 'update', orderId, reason: 'release_refund_hold' },
+      'error',
+    );
   }
 
   /**
@@ -2210,7 +2222,12 @@ export class MarketplacePaymentsService {
     } catch {
       // reporting must never break the webhook path
     }
-    try {
+    // BEST EFFORT at ERROR level (#108). Best-effort because a failed stamp must
+    // never break the webhook — but at error level, because together with the
+    // Sentry event above this row IS the only trace that money was captured
+    // without settling an order, and it is the durable half. The `try/catch`
+    // that used to guard it was dead code.
+    bestEffortWrite(
       await this.db
         .from('marketplace_payments')
         .update({
@@ -2220,10 +2237,16 @@ export class MarketplacePaymentsService {
           },
           updated_at: new Date().toISOString(),
         })
-        .eq('id', payment.id);
-    } catch {
-      // best-effort stamp
-    }
+        .eq('id', payment.id),
+      {
+        table: 'marketplace_payments',
+        op: 'update',
+        paymentId: payment.id,
+        orderId: payment.order_id,
+        source: details.source,
+      },
+      'error',
+    );
   }
 
   // --- Paystack webhook ------------------------------------------------------
