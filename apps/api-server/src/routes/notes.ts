@@ -6,8 +6,8 @@
  * group sharing, comments).
  *
  * Mount path: `/api/v1/notes` (see `server.ts`). Default export is the router;
- * `initializeNotesRoutes(supabase, cache)` injects the two services every
- * handler reads from module scope, and must run before the first request.
+ * `initializeNotesRoutes(layer, cache)` injects the data layer and the cache
+ * every handler reads from module scope, and must run before the first request.
  *
  * Auth: `router.use(authMiddleware)` at the top — every route in this file is
  * authenticated, none are public or admin-gated.
@@ -24,7 +24,7 @@
  * `requireNoteEdit('noteId')` for writes and AI actions that mutate the note,
  * `requireNoteOwner('noteId')` for delete, covers, collaborators, share links
  * and group sharing. Handlers additionally re-read through
- * `supabaseService.getNote(noteId, userId)`, which throws when the caller may
+ * `dataLayer.notes.getNote(noteId, userId)`, which throws when the caller may
  * not read the note, so an attachment sub-resource is never served on the
  * strength of the route match alone.
  *
@@ -164,8 +164,11 @@ import {
   CoverColumnMissingError,
   CoverStorageUnavailableError,
   isMissingCoverPathColumn,
-  SupabaseService,
 } from '../services/supabase';
+// Type only (erased at compile time): the services listed at `legacyService`
+// below still take the `SupabaseService` facade whole.
+import type { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 import { CacheService } from '../services/cache';
 import {
   summarizeNoteContent,
@@ -234,11 +237,24 @@ import { recordLearningEvent, surfaceFromRequest } from '../services/learningEve
 
 const router = Router();
 
-let supabaseService: SupabaseService;
+// `dataLayer` is the composition root's `DataLayer` (`services/data/index.ts`),
+// not the `SupabaseService` facade: the domain functions arrive already bound to
+// the client and to their `deps`. See `docs/data-layer-wiring.md`.
+let dataLayer: DataLayer;
 let cacheService: CacheService;
 
-export const initializeNotesRoutes = (supabase: SupabaseService, cache: CacheService) => {
-  supabaseService = supabase;
+// TRANSITIONAL (M2b): the services called below — `noteOcr`, `notePages`,
+// `narrationService`, `presentationPreview`, `youtubeNote` and
+// `learningEvents` — still take the `SupabaseService` facade whole, so a
+// flipped route hands them `dataLayer.legacyService`. The seam disappears when
+// the `services/` importers are flipped.
+// `dataLayer?` because a route module can be imported before its injector runs
+// (several suites drive a handler without calling it), exactly as the old
+// module-level `supabaseService` read as undefined there.
+const legacyService = () => dataLayer?.legacyService as SupabaseService;
+
+export const initializeNotesRoutes = (layer: DataLayer, cache: CacheService) => {
+  dataLayer = layer;
   cacheService = cache;
 };
 
@@ -254,7 +270,7 @@ async function resolveNoteStudyContent(
   note: { body?: string; summary?: string; sourceType?: string },
   options?: { forSmartNotes?: boolean; sources?: SmartNoteSourceId[] }
 ): Promise<string> {
-  const attachments = await supabaseService.getNoteAttachments(noteId);
+  const attachments = await dataLayer.notes.getNoteAttachments(noteId);
   const input = {
     sourceType: note.sourceType,
     body: note.body,
@@ -294,13 +310,13 @@ async function validateNoteImageUploads(
     const storagePath = String(storagePaths[i]);
     const fileName = String(fileNames[i]);
     assertUserOwnedNoteStoragePath(storagePath, userId);
-    const downloaded = await supabaseService.downloadNoteFile(storagePath);
+    const downloaded = await dataLayer.notes.downloadNoteFile(storagePath);
     let contentType = downloaded.contentType;
     if (contentType === 'application/octet-stream') {
       contentType = detectImageMime(downloaded.buffer) || imageContentTypeFromFileName(fileName);
     }
     assertNoteImageUpload(downloaded.buffer, contentType);
-    const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
+    const fileUrl = await dataLayer.notes.createSignedNoteFileUrl(storagePath);
     validated.push({ storagePath, fileName, fileUrl, contentType });
   }
   return validated;
@@ -314,7 +330,7 @@ async function createPhotoNoteAttachments(
   const attachments = [];
   for (let i = 0; i < images.length; i++) {
     const image = images[i];
-    const attachment = await supabaseService.addNoteAttachment(noteId, {
+    const attachment = await dataLayer.notes.addNoteAttachment(noteId, {
       type: 'image',
       fileUrl: image.fileUrl,
       fileName: image.fileName,
@@ -414,7 +430,7 @@ async function uploadBase64NoteImages(
       const baseName = rawFileName.replace(/\.[^/.]+$/, '') || `photo-${i + 1}`;
       const fileName = `${baseName}.${normalized.ext}`;
       const storagePath = buildNoteStoragePath(userId, `${i}-${fileName}`);
-      await supabaseService.uploadNoteFile({
+      await dataLayer.notes.uploadNoteFile({
         storagePath,
         buffer: normalized.buffer,
         contentType: normalized.contentType,
@@ -424,7 +440,7 @@ async function uploadBase64NoteImages(
       if (thumb) {
         const thumbPath = storageThumbPath(storagePath);
         try {
-          await supabaseService.uploadNoteFile({
+          await dataLayer.notes.uploadNoteFile({
             storagePath: thumbPath,
             buffer: thumb,
             contentType: 'image/webp',
@@ -439,7 +455,7 @@ async function uploadBase64NoteImages(
         }
       }
 
-      const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
+      const fileUrl = await dataLayer.notes.createSignedNoteFileUrl(storagePath);
       validated.push({
         storagePath,
         fileName,
@@ -450,7 +466,7 @@ async function uploadBase64NoteImages(
     return validated;
   } catch (err) {
     for (const path of uploadedPaths) {
-      await supabaseService.deleteNoteFile(path).catch(() => {});
+      await dataLayer.notes.deleteNoteFile(path).catch(() => {});
     }
     throw err;
   }
@@ -465,7 +481,7 @@ async function startPresentationPreviewJob(params: {
   buffer?: Buffer;
   extractedText?: string;
 }): Promise<void> {
-  void runPresentationPreviewJob(supabaseService, params).catch((err) => {
+  void runPresentationPreviewJob(legacyService(), params).catch((err) => {
     logger.error('Presentation preview job unhandled error', {
       noteId: params.noteId,
       attachmentId: params.attachmentId,
@@ -518,7 +534,7 @@ export async function revertAttachmentToNeedsOcr(params: {
   try {
     let latest = params.meta;
     try {
-      const current = await supabaseService.getNoteAttachment(params.noteId, params.attachmentId);
+      const current = await dataLayer.notes.getNoteAttachment(params.noteId, params.attachmentId);
       if (current?.metadata && typeof current.metadata === 'object') {
         latest = current.metadata as Record<string, unknown>;
       }
@@ -528,7 +544,7 @@ export async function revertAttachmentToNeedsOcr(params: {
     // Never clobber a state some other path already resolved (a worker that
     // did run, a manual OCR, a concurrent revert).
     if (latest.extractionStatus !== 'ocr_processing') return;
-    await supabaseService.updateNoteAttachment(params.attachmentId, {
+    await dataLayer.notes.updateNoteAttachment(params.attachmentId, {
       ...(params.fallbackText !== undefined ? { extractedText: params.fallbackText } : {}),
       metadata: {
         ...latest,
@@ -621,7 +637,7 @@ async function startNoteOcrJob(params: {
     // Avoid huge Redis payloads — worker re-downloads from storage.
   };
   const outcome = await runSyncOrEnqueue('notes.ocr.extract', payload, params.userId, () =>
-    runNoteOcrJob(supabaseService, {
+    runNoteOcrJob(legacyService(), {
       ...params,
       buffer: params.buffer,
     }),
@@ -673,7 +689,7 @@ async function startPhotoNoteOcr(params: {
       ocrCreditCost: NOTE_OCR_CREDIT_COST,
     };
 
-    await supabaseService.updateNoteAttachment(attachment.id, {
+    await dataLayer.notes.updateNoteAttachment(attachment.id, {
       extractedText: ocrPlaceholder(fileName),
       metadata: processingMeta,
     });
@@ -812,7 +828,7 @@ const respondPublicError = (err: unknown, res: Response): boolean => {
 router.get('/folders', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const folders = await supabaseService.getNoteFolders(userId);
+  const folders = await dataLayer.notes.getNoteFolders(userId);
   res.json({ success: true, data: folders });
 }));
 
@@ -825,7 +841,7 @@ router.post('/folders', validateFolderCreate, handleValidationErrors, asyncHandl
     return;
   }
   try {
-    const folder = await supabaseService.createNoteFolder(userId, { name: name.trim(), color, groupId, parentId, courseId });
+    const folder = await dataLayer.notes.createNoteFolder(userId, { name: name.trim(), color, groupId, parentId, courseId });
     res.json({ success: true, data: folder });
   } catch (err) {
     if (respondPublicError(err, res)) return;
@@ -843,7 +859,7 @@ router.patch('/folders/:folderId', validateFolderId, validateFolderUpdate, handl
   if (color !== undefined) updates.color = color;
   if (courseId !== undefined) updates.courseId = courseId;
   try {
-    const folder = await supabaseService.updateNoteFolder(userId, req.params.folderId, updates);
+    const folder = await dataLayer.notes.updateNoteFolder(userId, req.params.folderId, updates);
     res.json({ success: true, data: folder });
   } catch (err) {
     if (respondPublicError(err, res)) return;
@@ -854,7 +870,7 @@ router.patch('/folders/:folderId', validateFolderId, validateFolderUpdate, handl
 router.delete('/folders/:folderId', validateFolderId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.deleteNoteFolder(userId, req.params.folderId);
+  await dataLayer.notes.deleteNoteFolder(userId, req.params.folderId);
   res.json({ success: true });
 }));
 
@@ -902,12 +918,12 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
   }
 
   const storagePath = buildNoteStoragePath(userId, fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`);
-  await supabaseService.uploadNoteFile({
+  await dataLayer.notes.uploadNoteFile({
     storagePath,
     buffer,
     contentType: 'application/pdf',
   });
-  const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
+  const fileUrl = await dataLayer.notes.createSignedNoteFileUrl(storagePath);
   const extraction = await extractPdfTextDetailsFromBuffer(buffer);
   const { studyText, extractionStatus } = buildPdfStudyText(String(fileName), extraction);
   const noteTitle = String(fileName).replace(/\.pdf$/i, '') || 'Imported PDF';
@@ -929,13 +945,13 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
   let note;
   let attachment;
   try {
-    note = await supabaseService.createNote(userId, {
+    note = await dataLayer.notes.createNote(userId, {
       title: noteTitle,
       body: '',
       folderId,
       sourceType: 'pdf',
     });
-    attachment = await supabaseService.addNoteAttachment(note.id, {
+    attachment = await dataLayer.notes.addNoteAttachment(note.id, {
       type: 'pdf',
       fileUrl,
       fileName,
@@ -943,7 +959,7 @@ router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Reques
       metadata: attachmentMeta,
     });
   } catch (err) {
-    await supabaseService.deleteNoteFile(storagePath).catch(() => {});
+    await dataLayer.notes.deleteNoteFile(storagePath).catch(() => {});
     throw err;
   }
 
@@ -998,13 +1014,13 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
 
   const storagePath = buildNoteStoragePath(userId, safeName);
   const contentType = presentationContentType(safeName);
-  await supabaseService.uploadNoteFile({
+  await dataLayer.notes.uploadNoteFile({
     storagePath,
     buffer,
     contentType,
   });
 
-  const fileUrl = await supabaseService.createSignedNoteFileUrl(storagePath);
+  const fileUrl = await dataLayer.notes.createSignedNoteFileUrl(storagePath);
   // Never run Tesseract on the sync upload path — it can OOM/timeout and block open.
   const presentationExtract = await extractPresentationTextDetailsFromBuffer(buffer, safeName, {
     enableOcr: false,
@@ -1030,13 +1046,13 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
   let note;
   let attachment;
   try {
-    note = await supabaseService.createNote(userId, {
+    note = await dataLayer.notes.createNote(userId, {
       title: noteTitle,
       body: '',
       folderId,
       sourceType: 'presentation',
     });
-    attachment = await supabaseService.addNoteAttachment(note.id, {
+    attachment = await dataLayer.notes.addNoteAttachment(note.id, {
       type: 'presentation',
       fileUrl,
       fileName: safeName,
@@ -1044,7 +1060,7 @@ router.post('/upload-presentation', uploadBurstRateLimit, asyncHandler(async (re
       metadata: processingMeta,
     });
   } catch (err) {
-    await supabaseService.deleteNoteFile(storagePath).catch(() => {});
+    await dataLayer.notes.deleteNoteFile(storagePath).catch(() => {});
     throw err;
   }
 
@@ -1089,7 +1105,7 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
     assertUserOwnedNoteStoragePath(String(storagePath), userId);
     ownedPath = String(storagePath);
     assertPresentationFileName(safeName);
-    const downloaded = await supabaseService.downloadNoteFile(ownedPath);
+    const downloaded = await dataLayer.notes.downloadNoteFile(ownedPath);
     buffer = downloaded.buffer;
     assertPresentationSize(buffer);
     if (/\.pptx$/i.test(safeName)) {
@@ -1097,7 +1113,7 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
     }
   } catch (err) {
     if (ownedPath) {
-      await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
+      await dataLayer.notes.deleteNoteFile(ownedPath).catch(() => {});
     }
     res.status(400).json({
       error: err instanceof Error ? err.message : 'Presentation file is invalid. Please re-upload.',
@@ -1106,7 +1122,7 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
   }
 
   const contentType = presentationContentType(safeName);
-  const fileUrl = await supabaseService.createSignedNoteFileUrl(ownedPath);
+  const fileUrl = await dataLayer.notes.createSignedNoteFileUrl(ownedPath);
   const presentationExtract = await extractPresentationTextDetailsFromBuffer(buffer, safeName, {
     enableOcr: false,
   });
@@ -1131,13 +1147,13 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
   let note;
   let attachment;
   try {
-    note = await supabaseService.createNote(userId, {
+    note = await dataLayer.notes.createNote(userId, {
       title: noteTitle,
       body: '',
       folderId,
       sourceType: 'presentation',
     });
-    attachment = await supabaseService.addNoteAttachment(note.id, {
+    attachment = await dataLayer.notes.addNoteAttachment(note.id, {
       type: 'presentation',
       fileUrl,
       fileName: safeName,
@@ -1145,7 +1161,7 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
       metadata: processingMeta,
     });
   } catch (err) {
-    await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
+    await dataLayer.notes.deleteNoteFile(ownedPath).catch(() => {});
     throw err;
   }
 
@@ -1203,12 +1219,12 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
   try {
     assertUserOwnedNoteStoragePath(String(storagePath), userId);
     ownedPath = String(storagePath);
-    const downloaded = await supabaseService.downloadNoteFile(ownedPath);
+    const downloaded = await dataLayer.notes.downloadNoteFile(ownedPath);
     buffer = downloaded.buffer;
     assertPdfSize(buffer);
   } catch (err) {
     if (ownedPath) {
-      await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
+      await dataLayer.notes.deleteNoteFile(ownedPath).catch(() => {});
     }
     res.status(400).json({
       error: err instanceof Error ? err.message : 'PDF file is invalid. Please re-upload.',
@@ -1216,7 +1232,7 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
     return;
   }
 
-  const fileUrl = await supabaseService.createSignedNoteFileUrl(ownedPath);
+  const fileUrl = await dataLayer.notes.createSignedNoteFileUrl(ownedPath);
   const extraction = await extractPdfTextDetailsFromBuffer(buffer);
   const { studyText, extractionStatus } = buildPdfStudyText(safeName, extraction);
   const noteTitle = safeName.replace(/\.pdf$/i, '') || 'Imported PDF';
@@ -1238,13 +1254,13 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
   let note;
   let attachment;
   try {
-    note = await supabaseService.createNote(userId, {
+    note = await dataLayer.notes.createNote(userId, {
       title: noteTitle,
       body: '',
       folderId,
       sourceType: 'pdf',
     });
-    attachment = await supabaseService.addNoteAttachment(note.id, {
+    attachment = await dataLayer.notes.addNoteAttachment(note.id, {
       type: 'pdf',
       fileUrl,
       fileName: safeName,
@@ -1252,7 +1268,7 @@ router.post('/finalize-pdf', uploadBurstRateLimit, asyncHandler(async (req: Requ
       metadata: attachmentMeta,
     });
   } catch (err) {
-    await supabaseService.deleteNoteFile(ownedPath).catch(() => {});
+    await dataLayer.notes.deleteNoteFile(ownedPath).catch(() => {});
     throw err;
   }
 
@@ -1314,7 +1330,7 @@ router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: R
     validated = await validateNoteImageUploads(userId, storagePaths, fileNames);
   } catch (err) {
     for (const path of storagePaths) {
-      await supabaseService.deleteNoteFile(String(path)).catch(() => {});
+      await dataLayer.notes.deleteNoteFile(String(path)).catch(() => {});
     }
     res.status(400).json({
       error: err instanceof Error ? err.message : 'Image file is invalid. Please re-upload.',
@@ -1328,7 +1344,7 @@ router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: R
   let note;
   let attachments;
   try {
-    note = await supabaseService.createNote(userId, {
+    note = await dataLayer.notes.createNote(userId, {
       title: noteTitle,
       body: '',
       folderId,
@@ -1337,14 +1353,14 @@ router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: R
     attachments = await createPhotoNoteAttachments(note.id, validated, 0);
   } catch (err) {
     for (const image of validated) {
-      await supabaseService.deleteNoteFile(image.storagePath).catch(() => {});
+      await dataLayer.notes.deleteNoteFile(image.storagePath).catch(() => {});
     }
     throw err;
   }
 
   const queued = await queuePhotoNoteOcr(note.id, userId, attachments);
   const latest =
-    queued > 0 ? await supabaseService.getNoteAttachments(note.id) : attachments;
+    queued > 0 ? await dataLayer.notes.getNoteAttachments(note.id) : attachments;
 
   logger.info('Photo note finalized', {
     userId,
@@ -1394,7 +1410,7 @@ router.post('/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Req
   let note;
   let attachments;
   try {
-    note = await supabaseService.createNote(userId, {
+    note = await dataLayer.notes.createNote(userId, {
       title: noteTitle,
       body: '',
       folderId,
@@ -1403,14 +1419,14 @@ router.post('/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Req
     attachments = await createPhotoNoteAttachments(note.id, validated, 0);
   } catch (err) {
     for (const image of validated) {
-      await supabaseService.deleteNoteFile(image.storagePath).catch(() => {});
+      await dataLayer.notes.deleteNoteFile(image.storagePath).catch(() => {});
     }
     throw err;
   }
 
   const queued = await queuePhotoNoteOcr(note.id, userId, attachments);
   const latest =
-    queued > 0 ? await supabaseService.getNoteAttachments(note.id) : attachments;
+    queued > 0 ? await dataLayer.notes.getNoteAttachments(note.id) : attachments;
 
   logger.info('Photo note uploaded via API', {
     userId,
@@ -1485,7 +1501,7 @@ router.post('/prepare-lecture-audio-upload', uploadBurstRateLimit, asyncHandler(
 
   if (noteId) {
     try {
-      const canEdit = await supabaseService.canEditNote(userId, noteId);
+      const canEdit = await dataLayer.notes.canEditNote(userId, noteId);
       if (!canEdit) {
         res.status(403).json({
           success: false,
@@ -1547,7 +1563,7 @@ router.post('/prepare-lecture-audio-upload', uploadBurstRateLimit, asyncHandler(
   const storagePath = buildNoteStoragePath(userId, safeName);
 
   try {
-    const signed = await supabaseService.createSignedNoteFileUploadUrl(storagePath);
+    const signed = await dataLayer.notes.createSignedNoteFileUploadUrl(storagePath);
     logger.info('prepare-lecture-audio-upload minted', {
       requestId,
       userId,
@@ -1596,7 +1612,7 @@ router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (r
 
   if (noteId) {
     try {
-      const canEdit = await supabaseService.canEditNote(userId, noteId);
+      const canEdit = await dataLayer.notes.canEditNote(userId, noteId);
       if (!canEdit) {
         res.status(403).json({
           success: false,
@@ -1667,7 +1683,7 @@ router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (r
   const storagePath = buildNoteStoragePath(userId, safeName);
 
   try {
-    await supabaseService.uploadNoteFile({
+    await dataLayer.notes.uploadNoteFile({
       storagePath,
       buffer,
       contentType: normalizedMime,
@@ -1889,7 +1905,7 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   // Authorize edit before calling Whisper so collaborators without write access
   // (and failed ACL checks) do not burn AI quota.
   if (noteId && !voiceAsk) {
-    const canEdit = await supabaseService.canEditNote(userId, noteId);
+    const canEdit = await dataLayer.notes.canEditNote(userId, noteId);
     if (!canEdit) {
       res.status(403).json({
         success: false,
@@ -1912,7 +1928,7 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   const result = await runNoteAiSync(async () => {
     if (hasStoragePath) {
       assertUserOwnedNoteStoragePath(String(storagePath), userId);
-      const downloaded = await supabaseService.downloadNoteFile(String(storagePath));
+      const downloaded = await dataLayer.notes.downloadNoteFile(String(storagePath));
       return transcribeAudioBuffer(
         downloaded.buffer,
         mimeType || downloaded.contentType || 'audio/webm',
@@ -1923,7 +1939,7 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   });
 
   const { logAIInference } = await import('../services/aiInferenceLog');
-  await logAIInference(supabaseService.getClient(), {
+  await logAIInference(dataLayer.getClient(), {
     userId,
     feature: voiceAsk ? 'voice-ask' : 'transcribe-audio',
     provider: result.provider,
@@ -1937,11 +1953,11 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
 
   // Persist transcript with CAS-safe retries. Always return the Whisper text so the
   // client can still show it if note write races with autosave.
-  let updatedNote: Awaited<ReturnType<typeof supabaseService.updateNote>> | undefined;
+  let updatedNote: Awaited<ReturnType<typeof dataLayer.notes.updateNote>> | undefined;
   let attachmentFileUrl: string | undefined;
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
-      const note = await supabaseService.getNote(noteId, userId);
+      const note = await dataLayer.notes.getNote(noteId, userId);
       const preferredBody =
         attempt === 0 && typeof currentBody === 'string' ? currentBody : (note.body || '');
       const alreadyHasTranscript =
@@ -1950,7 +1966,7 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
         ? preferredBody
         : [preferredBody, result.transcript].filter(Boolean).join('\n\n');
       try {
-        updatedNote = await supabaseService.updateNote(
+        updatedNote = await dataLayer.notes.updateNote(
           userId,
           noteId,
           { body: mergedBody },
@@ -1964,13 +1980,13 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
 
     if (hasStoragePath) {
       try {
-        attachmentFileUrl = await supabaseService.createSignedNoteFileUrl(String(storagePath));
+        attachmentFileUrl = await dataLayer.notes.createSignedNoteFileUrl(String(storagePath));
       } catch {
         attachmentFileUrl = undefined;
       }
     }
 
-    await supabaseService.addNoteAttachment(noteId, {
+    await dataLayer.notes.addNoteAttachment(noteId, {
       type: 'audio',
       fileName: fileName || 'lecture-recording.webm',
       fileUrl: attachmentFileUrl,
@@ -2034,7 +2050,7 @@ router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Requ
     transcriptStartedAt: new Date().toISOString(),
   };
 
-  const note = await supabaseService.createNote(userId, {
+  const note = await dataLayer.notes.createNote(userId, {
     title: noteTitle,
     body: '',
     folderId,
@@ -2042,7 +2058,7 @@ router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Requ
     youtubeUrl: canonicalUrl,
     youtubeVideoId: videoId,
   });
-  const attachment = await supabaseService.addNoteAttachment(note.id, {
+  const attachment = await dataLayer.notes.addNoteAttachment(note.id, {
     type: 'youtube',
     fileUrl: canonicalUrl,
     fileName: noteTitle,
@@ -2054,7 +2070,7 @@ router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Requ
     { noteId: note.id, attachmentId: attachment.id, videoId, meta: attachmentMeta },
     userId,
     () =>
-      runYoutubeTranscriptJob(supabaseService, {
+      runYoutubeTranscriptJob(legacyService(), {
         noteId: note.id,
         attachmentId: attachment.id,
         videoId,
@@ -2075,7 +2091,7 @@ router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Requ
   }
 
   const jobResult = outcome.result;
-  const attachments = await supabaseService.getNoteAttachments(note.id);
+  const attachments = await dataLayer.notes.getNoteAttachments(note.id);
   const updatedAttachment = attachments.find((a) => a.id === attachment.id) || attachment;
   res.json({
     success: true,
@@ -2109,7 +2125,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const preview = await supabaseService.previewNoteShareLink(String(req.params.token || ''), userId);
+      const preview = await dataLayer.notes.previewNoteShareLink(String(req.params.token || ''), userId);
       res.json({ success: true, data: preview });
     } catch (error: unknown) {
       const code = (error as { code?: string })?.code;
@@ -2140,7 +2156,7 @@ router.post(
     if (!userId) return;
     try {
       const result = await req.runIdempotent!(async () => {
-        const accepted = await supabaseService.acceptNoteShareLink(
+        const accepted = await dataLayer.notes.acceptNoteShareLink(
           String(req.params.token || ''),
           userId
         );
@@ -2215,14 +2231,14 @@ router.use('/:noteId', (req, res, next) => {
 router.patch('/:noteId/attachments/reorder', requireNoteEdit('noteId'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.getNote(req.params.noteId, userId);
+  await dataLayer.notes.getNote(req.params.noteId, userId);
   const { attachmentIds } = req.body;
   if (!Array.isArray(attachmentIds) || attachmentIds.length === 0) {
     res.status(400).json({ error: 'attachmentIds array is required.' });
     return;
   }
 
-  const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
+  const attachments = await dataLayer.notes.getNoteAttachments(req.params.noteId);
   const imageAttachments = attachments.filter((a) => a.type === 'image');
   if (attachmentIds.length !== imageAttachments.length) {
     res.status(400).json({ error: 'attachmentIds must include every image attachment exactly once.' });
@@ -2241,7 +2257,7 @@ router.patch('/:noteId/attachments/reorder', requireNoteEdit('noteId'), asyncHan
   for (let i = 0; i < attachmentIds.length; i++) {
     const existing = imageAttachments.find((a) => a.id === attachmentIds[i]);
     const metadata = { ...(existing?.metadata || {}), sortOrder: i };
-    const attachment = await supabaseService.updateNoteAttachment(attachmentIds[i], { metadata });
+    const attachment = await dataLayer.notes.updateNoteAttachment(attachmentIds[i], { metadata });
     updated.push(attachment);
   }
 
@@ -2257,7 +2273,7 @@ router.patch('/:noteId/attachments/reorder', requireNoteEdit('noteId'), asyncHan
 router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
   if (note.sourceType !== 'photos') {
     res.status(400).json({ error: 'Note is not a photo note.' });
     return;
@@ -2285,7 +2301,7 @@ router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), up
     validated = await validateNoteImageUploads(userId, storagePaths, fileNames);
   } catch (err) {
     for (const path of storagePaths) {
-      await supabaseService.deleteNoteFile(String(path)).catch(() => {});
+      await dataLayer.notes.deleteNoteFile(String(path)).catch(() => {});
     }
     res.status(400).json({
       error: err instanceof Error ? err.message : 'Image file is invalid. Please re-upload.',
@@ -2293,7 +2309,7 @@ router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), up
     return;
   }
 
-  const existing = await supabaseService.getNoteAttachments(req.params.noteId);
+  const existing = await dataLayer.notes.getNoteAttachments(req.params.noteId);
   const imageAttachments = existing.filter((a) => a.type === 'image');
   const startOrder =
     imageAttachments.reduce(
@@ -2305,7 +2321,7 @@ router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), up
   const attachments = await createPhotoNoteAttachments(req.params.noteId, validated, startOrder);
   const queued = await queuePhotoNoteOcr(req.params.noteId, userId, attachments);
   const latest =
-    queued > 0 ? await supabaseService.getNoteAttachments(req.params.noteId) : attachments;
+    queued > 0 ? await dataLayer.notes.getNoteAttachments(req.params.noteId) : attachments;
   res.json({
     success: true,
     data: {
@@ -2318,7 +2334,7 @@ router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), up
 router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
   if (note.sourceType !== 'photos') {
     res.status(400).json({ error: 'Note is not a photo note.' });
     return;
@@ -2346,7 +2362,7 @@ router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), upl
   }
 
   try {
-    const existing = await supabaseService.getNoteAttachments(req.params.noteId);
+    const existing = await dataLayer.notes.getNoteAttachments(req.params.noteId);
     const imageAttachments = existing.filter((a) => a.type === 'image');
     const startOrder =
       imageAttachments.reduce(
@@ -2358,7 +2374,7 @@ router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), upl
     const attachments = await createPhotoNoteAttachments(req.params.noteId, validated, startOrder);
     const queued = await queuePhotoNoteOcr(req.params.noteId, userId, attachments);
     const latest =
-      queued > 0 ? await supabaseService.getNoteAttachments(req.params.noteId) : attachments;
+      queued > 0 ? await dataLayer.notes.getNoteAttachments(req.params.noteId) : attachments;
     res.json({
       success: true,
       data: {
@@ -2368,7 +2384,7 @@ router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), upl
     });
   } catch (err) {
     for (const image of validated) {
-      await supabaseService.deleteNoteFile(image.storagePath).catch(() => {});
+      await dataLayer.notes.deleteNoteFile(image.storagePath).catch(() => {});
     }
     throw err;
   }
@@ -2377,13 +2393,13 @@ router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), upl
 router.get('/:noteId/attachments/:attachmentId/url', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.getNote(req.params.noteId, userId);
-  const attachment = await supabaseService.getNoteAttachment(req.params.noteId, req.params.attachmentId);
+  await dataLayer.notes.getNote(req.params.noteId, userId);
+  const attachment = await dataLayer.notes.getNoteAttachment(req.params.noteId, req.params.attachmentId);
   if (!attachment) {
     res.status(404).json({ error: 'Attachment not found.' });
     return;
   }
-  const storagePath = supabaseService.resolveNoteAttachmentStoragePath(attachment);
+  const storagePath = dataLayer.notes.resolveNoteAttachmentStoragePath(attachment);
   if (!storagePath) {
     // Name the shape, because the client now SHOWS this sentence. An audio row
     // transcribed straight from base64 is stored with `metadata.storagePath:
@@ -2408,7 +2424,7 @@ router.get('/:noteId/attachments/:attachmentId/url', asyncHandler(async (req: Re
   const variant = req.query.variant === 'thumb' ? 'thumb' : 'original';
   let url: string;
   try {
-    url = await supabaseService.createSignedNoteFileUrl(storagePath, 60 * 60 * 24, variant);
+    url = await dataLayer.notes.createSignedNoteFileUrl(storagePath, 60 * 60 * 24, variant);
   } catch (error) {
     // Storage refusing to sign means the object is gone (or the bucket is not
     // the one the row claims). That is a 404 about the FILE, not a 500 about
@@ -2447,8 +2463,8 @@ router.get('/:noteId/attachments/:attachmentId/pages', asyncHandler(async (req: 
   if (!userId) return;
   // Same ACL as every other attachment read: owner, collaborator, or a member
   // of the group the note is shared into. Throws when the user cannot read it.
-  await supabaseService.getNote(req.params.noteId, userId);
-  const attachment = await supabaseService.getNoteAttachment(req.params.noteId, req.params.attachmentId);
+  await dataLayer.notes.getNote(req.params.noteId, userId);
+  const attachment = await dataLayer.notes.getNoteAttachment(req.params.noteId, req.params.attachmentId);
   if (!attachment) {
     res.status(404).json({ error: 'Attachment not found.' });
     return;
@@ -2458,14 +2474,14 @@ router.get('/:noteId/attachments/:attachmentId/pages', asyncHandler(async (req: 
   // already have rows, so on a document's first open it must run AFTER the
   // backfill or the first walk-through would come back with no pictures and
   // only the second would have them.
-  let result = await ensurePages(supabaseService, {
+  let result = await ensurePages(legacyService(), {
     noteId: req.params.noteId,
     attachmentId: req.params.attachmentId,
   });
 
   const wantsImages = req.query.images === '1' || req.query.images === 'true';
   if (wantsImages && result.available && result.pages.length > 0) {
-    const render = await ensurePageImages(supabaseService, {
+    const render = await ensurePageImages(legacyService(), {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
     }).catch((err) => {
@@ -2477,14 +2493,14 @@ router.get('/:noteId/attachments/:attachmentId/pages', asyncHandler(async (req: 
       return { available: true, rendered: 0 };
     });
     if (render.rendered > 0) {
-      const refreshed = await getPages(supabaseService, req.params.attachmentId);
+      const refreshed = await getPages(legacyService(), req.params.attachmentId);
       if (refreshed.available && refreshed.pages.length > 0) {
         result = { ...result, pages: refreshed.pages };
       }
     }
   }
   const signed = result.pages.length
-    ? await signPageImages(supabaseService, result.pages)
+    ? await signPageImages(legacyService(), result.pages)
     : new Map<number, string>();
 
   res.json({
@@ -2546,14 +2562,14 @@ type NarrationRequest = Request & {
 export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const attachment = await supabaseService.getNoteAttachment(req.params.noteId, req.params.attachmentId);
+  const attachment = await dataLayer.notes.getNoteAttachment(req.params.noteId, req.params.attachmentId);
   if (!attachment) {
     res.status(404).json({ error: 'Attachment not found.' });
     return;
   }
 
   const regenerate = req.body?.regenerate === true;
-  const target = await resolveNarrationTarget(supabaseService, {
+  const target = await resolveNarrationTarget(legacyService(), {
     noteId: req.params.noteId,
     attachmentId: req.params.attachmentId,
     userId,
@@ -2585,7 +2601,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
   if (target.reuse) {
     // Rule 2: charge once. A retry gets the script (or the run in flight) that
     // already exists, and no credit is reserved on the way.
-    const bundle = await getNarrationBundle(supabaseService, {
+    const bundle = await getNarrationBundle(legacyService(), {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
       userId,
@@ -2599,7 +2615,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
 
   // Take the row before the credit middleware runs. Whoever wins this write
   // owns the run; everyone else is reuse, at cost 0.
-  const claim = await claimNarrationRun(supabaseService, {
+  const claim = await claimNarrationRun(legacyService(), {
     attachmentId: req.params.attachmentId,
     userId,
     previous: target.existing,
@@ -2627,7 +2643,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
     // Another request for this same document claimed the row between our read
     // and our write. That run is the answer to this one, and this one pays
     // nothing — the same contract as any other repeat request.
-    const bundle = await getNarrationBundle(supabaseService, {
+    const bundle = await getNarrationBundle(legacyService(), {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
       userId,
@@ -2649,7 +2665,7 @@ export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Res
   // locked out of their own document until the stale window passes.
   res.on('finish', () => {
     if (narrationReq.narrationClaimConsumed) return;
-    void releaseNarrationClaim(supabaseService, {
+    void releaseNarrationClaim(legacyService(), {
       attachmentId: req.params.attachmentId,
       userId,
       previous: claim.previous,
@@ -2690,7 +2706,7 @@ router.post(
     // recorded as a failure with a reason (and refunded by the job hook).
     (req as NarrationRequest).narrationClaimConsumed = true;
 
-    const note = await supabaseService.getNote(req.params.noteId, userId);
+    const note = await dataLayer.notes.getNote(req.params.noteId, userId);
     const version =
       (req as NarrationRequest).narrationClaim?.version ??
       (target.existing ? target.existing.version + 1 : 1);
@@ -2698,7 +2714,7 @@ router.post(
 
     // The claim already wrote `queued`; this rewrites it with what the charge
     // actually cost, so a client polling GET sees the real price.
-    await markNarrationStatus(supabaseService, {
+    await markNarrationStatus(legacyService(), {
       attachmentId: req.params.attachmentId,
       userId,
       version,
@@ -2721,7 +2737,7 @@ router.post(
       async () => {
         try {
           await buildNarrationScript(
-            supabaseService,
+            legacyService(),
             {
               noteId: req.params.noteId,
               attachmentId: req.params.attachmentId,
@@ -2732,7 +2748,7 @@ router.post(
             }
           );
         } catch (err) {
-          await markNarrationFailed(supabaseService, {
+          await markNarrationFailed(legacyService(), {
             attachmentId: req.params.attachmentId,
             userId,
             version,
@@ -2740,7 +2756,7 @@ router.post(
           });
           throw err;
         }
-        const bundle = await getNarrationBundle(supabaseService, {
+        const bundle = await getNarrationBundle(legacyService(), {
           noteId: req.params.noteId,
           attachmentId: req.params.attachmentId,
           userId,
@@ -2753,7 +2769,7 @@ router.post(
     );
 
     if (outcome.mode === 'async') {
-      await markNarrationStatus(supabaseService, {
+      await markNarrationStatus(legacyService(), {
         attachmentId: req.params.attachmentId,
         userId,
         version,
@@ -2785,15 +2801,15 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    await supabaseService.getNote(req.params.noteId, userId);
-    const attachment = await supabaseService.getNoteAttachment(req.params.noteId, req.params.attachmentId);
+    await dataLayer.notes.getNote(req.params.noteId, userId);
+    const attachment = await dataLayer.notes.getNoteAttachment(req.params.noteId, req.params.attachmentId);
     if (!attachment) {
       res.status(404).json({ error: 'Attachment not found.' });
       return;
     }
 
     const includeImages = req.query.images !== '0' && req.query.images !== 'false';
-    const result = await getNarrationBundle(supabaseService, {
+    const result = await getNarrationBundle(legacyService(), {
       noteId: req.params.noteId,
       attachmentId: req.params.attachmentId,
       userId,
@@ -2840,13 +2856,13 @@ router.get(
 router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.getNote(req.params.noteId, userId);
-  const attachment = await supabaseService.getNoteAttachment(req.params.noteId, req.params.attachmentId);
+  await dataLayer.notes.getNote(req.params.noteId, userId);
+  const attachment = await dataLayer.notes.getNoteAttachment(req.params.noteId, req.params.attachmentId);
   if (!attachment) {
     res.status(404).json({ error: 'Attachment not found.' });
     return;
   }
-  const storagePath = supabaseService.resolveNoteAttachmentStoragePath(attachment);
+  const storagePath = dataLayer.notes.resolveNoteAttachmentStoragePath(attachment);
   if (!storagePath) {
     // Name the shape, because the client now SHOWS this sentence. An audio row
     // transcribed straight from base64 is stored with `metadata.storagePath:
@@ -2868,7 +2884,7 @@ router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req
     });
     return;
   }
-  const { buffer, contentType } = await supabaseService.downloadNoteFile(storagePath);
+  const { buffer, contentType } = await dataLayer.notes.downloadNoteFile(storagePath);
   res.setHeader('Content-Type', contentType);
   res.setHeader('Cache-Control', 'private, max-age=3600');
   res.send(buffer);
@@ -2877,13 +2893,13 @@ router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req
 router.post('/:noteId/regenerate-preview', requireNoteEdit('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
   if (note.sourceType !== 'presentation') {
     res.status(400).json({ error: 'Note is not a presentation.' });
     return;
   }
 
-  const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
+  const attachments = await dataLayer.notes.getNoteAttachments(req.params.noteId);
   const attachment = attachments.find((a) => a.type === 'presentation');
   if (!attachment) {
     res.json({
@@ -2927,7 +2943,7 @@ router.post('/:noteId/regenerate-preview', requireNoteEdit('noteId'), validateNo
     previewError: undefined,
     previewFailedAt: undefined,
   };
-  const updated = await supabaseService.updateNoteAttachment(attachment.id, {
+  const updated = await dataLayer.notes.updateNoteAttachment(attachment.id, {
     metadata: processingMeta,
   });
 
@@ -2948,13 +2964,13 @@ router.post('/:noteId/regenerate-preview', requireNoteEdit('noteId'), validateNo
 router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
   if (note.sourceType !== 'presentation') {
     res.status(400).json({ error: 'Note is not a presentation.' });
     return;
   }
 
-  const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
+  const attachments = await dataLayer.notes.getNoteAttachments(req.params.noteId);
   const attachment = attachments.find((a) => a.type === 'presentation');
   if (!attachment) {
     res.json({
@@ -3020,7 +3036,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     res.status(400).json({ success: false, error: TOPIC_FILTER_INVALID_MESSAGE });
     return;
   }
-  const notes = await supabaseService.getNotes(userId, {
+  const notes = await dataLayer.notes.getNotes(userId, {
     folderId: folderId as string | undefined,
     groupId: groupId as string | undefined,
     archived: archivedFilter,
@@ -3034,11 +3050,11 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
 router.get('/:noteId', validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
-  const attachments = await supabaseService.getNoteAttachments(req.params.noteId);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
+  const attachments = await dataLayer.notes.getNoteAttachments(req.params.noteId);
   // learning_events: resource_opened — the single-note fetch is the "opened
   // a note" signal (list/search reads are not). Never throws.
-  await recordLearningEvent(supabaseService, {
+  await recordLearningEvent(legacyService(), {
     userId,
     eventType: 'resource_opened',
     targetType: 'note',
@@ -3058,7 +3074,7 @@ router.post('/', validateNoteCreate, handleValidationErrors, asyncHandler(async 
     // createNote emits learning_events note_created; the surface header only exists here.
     // courseId/topicId ride on the body — createNote resolves the topic against
     // the course before the insert, so a wrong-course topic lands here as a 400.
-    const note = await supabaseService.createNote(userId, req.body, { surface: surfaceFromRequest(req) });
+    const note = await dataLayer.notes.createNote(userId, req.body, { surface: surfaceFromRequest(req) });
     res.json({ success: true, data: note });
   } catch (err) {
     if (respondPublicError(err, res)) return;
@@ -3071,7 +3087,7 @@ router.patch('/:noteId', requireNoteEdit('noteId'), validateNoteId, validateNote
   if (!userId) return;
   try {
     const { expectedVersion, expectedUpdatedAt, ...updates } = req.body || {};
-    const note = await supabaseService.updateNote(userId, req.params.noteId, updates, {
+    const note = await dataLayer.notes.updateNote(userId, req.params.noteId, updates, {
       expectedVersion:
         expectedVersion != null && Number.isFinite(Number(expectedVersion))
           ? Number(expectedVersion)
@@ -3139,8 +3155,8 @@ router.post('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, handle
   try {
     // Probe the COLUMN before storing bytes: on a database without the
     // migration this answers 503 without ever leaving an orphan object.
-    await supabaseService.assertCoverColumn?.('note');
-    uploaded = await supabaseService.uploadCoverImage({
+    await dataLayer.uploads.assertCoverColumn?.('note');
+    uploaded = await dataLayer.uploads.uploadCoverImage({
       userId,
       kind: 'note',
       id: noteId,
@@ -3148,8 +3164,8 @@ router.post('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, handle
       base64Data,
       contentType: normalizedType,
     });
-    const { previousPath } = await supabaseService.setNoteCoverPath(noteId, userId, uploaded.path);
-    await supabaseService.deleteCoverObject(previousPath);
+    const { previousPath } = await dataLayer.uploads.setNoteCoverPath(noteId, userId, uploaded.path);
+    await dataLayer.uploads.deleteCoverObject(previousPath);
     await cacheService.delete(`note:${noteId}`);
     return res.status(201).json({
       success: true,
@@ -3157,7 +3173,7 @@ router.post('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, handle
     });
   } catch (error: any) {
     // Never leave the stored object behind when the column write failed.
-    if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
+    if (uploaded) await dataLayer.uploads.deleteCoverObject(uploaded.path);
     if (error instanceof CoverColumnMissingError) {
       logger.error('[cover] set cover refused: column missing', {
         kind: 'note', noteId, userId, migration: COVER_IMAGE_MIGRATION,
@@ -3181,8 +3197,8 @@ router.delete('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, hand
 
   const { noteId } = req.params;
   try {
-    const { previousPath } = await supabaseService.setNoteCoverPath(noteId, userId, null);
-    await supabaseService.deleteCoverObject(previousPath);
+    const { previousPath } = await dataLayer.uploads.setNoteCoverPath(noteId, userId, null);
+    await dataLayer.uploads.deleteCoverObject(previousPath);
     await cacheService.delete(`note:${noteId}`);
     return res.json({ success: true, data: { coverPath: null } });
   } catch (error: any) {
@@ -3200,15 +3216,15 @@ router.delete('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, hand
 router.delete('/:noteId', requireNoteOwner('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.deleteNote(userId, req.params.noteId);
+  await dataLayer.notes.deleteNote(userId, req.params.noteId);
   res.json({ success: true });
 }));
 
 router.post('/:noteId/attachments', requireNoteEdit('noteId'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.getNote(req.params.noteId, userId);
-  const attachment = await supabaseService.addNoteAttachment(req.params.noteId, req.body);
+  await dataLayer.notes.getNote(req.params.noteId, userId);
+  const attachment = await dataLayer.notes.addNoteAttachment(req.params.noteId, req.body);
   res.json({ success: true, data: attachment });
 }));
 
@@ -3223,7 +3239,7 @@ router.post(
     const userId = requireAuthUserId(req as any, res);
     if (!userId) return;
     const result = await req.runIdempotent!(async () => {
-      const note = await supabaseService.copyNoteForUser(req.params.noteId, userId);
+      const note = await dataLayer.notes.copyNoteForUser(req.params.noteId, userId);
       return { note: note as unknown as Record<string, unknown> };
     });
     res.status(201).json({ success: true, data: result.note });
@@ -3264,7 +3280,7 @@ router.post(
 router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitWithCost((req) => getSmartNotesCreditCost(req.body?.depth), { label: 'Deep dive Smart Notes' }), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
   const sources = parseSmartNoteSources(req.body?.sources);
   const content = await resolveNoteStudyContent(note.id, note, { forSmartNotes: true, sources });
   if (!content || content.length < MIN_NOTE_STUDY_CONTENT_CHARS) {
@@ -3299,9 +3315,9 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
         guidance,
         depth,
       });
-      const latest = await supabaseService.getNote(note.id, userId);
+      const latest = await dataLayer.notes.getNote(note.id, userId);
       const nextBody = upsertSmartNotesSection(latest.body || '', result.summary);
-      const updated = await supabaseService.updateNote(
+      const updated = await dataLayer.notes.updateNote(
         userId,
         note.id,
         { summary: result.summary, body: nextBody },
@@ -3323,14 +3339,14 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
 router.get('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const quiz = await supabaseService.getNoteQuiz(userId, req.params.noteId);
+  const quiz = await dataLayer.notes.getNoteQuiz(userId, req.params.noteId);
   res.json({ success: true, data: quiz });
 }));
 
 router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitForFeature('generate_questions'), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
   const content = (await resolveNoteStudyContent(note.id, note)).trim();
   if (content.length < 50) {
     res.status(400).json({ error: 'Note needs at least 50 characters to generate a quiz.' });
@@ -3342,8 +3358,8 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
   // regenerate. Check BEFORE generating — the old order generated first and
   // let upsertNoteQuiz refuse afterwards, burning an AI generation (and the
   // middleware-reserved credits) for questions that were thrown away.
-  const existingQuiz = await supabaseService.getNoteQuiz(userId, note.id);
-  if (existingQuiz && supabaseService.isNoteQuizProtected(existingQuiz)) {
+  const existingQuiz = await dataLayer.notes.getNoteQuiz(userId, note.id);
+  if (existingQuiz && dataLayer.notes.isNoteQuizProtected(existingQuiz)) {
     // No AI work happened — give the reserved feature + global credits back.
     await refundFeatureAiCredit(userId, 'generate_questions');
     await applyGlobalUsageHeaders(res, userId);
@@ -3382,7 +3398,7 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
         topic: q.topic,
       }));
       // learning_events: question_generated with count + note. Never throws.
-      await recordLearningEvent(supabaseService, {
+      await recordLearningEvent(legacyService(), {
         userId,
         eventType: 'question_generated',
         targetType: 'note',
@@ -3392,7 +3408,7 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
         count: questions.length,
         surface,
       });
-      return supabaseService.upsertNoteQuiz(userId, note.id, {
+      return dataLayer.notes.upsertNoteQuiz(userId, note.id, {
         studyGoal: studyGoal || 'retention',
         questions,
       });
@@ -3467,14 +3483,14 @@ router.post(
 
     // Same ACL as every other attachment read: throws when the user cannot
     // read the note, 404 when the attachment belongs to a different one.
-    const note = await supabaseService.getNote(req.params.noteId, userId);
-    const attachment = await supabaseService.getNoteAttachment(req.params.noteId, attachmentId);
+    const note = await dataLayer.notes.getNote(req.params.noteId, userId);
+    const attachment = await dataLayer.notes.getNoteAttachment(req.params.noteId, attachmentId);
     if (!attachment) {
       res.status(404).json({ error: 'Attachment not found.' });
       return;
     }
 
-    const page = await getPageText(supabaseService, {
+    const page = await getPageText(legacyService(), {
       noteId: req.params.noteId,
       attachmentId,
       pageIndex,
@@ -3515,14 +3531,14 @@ router.post(
     });
 
     const { logAIInference } = await import('../services/aiInferenceLog');
-    await logAIInference(supabaseService.getClient(), {
+    await logAIInference(dataLayer.getClient(), {
       userId,
       feature: 'generate-questions-page',
       provider: generated.provider,
       requestId: (req as { requestId?: string }).requestId,
     });
 
-    await recordLearningEvent(supabaseService, {
+    await recordLearningEvent(legacyService(), {
       userId,
       eventType: 'question_generated',
       targetType: 'note',
@@ -3550,7 +3566,7 @@ router.patch('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) =
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const { answers, completed } = req.body || {};
-  const session = await supabaseService.updateNoteQuiz(userId, req.params.noteId, {
+  const session = await dataLayer.notes.updateNoteQuiz(userId, req.params.noteId, {
     answers: answers && typeof answers === 'object' ? answers : undefined,
     completed: typeof completed === 'boolean' ? completed : undefined,
   });
@@ -3560,8 +3576,8 @@ router.patch('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) =
 router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitForFeature('generate_flashcards'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
-  const attachments = await supabaseService.getNoteAttachments(note.id);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
+  const attachments = await dataLayer.notes.getNoteAttachments(note.id);
   const studyInput = {
     sourceType: note.sourceType,
     body: note.body,
@@ -3607,7 +3623,7 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
         difficulty,
       });
       // learning_events: card_generated with count + note. Never throws.
-      await recordLearningEvent(supabaseService, {
+      await recordLearningEvent(legacyService(), {
         userId,
         eventType: 'card_generated',
         targetType: 'note',
@@ -3638,7 +3654,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const note = await supabaseService.getNote(req.params.noteId, userId);
+    const note = await dataLayer.notes.getNote(req.params.noteId, userId);
     const videoId =
       note.youtubeVideoId ||
       parseYoutubeVideoId(typeof note.youtubeUrl === 'string' ? note.youtubeUrl : '');
@@ -3648,7 +3664,7 @@ router.post(
     }
 
     const canonicalUrl = canonicalYoutubeUrl(videoId);
-    const attachments = await supabaseService.getNoteAttachments(note.id);
+    const attachments = await dataLayer.notes.getNoteAttachments(note.id);
     let attachment = attachments.find((a) => a.type === 'youtube');
     const priorMeta = (attachment?.metadata || {}) as Record<string, unknown>;
     const attachmentMeta: Record<string, unknown> = {
@@ -3661,14 +3677,14 @@ router.post(
     };
 
     if (!attachment) {
-      attachment = await supabaseService.addNoteAttachment(note.id, {
+      attachment = await dataLayer.notes.addNoteAttachment(note.id, {
         type: 'youtube',
         fileUrl: note.youtubeUrl || canonicalUrl,
         fileName: note.title || 'YouTube video',
         metadata: attachmentMeta,
       });
     } else {
-      attachment = await supabaseService.updateNoteAttachment(attachment.id, {
+      attachment = await dataLayer.notes.updateNoteAttachment(attachment.id, {
         metadata: attachmentMeta,
       });
     }
@@ -3683,7 +3699,7 @@ router.post(
       },
       userId,
       () =>
-        runYoutubeTranscriptJob(supabaseService, {
+        runYoutubeTranscriptJob(legacyService(), {
           noteId: note.id,
           attachmentId: attachment!.id,
           videoId,
@@ -3704,7 +3720,7 @@ router.post(
     }
 
     const jobResult = outcome.result;
-    const refreshed = await supabaseService.getNoteAttachments(note.id);
+    const refreshed = await dataLayer.notes.getNoteAttachments(note.id);
     const updatedAttachment = refreshed.find((a) => a.id === attachment!.id) || attachment;
     res.json({
       success: true,
@@ -3734,13 +3750,13 @@ router.post(
 router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const note = await supabaseService.getNote(req.params.noteId, userId);
+  const note = await dataLayer.notes.getNote(req.params.noteId, userId);
   if (note.sourceType !== 'presentation' && note.sourceType !== 'pdf') {
     res.status(400).json({ error: 'Text re-extraction is only available for PDF and presentation notes.' });
     return;
   }
 
-  const attachments = await supabaseService.getNoteAttachments(note.id);
+  const attachments = await dataLayer.notes.getNoteAttachments(note.id);
   const attachment =
     note.sourceType === 'pdf'
       ? attachments.find((a) => a.type === 'pdf')
@@ -3764,13 +3780,13 @@ router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId
     return;
   }
 
-  const { buffer } = await supabaseService.downloadNoteFile(storagePath);
+  const { buffer } = await dataLayer.notes.downloadNoteFile(storagePath);
   const prevMeta = (attachment.metadata || {}) as Record<string, unknown>;
 
   if (note.sourceType === 'pdf') {
     const extraction = await extractPdfTextDetailsFromBuffer(buffer);
     const { studyText, extractionStatus } = buildPdfStudyText(fileName, extraction);
-    const updatedAttachment = await supabaseService.updateNoteAttachment(attachment.id, {
+    const updatedAttachment = await dataLayer.notes.updateNoteAttachment(attachment.id, {
       extractedText: studyText,
       metadata: {
         ...prevMeta,
@@ -3803,7 +3819,7 @@ router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId
     presentationExtract.text
   );
 
-  const updatedAttachment = await supabaseService.updateNoteAttachment(attachment.id, {
+  const updatedAttachment = await dataLayer.notes.updateNoteAttachment(attachment.id, {
     extractedText: studyText,
     metadata: {
       ...prevMeta,
@@ -3833,7 +3849,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const note = await supabaseService.getNote(req.params.noteId, userId);
+    const note = await dataLayer.notes.getNote(req.params.noteId, userId);
     if (
       note.sourceType !== 'pdf' &&
       note.sourceType !== 'presentation' &&
@@ -3845,7 +3861,7 @@ router.post(
       return;
     }
 
-    const attachments = await supabaseService.getNoteAttachments(note.id);
+    const attachments = await dataLayer.notes.getNoteAttachments(note.id);
 
     // Photo notes are a batch of images rather than one document.
     if (note.sourceType === 'photos') {
@@ -3876,7 +3892,7 @@ router.post(
         skipAlreadyRead: false,
       });
 
-      const refreshed = await supabaseService.getNoteAttachments(note.id);
+      const refreshed = await dataLayer.notes.getNoteAttachments(note.id);
       const status = aggregatePhotoOcrStatus(refreshed.filter((a) => a.type === 'image'));
       res.status(status === 'ocr_processing' ? 202 : 200).json({
         success: true,
@@ -3974,7 +3990,7 @@ router.post(
       ocrCreditCost: NOTE_OCR_CREDIT_COST,
     };
 
-    const updated = await supabaseService.updateNoteAttachment(attachment.id, {
+    const updated = await dataLayer.notes.updateNoteAttachment(attachment.id, {
       extractedText: ocrPlaceholder(fileName),
       metadata: processingMeta,
     });
@@ -4006,7 +4022,7 @@ router.post(
       return;
     }
 
-    const refreshed = await supabaseService.getNoteAttachments(note.id);
+    const refreshed = await dataLayer.notes.getNoteAttachments(note.id);
     const finalAttachment = refreshed.find((a) => a.id === attachment.id) || updated;
     const finalStatus = resolveOcrStatus((finalAttachment.metadata || {}) as Record<string, unknown>);
     res.json({
@@ -4029,7 +4045,7 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const note = await supabaseService.getNote(req.params.noteId, userId);
+    const note = await dataLayer.notes.getNote(req.params.noteId, userId);
     if (
       note.sourceType !== 'pdf' &&
       note.sourceType !== 'presentation' &&
@@ -4042,7 +4058,7 @@ router.get(
     }
 
     if (note.sourceType === 'photos') {
-      const images = (await supabaseService.getNoteAttachments(note.id)).filter(
+      const images = (await dataLayer.notes.getNoteAttachments(note.id)).filter(
         (a) => a.type === 'image'
       );
       const aggregated = aggregatePhotoOcrStatus(images);
@@ -4065,7 +4081,7 @@ router.get(
       return;
     }
 
-    const attachments = await supabaseService.getNoteAttachments(note.id);
+    const attachments = await dataLayer.notes.getNoteAttachments(note.id);
     const attachment =
       note.sourceType === 'pdf'
         ? attachments.find((a) => a.type === 'pdf')
@@ -4126,8 +4142,8 @@ router.get(
 router.get('/:noteId/collaborators', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.getNote(req.params.noteId, userId);
-  const collaborators = await supabaseService.getNoteCollaborators(req.params.noteId);
+  await dataLayer.notes.getNote(req.params.noteId, userId);
+  const collaborators = await dataLayer.notes.getNoteCollaborators(req.params.noteId);
   res.json({ success: true, data: collaborators });
 }));
 
@@ -4144,7 +4160,7 @@ router.post(
     return;
   }
   try {
-    const collab = await supabaseService.addNoteCollaborator(
+    const collab = await dataLayer.notes.addNoteCollaborator(
       req.params.noteId,
       userId,
       collaboratorUserId.trim(),
@@ -4181,7 +4197,7 @@ router.patch(
       return;
     }
     try {
-      const collab = await supabaseService.updateNoteCollaboratorRole(
+      const collab = await dataLayer.notes.updateNoteCollaboratorRole(
         req.params.noteId,
         userId,
         req.params.collaboratorUserId,
@@ -4203,7 +4219,7 @@ router.delete('/:noteId/collaborators/:collaboratorUserId', asyncHandler(async (
   // Self-leave OR owner remove
   if (req.params.collaboratorUserId === userId || req.params.collaboratorUserId === 'me') {
     try {
-      await supabaseService.leaveNoteCollaboration(req.params.noteId, userId);
+      await dataLayer.notes.leaveNoteCollaboration(req.params.noteId, userId);
       res.json({ success: true });
     } catch (error: unknown) {
       res.status(400).json({
@@ -4214,7 +4230,7 @@ router.delete('/:noteId/collaborators/:collaboratorUserId', asyncHandler(async (
     return;
   }
   try {
-    await supabaseService.removeNoteCollaborator(req.params.noteId, userId, req.params.collaboratorUserId);
+    await dataLayer.notes.removeNoteCollaborator(req.params.noteId, userId, req.params.collaboratorUserId);
     res.json({ success: true });
   } catch (error: unknown) {
     res.status(403).json({
@@ -4230,7 +4246,7 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const links = await supabaseService.listNoteShareLinks(req.params.noteId, userId);
+    const links = await dataLayer.notes.listNoteShareLinks(req.params.noteId, userId);
     res.json({ success: true, data: links });
   })
 );
@@ -4248,7 +4264,7 @@ router.post(
         ? req.body.expiresAt.trim()
         : null;
     try {
-      const link = await supabaseService.createNoteShareLink(req.params.noteId, userId, role, {
+      const link = await dataLayer.notes.createNoteShareLink(req.params.noteId, userId, role, {
         expiresAt,
       });
       res.status(201).json({ success: true, data: link });
@@ -4268,7 +4284,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      await supabaseService.revokeNoteShareLink(req.params.noteId, userId, req.params.linkId);
+      await dataLayer.notes.revokeNoteShareLink(req.params.noteId, userId, req.params.linkId);
       res.json({ success: true });
     } catch (error: unknown) {
       res.status(400).json({
@@ -4287,7 +4303,7 @@ router.post('/:noteId/share-group', requireNoteOwner('noteId'), asyncHandler(asy
     res.status(400).json({ error: 'groupId is required.' });
     return;
   }
-  const note = await supabaseService.shareNoteWithGroup(req.params.noteId, userId, groupId);
+  const note = await dataLayer.notes.shareNoteWithGroup(req.params.noteId, userId, groupId);
   res.json({ success: true, data: note });
 }));
 
@@ -4302,8 +4318,8 @@ router.post('/:noteId/share-group', requireNoteOwner('noteId'), asyncHandler(asy
 router.get('/:noteId/comments', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  await supabaseService.getNote(req.params.noteId, userId);
-  const comments = await supabaseService.getNoteComments(req.params.noteId);
+  await dataLayer.notes.getNote(req.params.noteId, userId);
+  const comments = await dataLayer.notes.getNoteComments(req.params.noteId);
   res.json({ success: true, data: comments });
 }));
 
@@ -4315,8 +4331,8 @@ router.post('/:noteId/comments', asyncHandler(async (req: Request, res: Response
     res.status(400).json({ error: 'Comment is required.' });
     return;
   }
-  await supabaseService.getNote(req.params.noteId, userId);
-  const created = await supabaseService.addNoteComment(req.params.noteId, userId, comment.trim());
+  await dataLayer.notes.getNote(req.params.noteId, userId);
+  const created = await dataLayer.notes.addNoteComment(req.params.noteId, userId, comment.trim());
   res.json({ success: true, data: created });
 }));
 

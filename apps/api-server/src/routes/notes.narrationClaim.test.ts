@@ -123,8 +123,15 @@ beforeEach(() => {
   jest.clearAllMocks();
   initializeNotesRoutes(
     {
-      getNoteAttachment: jest.fn(async () => ({ id: 'att-1' })),
-      getNote: jest.fn(async () => ({ id: 'note-1', title: 'Lecture 4' })),
+      notes: {
+        getNoteAttachment: jest.fn(async () => ({ id: 'att-1' })),
+        getNote: jest.fn(async () => ({ id: 'note-1', title: 'Lecture 4' })),
+      },
+      getClient: () => ({}),
+      // `narrationService` is mocked whole here; it only ever receives this
+      // handle, so an empty object stands in for the facade the route still
+      // hands it (`dataLayer.legacyService`).
+      legacyService: {},
     } as any,
     { get: jest.fn(), set: jest.fn(), delete: jest.fn(), deletePattern: jest.fn() } as any
   );
