@@ -104,9 +104,9 @@
  *   `Math.min` in `@lantern/shared/marketplace` so a seller payout can never go
  *   negative.
  *
- * Gotcha: the service is a module-level singleton bound to the first
- * `SupabaseService` passed in, so tests must construct the class directly
- * rather than re-calling the factory.
+ * Gotcha: the service is a module-level singleton bound to the first HOST
+ * passed in, so tests must construct the class directly rather than
+ * re-calling the factory.
  */
 /**
  * FLIPPED (monolith lane M3, Phase B): takes `MarketplaceServiceHost` — the
