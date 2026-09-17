@@ -214,47 +214,87 @@ describe('a refund, with every write succeeding', () => {
   });
 });
 
-describe('TODAY: a refund write failing', () => {
-  it('reports success when an uncharged payment was never voided', async () => {
-    // The row stays `initialized`, so a late charge.success against its
-    // reference can still settle an order the buyer just cancelled.
+const MONEY_MOVED = 'Database write failed AFTER the money moved; needs reconciliation';
+
+describe('a refund write failing before anything was captured', () => {
+  it('REFUSES to report success when an uncharged payment cannot be voided', async () => {
+    // MUST SUCCEED: nothing external happened, so stopping costs nothing — and
+    // leaving the row `initialized` lets a late charge.success settle an order
+    // the buyer just cancelled.
     const { service } = await serviceFor('void_initialized', { paymentStatus: 'initialized' });
-    await expect(service.refundPaymentForOrder('ord_1', 'buyer_1')).resolves.toBeUndefined();
-    expect(logger.error).not.toHaveBeenCalled();
+    await expect(service.refundPaymentForOrder('ord_1', 'buyer_1')).rejects.toThrow(
+      /marketplace_payments/,
+    );
+    expect(mockRefundPaystackTransaction).not.toHaveBeenCalled();
   });
 
-  it('says nothing when the refunded stamp fails after Paystack paid it back', async () => {
-    // The buyer has their money. The row is stuck at `refunding`, which refuses
-    // every later refund AND the payout, and `refund_reference` is lost.
+  it('names the payment and the reason it was being voided', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
+    const { service } = await serviceFor('void_initialized', { paymentStatus: 'initialized' });
+    const error = await service
+      .refundPaymentForOrder('ord_1', 'buyer_1')
+      .catch((err: unknown) => err);
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({ paymentId: 'pay_1', reason: 'void_uncharged_payment' }),
+    );
+  });
+});
+
+describe('a refund write failing after Paystack already paid the money back', () => {
+  it('still answers the buyer successfully when the refunded stamp fails, and reports', async () => {
+    // MONEY ALREADY MOVED: the buyer has their money. Throwing would tell them
+    // it failed, and the retry is refused anyway because this claim is held.
     const { service } = await serviceFor('refund_stamp');
     await expect(service.refundPaymentForOrder('ord_1', 'buyer_1')).resolves.toBeUndefined();
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({
+        table: 'marketplace_payments',
+        paymentId: 'pay_1',
+        refundReference: '4242',
+      }),
+    );
   });
 
-  it('says nothing when the sibling release fails', async () => {
+  it('still answers successfully when the sibling release fails, and reports', async () => {
     const { service } = await serviceFor('release_to_paid', {
       checkoutId: 'chk_1',
       siblingOpen: true,
     });
     await expect(service.refundPaymentForOrder('ord_1', 'buyer_1')).resolves.toBeUndefined();
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({ reason: 'release_claim_sibling_open', checkoutId: 'chk_1' }),
+    );
   });
 
-  it('says nothing when the refunded order was never marked unpayable', async () => {
+  it('still answers successfully when the refunded order cannot be marked unpayable', async () => {
+    // Failing here leaves the order at `refund_hold`, which still BLOCKS the
+    // payout — the safe direction — but never releases.
     const { service } = await serviceFor('order_skipped', {
       checkoutId: 'chk_1',
       siblingOpen: true,
     });
     await expect(service.refundPaymentForOrder('ord_1', 'buyer_1')).resolves.toBeUndefined();
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({
+        table: 'marketplace_orders',
+        orderId: 'ord_1',
+        reason: 'refunded_order_not_payable',
+      }),
+    );
   });
 
-  it('says nothing when the rollback after a failed Paystack refund fails', async () => {
+  it('reports a failed rollback and still rethrows the Paystack error', async () => {
     mockRefundPaystackTransaction.mockRejectedValue(new Error('paystack refund declined'));
     const { service } = await serviceFor('release_to_paid');
     await expect(service.refundPaymentForOrder('ord_1', 'buyer_1')).rejects.toThrow(
       /refund declined/,
     );
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      MONEY_MOVED,
+      expect.objectContaining({ reason: 'refund_rollback', paymentId: 'pay_1' }),
+    );
   });
 });

@@ -1866,11 +1866,25 @@ export class MarketplacePaymentsService {
 
     if (payment.status === 'initialized') {
       // Nothing was ever captured: no Paystack call, no claim to take.
-      await this.db
-        .from('marketplace_payments')
-        .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .eq('id', payment.id)
-        .eq('status', 'initialized');
+      //
+      // MUST SUCCEED (#108): precisely because nothing external has happened,
+      // stopping costs nothing — and leaving the row `initialized` lets a late
+      // charge.success against its reference settle an order the buyer has
+      // just cancelled.
+      mustWrite(
+        await this.db
+          .from('marketplace_payments')
+          .update({ status: 'failed', updated_at: new Date().toISOString() })
+          .eq('id', payment.id)
+          .eq('status', 'initialized'),
+        {
+          table: 'marketplace_payments',
+          op: 'update',
+          paymentId: payment.id,
+          orderId,
+          reason: 'void_uncharged_payment',
+        },
+      );
       return;
     }
 
@@ -1952,11 +1966,25 @@ export class MarketplacePaymentsService {
       });
     } catch (err) {
       // Nothing moved: give both claims back so a corrected retry can run.
-      await this.db
-        .from('marketplace_payments')
-        .update({ status: 'paid', updated_at: new Date().toISOString() })
-        .eq('id', payment.id)
-        .eq('status', 'refunding');
+      //
+      // (#108) Unless it did — a Paystack call that throws on a timeout may
+      // still have been accepted. Either way a failed release wedges the row at
+      // `refunding`, which refuses every later refund and blocks the payout, so
+      // this is reported and never thrown: the caller needs the refund error.
+      reconcileLaterWrite(
+        await this.db
+          .from('marketplace_payments')
+          .update({ status: 'paid', updated_at: new Date().toISOString() })
+          .eq('id', payment.id)
+          .eq('status', 'refunding'),
+        {
+          table: 'marketplace_payments',
+          op: 'update',
+          paymentId: payment.id,
+          orderId,
+          reason: 'refund_rollback',
+        },
+      );
       await this.releaseRefundHold(orderId, orderHeld);
       throw err;
     }
@@ -1972,36 +2000,79 @@ export class MarketplacePaymentsService {
         row.id !== orderId && !['cancelled', 'completed'].includes(row.status),
     );
     if (!payment.checkout_id || !othersOpen) {
-      await this.db
-        .from('marketplace_payments')
-        .update({
-          status: 'refunded',
-          refund_reference: String(refund.id),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', payment.id)
-        .eq('status', 'refunding');
+      // MONEY ALREADY MOVED (#108): Paystack has paid the buyer back. Throwing
+      // would tell them their refund failed when it did not, and the retry is
+      // refused anyway because this claim is still held. Reported with the
+      // stable fingerprint; the row is left at `refunding` for reconciliation
+      // (#113).
+      reconcileLaterWrite(
+        await this.db
+          .from('marketplace_payments')
+          .update({
+            status: 'refunded',
+            refund_reference: String(refund.id),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', payment.id)
+          .eq('status', 'refunding'),
+        {
+          table: 'marketplace_payments',
+          op: 'update',
+          paymentId: payment.id,
+          orderId,
+          refundReference: String(refund.id),
+          amountKobo,
+        },
+      );
     } else {
       // A sibling order is still open, so the charge as a whole is not
       // refunded: release the claim back to 'paid', exactly where the
       // pre-claim code left the row. `refund_reference` is deliberately not
       // written — it names ONE refund, and a cart can produce several.
-      await this.db
-        .from('marketplace_payments')
-        .update({ status: 'paid', updated_at: new Date().toISOString() })
-        .eq('id', payment.id)
-        .eq('status', 'refunding');
+      //
+      // MONEY ALREADY MOVED (#108): this order's share is back with the buyer.
+      // A failed release wedges the whole cart's payment at `refunding`, which
+      // blocks every sibling refund and the payout — loud, but not the buyer's
+      // problem to be told about.
+      reconcileLaterWrite(
+        await this.db
+          .from('marketplace_payments')
+          .update({ status: 'paid', updated_at: new Date().toISOString() })
+          .eq('id', payment.id)
+          .eq('status', 'refunding'),
+        {
+          table: 'marketplace_payments',
+          op: 'update',
+          paymentId: payment.id,
+          orderId,
+          checkoutId: payment.checkout_id,
+          reason: 'release_claim_sibling_open',
+        },
+      );
     }
 
     if (orderHeld) {
       // The buyer has their money back, so this order must never pay out.
       // 'skipped' is the payout machine's terminal "not payable" state, and it
       // is what stops a late transfer.success from settling it (finalizeOrderPayout).
-      await this.db
-        .from('marketplace_orders')
-        .update({ payout_status: 'skipped', payout_failed_reason: 'refunded' })
-        .eq('id', orderId)
-        .eq('payout_status', 'refund_hold');
+      //
+      // MONEY ALREADY MOVED (#108). A failure here leaves the order at
+      // `refund_hold`, which still BLOCKS the payout — the safe direction — but
+      // never releases, so it needs a human eventually rather than a throw now.
+      reconcileLaterWrite(
+        await this.db
+          .from('marketplace_orders')
+          .update({ payout_status: 'skipped', payout_failed_reason: 'refunded' })
+          .eq('id', orderId)
+          .eq('payout_status', 'refund_hold'),
+        {
+          table: 'marketplace_orders',
+          op: 'update',
+          orderId,
+          paymentId: payment.id,
+          reason: 'refunded_order_not_payable',
+        },
+      );
     }
   }
 
