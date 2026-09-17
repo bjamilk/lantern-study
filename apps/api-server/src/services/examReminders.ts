@@ -220,8 +220,7 @@ export async function processExamReminders(
       let weakestTopic: string | null = null;
       let nextActionLabel: string | null = null;
       try {
-        // TRANSITIONAL (M2d): `getTopicMasteryService` still takes the `SupabaseService` facade whole.
-        const [readiness] = await getTopicMasteryService(layer.legacyService).courseReadiness(userId, {
+        const [readiness] = await getTopicMasteryService(layer).courseReadiness(userId, {
           courseId,
         });
         weakestTopic = readiness?.weakestTopics?.[0] ?? null;

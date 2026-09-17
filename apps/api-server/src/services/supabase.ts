@@ -2413,7 +2413,23 @@ export class SupabaseService {
     return offlineBundlesData.verifyDeckAccess(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -2436,7 +2452,23 @@ export class SupabaseService {
     return offlineBundlesData.getDeckForUser(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -2461,7 +2493,23 @@ export class SupabaseService {
     return offlineBundlesData.getFlashcardForUser(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -2491,7 +2539,23 @@ export class SupabaseService {
     return offlineBundlesData.getFlashcards(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -2546,7 +2610,23 @@ export class SupabaseService {
     return offlineBundlesData.reviewFlashcard(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -2583,7 +2663,23 @@ export class SupabaseService {
     return offlineBundlesData.updateFlashcard(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -2610,7 +2706,23 @@ export class SupabaseService {
     return offlineBundlesData.deleteFlashcard(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -2640,7 +2752,23 @@ export class SupabaseService {
     return offlineBundlesData.getUserQuestionStats(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -2706,7 +2834,23 @@ export class SupabaseService {
     return offlineBundlesData.resetDeckStatistics(
       this.supabase,
       {
-        service: this,
+        lookupDeckOwnerAndCourse: async (deckId) =>
+          (await import("./learningEvents")).lookupDeckOwnerAndCourse(
+            this,
+            deckId,
+          ),
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
+        refreshTopicMastery: async (uid) => {
+          const { getTopicMasteryService } = await import("./topicMastery");
+          getTopicMasteryService(this).refreshAsync(uid);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
         fetchDeckRecord: (id) => this.fetchDeckRecord(id),
         verifyDeckAccess: (uid, id, level) =>
           this.verifyDeckAccess(uid, id, level),
@@ -3857,7 +4001,10 @@ export class SupabaseService {
     return gamificationData.awardAchievement(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -3887,7 +4034,10 @@ export class SupabaseService {
     return gamificationData.getUserProgress(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -3983,7 +4133,10 @@ export class SupabaseService {
     return gamificationData.awardBadge(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -4020,7 +4173,10 @@ export class SupabaseService {
     return gamificationData.getUserLevel(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -4078,7 +4234,10 @@ export class SupabaseService {
     return gamificationData.incrementUserStatsAndAwardBadges(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -4142,7 +4301,10 @@ export class SupabaseService {
     return gamificationData.syncGamificationProgress(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -4178,7 +4340,10 @@ export class SupabaseService {
     return gamificationData.syncGamificationProgressWithStats(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -4219,7 +4384,10 @@ export class SupabaseService {
     return gamificationData.applyTestCompletionGamification(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -4291,7 +4459,10 @@ export class SupabaseService {
     return gamificationData.recomputeUserStreak(
       this.supabase,
       {
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
         getUserById: (uid) => this.getUserById(uid),
         updateUser: (uid, updates, options) =>
           this.updateUser(uid, updates, options),
@@ -6496,7 +6667,8 @@ export class SupabaseService {
       {
         mapNote: (row, extras) => this.mapNote(row, extras as any),
         resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
-        service: this,
+        recordLearningEvent: async (input) =>
+          (await import("./learningEvents")).recordLearningEvent(this, input),
       },
       userId,
       payload,
@@ -6765,7 +6937,16 @@ export class SupabaseService {
         createNotification: (uid, notification) =>
           this.createNotification(uid, notification),
         getNote: (nid, uid) => this.getNote(nid, uid),
-        service: this,
+        recordActivity: async (input) => {
+          const { getActivityFeedService } = await import("./activityFeed");
+          await getActivityFeedService(this).record(input);
+        },
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input);
+        },
       },
       token,
       userId,

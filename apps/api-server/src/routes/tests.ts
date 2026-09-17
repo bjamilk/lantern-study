@@ -975,7 +975,7 @@ export const initializeTestRoutes = (layer: DataLayer, cache: CacheService) => {
       // signal we get about topic strength. Fire-and-forget and debounced in
       // the service — a 40-question submission must not wait on a recompute,
       // and finishing three tests in a row must not run it three times.
-      getTopicMasteryService(legacyService()).refreshAsync(userId);
+      getTopicMasteryService(dataLayer).refreshAsync(userId);
 
       res.json({
         success: true,

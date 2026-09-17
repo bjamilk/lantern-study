@@ -186,6 +186,45 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   // of on a `SupabaseService` field. See gotcha 2 in `data/marketplace.ts`.
   const ratingColumns = marketplaceData.createRatingColumnCircuitBreaker();
 
+  // --- deps the layer builds over services that still take the whole facade --
+  //
+  // Narrowed in monolith lane M3 from `service: host.legacyService`, which is
+  // what these four data modules used to be handed. The lazy `await import()`
+  // is the one the data modules used to do inline: it still runs when the dep
+  // is CALLED, never at module load, so the cycle stays out of the boot path.
+  // Each arrow loses its `host.legacyService` as its service is flipped onto
+  // the layer.
+  const recordLearningEvent: notesData.NotesDeps["recordLearningEvent"] = async (
+    input,
+  ) =>
+    (await import("../learningEvents")).recordLearningEvent(
+      host.legacyService,
+      input,
+    );
+  const lookupDeckOwnerAndCourse: offlineBundlesData.FlashcardDeps["lookupDeckOwnerAndCourse"] =
+    async (deckId) =>
+      (await import("../learningEvents")).lookupDeckOwnerAndCourse(
+        host.legacyService,
+        deckId,
+      );
+  const refreshTopicMastery: offlineBundlesData.FlashcardDeps["refreshTopicMastery"] =
+    async (userId) => {
+      const { getTopicMasteryService } = await import("../topicMastery");
+      getTopicMasteryService(layer).refreshAsync(userId);
+    };
+  const recordLearningConnection: notesData.NotesDeps["recordLearningConnection"] =
+    async (input) => {
+      const { getLearningConnectionsService } = await import(
+        "../learningConnections"
+      );
+      await getLearningConnectionsService(host.legacyService).record(input);
+    };
+  const recordActivity: notesData.NotesDeps["recordActivity"] = async (input) => {
+    const { getActivityFeedService } = await import("../activityFeed");
+    // TRANSITIONAL (M3): `activityFeed` still takes the facade whole.
+    await getActivityFeedService(host.legacyService).record(input);
+  };
+
   // --- deps literals, one per domain ---------------------------------------
 
   const boardActionsDeps: boardActionsData.BoardActionDeps = {
@@ -261,7 +300,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     recomputeDerivedUserStats: (uid) => layer.gamification.recomputeDerivedUserStats(uid),
     recomputeUserStreak: (uid, referenceDate) => layer.gamification.recomputeUserStreak(uid, referenceDate),
     recordStudyActivity: (uid, type, amount, activityDate) => layer.gamification.recordStudyActivity(uid, type, amount, activityDate),
-    service: host.legacyService,
+    recordActivity,
     syncGamificationProgressWithStats: (uid, options) => layer.gamification.syncGamificationProgressWithStats(uid, options),
     updateUser: (uid, updates, options) => layer.users.updateUser(uid, updates, options),
   };
@@ -354,7 +393,9 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     resolveCollaboratorUserId: (identifier) => layer.users.resolveCollaboratorUserId(identifier),
     resolveNoteAccess: (nid, uid) => layer.notes.resolveNoteAccess(nid, uid),
     resolveNoteAttachmentStoragePath: (attachment) => layer.notes.resolveNoteAttachmentStoragePath(attachment),
-    service: host.legacyService,
+    recordActivity,
+    recordLearningConnection,
+    recordLearningEvent,
     updateNote: (uid, nid, updates) => layer.notes.updateNote(uid, nid, updates),
     uploadNoteFile: (params) => layer.notes.uploadNoteFile(params),
     canEditNote: (uid, nid) => layer.notes.canEditNote(uid, nid),
@@ -371,7 +412,10 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     getFlashcardForUser: (id, uid) => layer.offlineBundles.getFlashcardForUser(id, uid),
     getResponseProfile: (profile) => getResponseProfile(profile),
     getUserPreferences: (uid) => layer.categories.getUserPreferences(uid),
-    service: host.legacyService,
+    lookupDeckOwnerAndCourse,
+    recordLearningConnection,
+    recordLearningEvent,
+    refreshTopicMastery,
     updateFlashcard: (id, updates, uid, options) => layer.offlineBundles.updateFlashcard(id, updates, uid, options),
     verifyDeckAccess: (uid, id, level) => layer.offlineBundles.verifyDeckAccess(uid, id, level),
   };

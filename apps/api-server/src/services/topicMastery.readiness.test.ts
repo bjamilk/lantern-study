@@ -21,7 +21,9 @@ function chain(result: ChainResult) {
 
 function fakeService(tables: Record<string, ChainResult>) {
   const self: any = Object.create(TopicMasteryService.prototype);
-  self.supabaseService = {
+  // The service holds a `TopicMasteryHost` since lane M3 — one member, the
+  // client — instead of the whole facade.
+  self.host = {
     getClient: () => ({
       from: (table: string) => chain(tables[table] ?? { data: [], error: null }),
     }),

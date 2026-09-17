@@ -67,10 +67,15 @@
  * So every cross-method call goes back out through `deps`, which the facade
  * builds INLINE at each call site as arrows over `this`.
  *
- * `deps.service` is the `SupabaseService` instance itself, needed by the four
- * Phase 1/3 collaborators (`learningEvents`, `topicMastery`,
- * `learningConnections`) that take it whole. It is a type-only import, so
- * there is no runtime cycle.
+ * MONOLITH LANE M3: the four collaborators below arrive as narrow arrows
+ * (`lookupDeckOwnerAndCourse`, `recordLearningEvent`, `refreshTopicMastery`,
+ * `recordLearningConnection`) instead of the whole facade, so this module no
+ * longer names `SupabaseService`. Their lazy `await import(...)` moved into
+ * the arrows `data/index.ts` builds; the import still happens on CALL.
+ *
+ * They are the Phase 1/3 collaborators — `learningEvents`, `topicMastery`,
+ * `learningConnections` — and each is stubbed by name in the suites above, so
+ * a narrower dep is also a smaller thing for a harness to fake.
  */
 import { logger } from "../../utils/logger";
 import { buildFlashcardUpdateData } from "../../utils/flashcardUpdate";
@@ -81,16 +86,15 @@ import {
   normalizeUserSettings,
 } from "@lantern/shared/settings";
 import { normalizeCoverRef } from "@lantern/shared/utils/storageUrl";
-import type { LearningSurface } from "@lantern/shared/learning";
+import type {
+  LearningEventInput,
+  LearningSurface,
+} from "@lantern/shared/learning";
 
 import { applyCourseFilter, type CourseFilter } from "../academicCourses";
 import { cacheService } from "../cache";
-import {
-  buildCardReviewedEvent,
-  lookupDeckOwnerAndCourse,
-  recordLearningEvent,
-} from "../learningEvents";
-import type { SupabaseService } from "../supabase";
+import { buildCardReviewedEvent } from "../learningEvents";
+import type { ConnectionInput as LearningConnectionInput } from "../learningConnections";
 
 import { resolveCourseIdFromConfigLike } from "./academic";
 import type { DataClient } from "./client";
@@ -115,8 +119,13 @@ const MAX_FLASHCARD_PAGE_SIZE = 100;
  * bypasses every `jest.spyOn` on a gate method.
  */
 export type FlashcardDeps = {
-  /** The `SupabaseService` instance itself, for the collaborators that take it whole. */
-  service: SupabaseService;
+  /** The four collaborators that take the whole facade; see the banner. */
+  lookupDeckOwnerAndCourse: (
+    deckId: unknown,
+  ) => Promise<{ ownerId: string | null; courseId: string | null }>;
+  recordLearningEvent: (input: LearningEventInput) => Promise<number>;
+  refreshTopicMastery: (userId: string) => Promise<void>;
+  recordLearningConnection: (input: LearningConnectionInput) => Promise<void>;
   fetchDeckRecord: (deckId: string) => Promise<any | null>;
   verifyDeckAccess: (
     userId: string,
@@ -528,10 +537,9 @@ export async function reviewFlashcard(
     // One round trip for BOTH the course id (telemetry, as before) and the
     // deck owner (needed by the two Phase 3 writes below) — same query count
     // this path had previously.
-    const deckMeta = await lookupDeckOwnerAndCourse(deps.service, existing.deck_id);
+    const deckMeta = await deps.lookupDeckOwnerAndCourse(existing.deck_id);
 
-    await recordLearningEvent(
-      deps.service,
+    await deps.recordLearningEvent(
       buildCardReviewedEvent({
         userId,
         flashcardId,
@@ -550,8 +558,7 @@ export async function reviewFlashcard(
     // (30s), so a 60-card session costs a couple of refreshes, and
     // refresh() never throws — a stale graph must not fail a review.
     try {
-      const { getTopicMasteryService } = await import("../topicMastery");
-      getTopicMasteryService(deps.service).refreshAsync(userId);
+      await deps.refreshTopicMastery(userId);
     } catch {
       /* mastery refresh is best-effort */
     }
@@ -581,8 +588,7 @@ export async function reviewFlashcard(
             p_user_id: userId,
           });
           if (studyError) throw studyError;
-          const { getLearningConnectionsService } = await import("../learningConnections");
-          await getLearningConnectionsService(deps.service).record({
+          await deps.recordLearningConnection({
             // The deck's OWNER is the actor — their deck taught someone.
             // `userId` here is the STUDIER and is the beneficiary; passing it
             // as actorId would invert the metric.

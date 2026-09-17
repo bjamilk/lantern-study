@@ -147,6 +147,14 @@ export class ChallengeService {
 
     const byId = new Map<string, any>();
     for (const msg of data || []) {
+      // KNOWN ISSUE (tracked, found during M3): `this.data` is a `DataLayer`,
+      // which has no flat `parseMessageContent` — the M2d flip (#92) rewrote
+      // `this.svc.parseMessageContent` to `(this.data as any)` and the cast hid
+      // it, so this line throws a TypeError on every challenge question
+      // resolution. The layer publishes the body as
+      // `this.data.mappers.parseMessageContent(msg)` since lane M3 A1; the fix
+      // is that one line, left out of this lane because it is a behaviour
+      // change, not a move. No test covers this path.
       const parsed = (this.data as any).parseMessageContent(msg);
       const mapped = {
         id: msg.id,
