@@ -10,19 +10,19 @@ takes one by design **15** (`withIdempotency`, `logAIInference`, `companionConve
 | --- | --- | --- | --- |
 | `marketplace/offers.ts` | 12/1/1/1 | `data/marketplace.ts` | `expireOffer`, `listOrdersForOffers`, `insertOffer`, `findPendingOffer`, `listOffersForParty`, `getOfferWithListing`, `getOfferById`, `updateOfferStatus`, `listOffersForListing`, `counterOffer` (rpc) |
 | `aiCompanion.ts` | 7/4/0/0 | **new `data/aiCompanion.ts`** | DONE (2a): `listConversationMessages`, `listRecentConversationMessages`, `insertConversationMessages(ReturningIds)`, `setMessageFeedback`, `deleteConversation`, `recordAnalyticsEvent` |
-| `users.ts` | 4/0/3/1 | `data/users.ts` + `data/budget.ts` | `updateProfile`, `getPushPrefs`, `searchUsers`, `isUsernameAvailable`; its 2 `user_budgets` sites join the budget module |
+| `users.ts` | 4/0/3/1 | `data/users.ts` + `data/budget.ts` | DONE (2b): `getPushTokenProfile`, `updateProfileFields`, `listProfileCards`, `searchUsersRpc`, `isUsernameAvailableRpc`, `getAuthUserEmail(ConfirmedAt)`, `signOutUserGlobally`; budget pair `getMonthlyBudgetForMonth` / `upsertMonthlyBudget` |
 | `gamification.ts` | 7/1/0/0 | `data/gamification.ts` | DONE (2a): `getUserStreakRow`, `spendStreakFreeze`, `grantStreakFreeze`, `seedDailyQuests`, `listDailyQuests`, `getDailyQuest`, `updateDailyQuestProgress` |
 | `budget.ts` | 8/0/0/0 | **new `data/budget.ts`** | DONE (PR 1, the pilot) |
 | `marketplace/seller.ts` | 5/1/0/0 | `data/marketplace.ts` | `getSellerProfile`, `listSellerListings`, `listReviewsForListings`, `countFavorites`, `countInquiries` |
 | `marketplace/listings.ts` | 4/1/0/0 | `data/marketplace.ts` | `getQuestionBankMeta`, `getStudyPackMeta`, `getBankEntitlement` |
 | `marketplace/orders.ts` | 1/2/0/1 | `data/marketplace.ts` | `updateOrderFieldsAsParty(client, orderId, isSeller, userId, patch)` |
 | `marketplace/discovery.ts` | 4/0/0/0 | `data/marketplace.ts` | `saved_searches` CRUD ×4 |
-| `groups.ts` | 3/1/0/0 | `data/groups.ts` | `countActiveMembers`, `getMembershipRow` |
-| `sitemap.ts` | 3/0/0/0 | **new `data/sitemap.ts`** | `listActiveCampusSlugs`, `listActiveListingsForSitemap`, `listActiveJobsAndCompanies` |
-| `messages.ts` | 3/0/0/0 | `data/directMessages.ts` + **new `data/messageSearch.ts`** | L242 is ONE client over ~6 queries (the whole search implementation) |
-| `tests.ts` | 1/0/0/0 | `data/tests.ts` | `getOwnedTestSession(client, sessionId, userId)` |
-| `analytics.ts` | 1/0/0/0 | **new `data/productEvents.ts`** | `insertProductEvents` |
-| `notes.ts` 2, `marketplace/cart.ts` 2, `auth.ts` 2, `marketplace/payments.ts` 1, `ai.ts` 1 | 0/4/0/4 | — | (b) and (d) only; nothing to move |
+| `groups.ts` | 3/1/0/0 | `data/groups.ts` | DONE (2b): `countAcceptedGroupMembers`, `getGroupMembershipRow` |
+| `sitemap.ts` | 3/0/0/0 | **new `data/sitemap.ts`** | DONE (2b): `listCampusSlugsForSitemap`, `listListingsForSitemap`, `listJobPostingsForSitemap`, `listJobCompaniesForSitemap` (4 chains, not 3) |
+| `messages.ts` | 3/0/0/0 | `data/directMessages.ts` + **new `data/messageSearch.ts`** | DONE (2b): 6 chains, not 3 — one `const client` spanned the whole of `GET /search` |
+| `tests.ts` | 1/0/0/0 | `data/tests.ts` | DONE (2b): `getOwnedTestSession` |
+| `analytics.ts` | 1/0/0/0 | **new `data/productEvents.ts`** | DONE (2b): `insertProductEvents` |
+| `notes.ts` 2, `marketplace/cart.ts` 2, `auth.ts` 2, `marketplace/payments.ts` 1, `ai.ts` 1 | 0/4/0/4 | `data/users.ts` for the (d) half | DONE (2b): all 7 auth-admin sites — 4 Paystack lookups share one `getAuthUserEmail`, plus `getAuthUserEmailConfirmedAt` and 2 × `signOutUserGlobally`. The (b) hand-offs stay. |
 
 ## Test coverage today
 
@@ -43,7 +43,8 @@ for those the query-shape test, written against the untouched route, IS the net.
    route files have no suite, so every handler needs response assertions as well as a
    query trace.
 3. **PR 2b** — `users`, `tests`, `analytics`, `sitemap`, `groups`, `messages` search
-   (+ `data/sitemap.ts`, `data/productEvents.ts`, `data/messageSearch.ts`).
+   (+ `data/sitemap.ts`, `data/productEvents.ts`, `data/messageSearch.ts`) and all 7
+   auth-admin sites. SHIPPED.
 4. **PR 3** — the marketplace family (offers, seller, listings, orders, discovery): one
    existing module, and the only two route suites that already exist.
 
@@ -60,6 +61,11 @@ for those the query-shape test, written against the untouched route, IS the net.
 - An ownership predicate is a REQUIRED parameter of the data function, never optional.
 - (d) auth-admin sites move too, as typed functions in `data/users.ts`; the four Paystack
   buyer-email lookups share one `getAuthUserEmail(client, userId)`. (b) hand-offs stay.
+- Every WRITE that moves must RETURN its `{ error }` (issue #108: supabase-js resolves
+  rather than throwing, and 87 bare awaited writes in the API discard it). Where the route
+  discards it today, behaviour is kept and marked
+  `// KNOWN ISSUE (tracked, #108)` at the call site — a separate lane fixes them, money
+  first.
 
 ## Finding: nine tables the frozen inventory has never seen
 
@@ -67,9 +73,11 @@ for those the query-shape test, written against the untouched route, IS the net.
 from a route is absent from its frozen 57 — and it asserts set EQUALITY, so each move fails
 it until the table is added: `user_budgets`, `ai_companion_messages`,
 `ai_companion_conversations`, `ai_analytics`, `daily_quests`, `product_events`,
-`job_postings`, `companies`, `marketplace_question_banks`, `marketplace_study_packs`.
-`user_budgets` landed with PR 1; `ai_analytics`, `ai_companion_conversations`,
-`ai_companion_messages` and `daily_quests` with PR 2a. The inventory is at 62.
+`job_postings`, `job_companies` (NOT `companies` — the first census misnamed it),
+`marketplace_question_banks`, `marketplace_study_packs`. `user_budgets` landed with
+PR 1; `ai_analytics`, `ai_companion_conversations`, `ai_companion_messages` and
+`daily_quests` with PR 2a; `job_postings`, `job_companies` and `product_events` with
+PR 2b. The inventory is at 65, and only the two marketplace tables are left for PR 3.
 No table is being ADDED to the product; each was always queried, just not from a scanned
 directory. Each is added in the commit that moves its query, with the reason in the
 message — an inventory-only commit is red either way, since the assertion is equality.

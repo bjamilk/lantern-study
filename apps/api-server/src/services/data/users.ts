@@ -821,3 +821,149 @@ export async function getUserGroups(
     { ttl: 300 },
   ); // Cache for 5 minutes
 }
+
+// ============ ROUTE ESCAPES (lane R2, PR 2b) ============
+//
+// Moved verbatim from `routes/users.ts`, `routes/auth.ts` and the four
+// marketplace checkout paths. Two profile chains, two RPCs and three GoTrue
+// admin calls — which are service-role calls made from a route file, and belong
+// behind the layer for the same reason a `.from()` does.
+//
+// The routes keep the decisions: the 409 on a taken username, the Expo-format
+// check on a push token, the 400 when a buyer has no verified email, and the
+// session cutoff that actually ends a session.
+
+/**
+ * The caller's raw profile row for the push-token diagnostic.
+ *
+ * Deliberately NOT `getUserById`: the mapped `User` shape drops
+ * `expo_push_token` entirely, which made this endpoint answer "no token" for
+ * every account, and a diagnostic must not be served from a ten-minute cache.
+ */
+export async function getPushTokenProfile(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ data: { expo_push_token?: unknown; settings?: unknown } | null; error: any }> {
+  return await supabase
+    .from("profiles")
+    .select("expo_push_token, settings")
+    .eq("id", userId)
+    .maybeSingle();
+}
+
+/**
+ * Patch a profile and return the whole row.
+ *
+ * The caller READS the error and branches on `23505` to answer 409 "username is
+ * already taken" — the unique index is what actually decides the race between
+ * two people claiming a name, so the pre-check above it is a courtesy, not the
+ * guard. Returning `{ data, error }` is what keeps that branch possible; do not
+ * reduce this to a bare await (issue #108).
+ */
+export async function updateProfileFields(
+  supabase: DataClient,
+  userId: string,
+  patch: Record<string, unknown>,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("profiles")
+    .update(patch)
+    .eq("id", userId)
+    .select()
+    .single();
+}
+
+/** Name and avatar for a set of users — labels for a list the caller already has. */
+export async function listProfileCards(
+  supabase: DataClient,
+  userIds: string[],
+): Promise<{ data: Array<{ id: string; name: string; avatar_url: string | null }> | null; error: any }> {
+  return await supabase
+    .from("profiles")
+    .select("id, name, avatar_url")
+    .in("id", userIds);
+}
+
+/**
+ * The `search_users` database function. `viewer_id` is not decoration: the
+ * function uses it to apply each result's privacy settings, so passing null
+ * where a viewer exists would leak presence the viewer is not entitled to see.
+ */
+export async function searchUsersRpc(
+  supabase: DataClient,
+  searchQuery: string,
+  viewerId: string | null,
+  resultLimit: number,
+): Promise<{ data: any[] | null; error: any }> {
+  return await supabase.rpc("search_users", {
+    search_query: searchQuery,
+    exclude_user_id: viewerId || null,
+    viewer_id: viewerId || null,
+    result_limit: resultLimit,
+  });
+}
+
+/** The `is_username_available` database function. */
+export async function isUsernameAvailableRpc(
+  supabase: DataClient,
+  username: string,
+): Promise<{ data: boolean | null; error: any }> {
+  return await supabase.rpc("is_username_available", {
+    check_username: username,
+  });
+}
+
+// ---- GoTrue admin ---------------------------------------------------------
+
+/**
+ * The email GoTrue holds for a user, or `''`.
+ *
+ * ONE function for all four Paystack checkout paths (buy-now, offer accept,
+ * cart checkout and the payments route), which each inlined the same
+ * `(await getClient().auth.admin.getUserById(id)).data.user?.email || ''`. The
+ * empty string is the contract the callers were written against: each treats it
+ * as "no verified email" and answers 400 rather than starting a checkout that
+ * can never be receipted.
+ */
+export async function getAuthUserEmail(
+  supabase: DataClient,
+  userId: string,
+): Promise<string> {
+  const { data } = await (supabase as any).auth.admin.getUserById(userId);
+  return (data?.user?.email as string | undefined) || "";
+}
+
+/**
+ * When GoTrue recorded the user confirming their email, or null. Feeds the
+ * creator verification level — a DIFFERENT field from `getAuthUserEmail`, which
+ * is why it is a second call rather than one shared shape.
+ */
+export async function getAuthUserEmailConfirmedAt(
+  supabase: DataClient,
+  userId: string,
+): Promise<string | null> {
+  const { data } = await (supabase as any).auth.admin.getUserById(userId);
+  return (
+    (data?.user as { email_confirmed_at?: string | null } | undefined)
+      ?.email_confirmed_at ?? null
+  );
+}
+
+/**
+ * End every GoTrue session for a user.
+ *
+ * KNOWN ISSUE (tracked, #108): GoTrue RESOLVES with `{ error }` rather than
+ * throwing, so the `try/catch` at both call sites cannot see a reported failure
+ * and it is discarded. The error is returned here so a caller CAN check it; the
+ * routes are left exactly as they were, because this lane moves calls and does
+ * not fix them. It is not a session-integrity hole today only because both
+ * callers set the session cutoff FIRST, and that is what actually invalidates
+ * the outstanding tokens.
+ */
+export async function signOutUserGlobally(
+  supabase: DataClient,
+  userId: string,
+): Promise<{ error: any }> {
+  const { error } = await (supabase as any).auth.admin.signOut(userId, "global");
+  return { error };
+}

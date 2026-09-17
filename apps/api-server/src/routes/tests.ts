@@ -446,12 +446,7 @@ export const initializeTestRoutes = (layer: DataLayer, cache: CacheService) => {
 
       const { sessionId } = req.params;
 
-      const { data, error } = await dataLayer.getClient()
-        .from('test_sessions')
-        .select('*')
-        .eq('id', sessionId)
-        .eq('user_id', userId)
-        .maybeSingle();
+      const { data, error } = await dataLayer.tests.getOwnedTestSession(sessionId, userId);
 
       if (error) throw error;
       if (!data) {

@@ -59,10 +59,10 @@ const SERVICES_DIR = __dirname;
 const DATA_DIR = path.join(SERVICES_DIR, 'data');
 
 /**
- * The 62 distinct table literals reached through `.from("…")` by the data
+ * The 65 distinct table literals reached through `.from("…")` by the data
  * layer, captured from the untouched 18,257-line `services/supabase.ts`.
  *
- * 57 of them are that original capture. The other five arrived with monolith
+ * 57 of them are that original capture. The other eight arrived with monolith
  * lane R2, which moves the queries route files still built by hand into
  * `services/data/*`. Each was ALWAYS queried by the server, but only ever from a
  * route file, which this scan does not cover — so the freeze had never seen it,
@@ -98,6 +98,9 @@ const FROZEN_TABLES: readonly string[] = [
   'flashcards',
   'group_members',
   'groups',
+  // From `routes/sitemap.ts` (lane R2, PR 2b).
+  'job_companies',
+  'job_postings',
   'levels',
   'marketplace_campuses',
   'marketplace_favorites',
@@ -124,6 +127,8 @@ const FROZEN_TABLES: readonly string[] = [
   'offline_bundles',
   'platform_admins',
   'points_transactions',
+  // From `routes/analytics.ts` (lane R2, PR 2b).
+  'product_events',
   'profiles',
   'question_votes',
   'saved_searches',
@@ -226,9 +231,9 @@ function scan(): Scan {
 describe('services data layer table inventory', () => {
   const scanned = scan();
 
-  it('touches exactly the frozen set of 62 tables', () => {
+  it('touches exactly the frozen set of 65 tables', () => {
     expect([...scanned.tables].sort()).toEqual([...FROZEN_TABLES].sort());
-    expect(FROZEN_TABLES).toHaveLength(62);
+    expect(FROZEN_TABLES).toHaveLength(65);
   });
 
   it('reaches exactly the frozen set of storage bucket literals', () => {

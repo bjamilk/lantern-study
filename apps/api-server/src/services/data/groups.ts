@@ -1054,3 +1054,44 @@ export async function getGroupStats(
     { ttl: 300 },
   ); // Cache for 5 minutes
 }
+
+// ============ INVITE PREVIEW (lane R2, PR 2b) ============
+//
+// Moved verbatim from the two invite-preview handlers in `routes/groups.ts`,
+// the only `.from()` calls left in that file.
+
+/**
+ * How many ACCEPTED members a group has. `head: true` makes this a count with no
+ * rows returned — dropping it turns a member count on an UNAUTHENTICATED invite
+ * page into a full roster fetch. `pending: false` is what stops the page
+ * advertising people who asked to join and were never let in.
+ */
+export async function countAcceptedGroupMembers(
+  supabase: DataClient,
+  groupId: string,
+): Promise<{ count: number | null; error: any }> {
+  const { count, error } = await supabase
+    .from("group_members")
+    .select("user_id", { count: "exact", head: true })
+    .eq("group_id", groupId)
+    .eq("pending", false);
+  return { count, error };
+}
+
+/**
+ * ONE caller's membership row in a group, pending flag included, or none. The
+ * caller distinguishes "member" from "still waiting" from "not a member" — which
+ * is what stops an invite offering "Open" to somebody whose request is pending.
+ */
+export async function getGroupMembershipRow(
+  supabase: DataClient,
+  groupId: string,
+  userId: string,
+): Promise<{ data: { user_id: string; pending: boolean } | null; error: any }> {
+  return await supabase
+    .from("group_members")
+    .select("user_id, pending")
+    .eq("group_id", groupId)
+    .eq("user_id", userId)
+    .maybeSingle();
+}

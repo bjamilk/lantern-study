@@ -279,13 +279,11 @@ router.get(
 
     try {
       // Use the search_users database function
-      const { data, error } = await dataLayer.getClient()
-        .rpc('search_users', {
-          search_query: searchQuery,
-          exclude_user_id: currentUserId || null,
-          viewer_id: currentUserId || null,
-          result_limit: resultLimit,
-        });
+      const { data, error } = await dataLayer.users.searchUsersRpc(
+        searchQuery,
+        currentUserId,
+        resultLimit
+      );
 
       if (error) {
         logger.error('User search error', { error });
@@ -350,11 +348,9 @@ router.get(
     if (!(await cacheService.get(verificationCacheKey))) {
       try {
         const { getCreatorsService } = await import('../services/creators');
-        const { data: authUser } = await dataLayer.getClient()
-          .auth.admin.getUserById(userId);
         await getCreatorsService(dataLayer).syncVerificationLevel(
           userId,
-          (authUser?.user as { email_confirmed_at?: string | null } | undefined)?.email_confirmed_at ?? null
+          await dataLayer.users.getAuthUserEmailConfirmedAt(userId)
         );
         await cacheService.set(verificationCacheKey, '1', 3600);
       } catch (err) {
@@ -1597,10 +1593,7 @@ router.get(
 
     try {
       // Use the is_username_available database function
-      const { data, error } = await dataLayer.getClient()
-        .rpc('is_username_available', {
-          check_username: normalizedUsername,
-        });
+      const { data, error } = await dataLayer.users.isUsernameAvailableRpc(normalizedUsername);
 
       if (error) {
         logger.error('Username check error', { error });
@@ -1668,10 +1661,8 @@ router.put(
 
     try {
       // Check availability first
-      const { data: isAvailable, error: checkError } = await dataLayer.getClient()
-        .rpc('is_username_available', {
-          check_username: normalizedUsername,
-        });
+      const { data: isAvailable, error: checkError } =
+        await dataLayer.users.isUsernameAvailableRpc(normalizedUsername);
 
       if (checkError) {
         logger.error('Username availability check error', { error: checkError });
@@ -1711,12 +1702,7 @@ router.put(
         updateData.name = `${newFirstName} ${newLastName}`.trim();
       }
 
-      const { data, error } = await dataLayer.getClient()
-        .from('profiles')
-        .update(updateData)
-        .eq('id', userId)
-        .select()
-        .single();
+      const { data, error } = await dataLayer.users.updateProfileFields(userId, updateData);
 
       if (error) {
         logger.error('Username update error', { error });
@@ -1873,11 +1859,7 @@ router.get(
     // mapped User shape drops `expo_push_token` entirely (it would have made
     // this endpoint answer "no token" for every account), and a diagnostic
     // should not be served from a ten-minute cache.
-    const { data, error } = await dataLayer.getClient()
-      .from('profiles')
-      .select('expo_push_token, settings')
-      .eq('id', userId)
-      .maybeSingle();
+    const { data, error } = await dataLayer.users.getPushTokenProfile(userId);
     if (error) throw error;
 
     const rawToken = (data as { expo_push_token?: unknown } | null)?.expo_push_token;
@@ -2156,12 +2138,7 @@ router.get(
     }
     const monthYear = requested || currentMonthYear();
 
-    const { data, error } = await dataLayer.getClient()
-      .from('user_budgets')
-      .select('monthly_limit, month_year')
-      .eq('user_id', userId)
-      .eq('month_year', monthYear)
-      .maybeSingle();
+    const { data, error } = await dataLayer.budget.getMonthlyBudgetForMonth(userId, monthYear);
 
     if (error) throw error;
 
@@ -2205,19 +2182,11 @@ router.put(
 
     logger.debug('Saving user budget', { userId, monthYear, requestingUserId });
 
-    const { data, error } = await dataLayer.getClient()
-      .from('user_budgets')
-      .upsert(
-        {
-          user_id: userId,
-          month_year: monthYear,
-          monthly_limit: limit,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,month_year' }
-      )
-      .select('monthly_limit, month_year')
-      .maybeSingle();
+    const { data, error } = await dataLayer.budget.upsertMonthlyBudget(
+      userId,
+      monthYear,
+      limit
+    );
 
     if (error) throw error;
 

@@ -204,3 +204,53 @@ export async function getMonthlyBudget(
     .eq("month_year", monthYear)
     .maybeSingle();
 }
+
+/**
+ * Set the caller's spending limit for one `YYYY-MM`. Upserts on the composite
+ * `(user_id, month_year)` key, so re-saving the same month replaces rather than
+ * duplicating. Returns what was stored, and the write's `{ error }` — which the
+ * caller DOES read (it throws on it); do not reduce this to a bare await
+ * (issue #108).
+ */
+export async function upsertMonthlyBudget(
+  supabase: DataClient,
+  userId: string,
+  monthYear: string,
+  monthlyLimit: number,
+): Promise<{ data: { monthly_limit: number; month_year: string } | null; error: any }> {
+  return await supabase
+    .from("user_budgets")
+    .upsert(
+      {
+        user_id: userId,
+        month_year: monthYear,
+        monthly_limit: monthlyLimit,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,month_year" },
+    )
+    .select("monthly_limit, month_year")
+    .maybeSingle();
+}
+
+/**
+ * The caller's limit for one month, WITH the month echoed back.
+ *
+ * Deliberately a second function rather than a parameter on `getMonthlyBudget`:
+ * the two callers project different columns. The under-budget award needs only
+ * `monthly_limit`, while `GET /users/:userId/budget` echoes `month_year` so the
+ * client can tell which month it was answered for. Merging them would widen one
+ * query for no reason and hide that they are read by different screens.
+ */
+export async function getMonthlyBudgetForMonth(
+  supabase: DataClient,
+  userId: string,
+  monthYear: string,
+): Promise<{ data: { monthly_limit: number; month_year: string } | null; error: any }> {
+  return await supabase
+    .from("user_budgets")
+    .select("monthly_limit, month_year")
+    .eq("user_id", userId)
+    .eq("month_year", monthYear)
+    .maybeSingle();
+}

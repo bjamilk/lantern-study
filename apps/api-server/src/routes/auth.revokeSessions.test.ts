@@ -34,6 +34,12 @@ describe('POST /auth/revoke-other-sessions', () => {
     const source = require('fs').readFileSync(__dirname + '/auth.ts', 'utf8');
     const handler = source.slice(source.indexOf("'/revoke-other-sessions'"));
     expect(handler).toContain('setUserSessionCutoff');
-    expect(handler).toContain("signOut(userId, 'global')");
+    // The GoTrue call moved into the data layer (lane R2, PR 2b); it used to
+    // read `signOut(userId, 'global')` inline here. Same call, same order —
+    // the cutoff still comes first, which is the property this guards.
+    expect(handler).toContain('signOutUserGlobally(userId)');
+    expect(handler.indexOf('setUserSessionCutoff')).toBeLessThan(
+      handler.indexOf('signOutUserGlobally'),
+    );
   });
 });

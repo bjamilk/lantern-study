@@ -1816,3 +1816,26 @@ export async function updateUserStats(
 
   if (error) throw error;
 }
+
+/**
+ * One exam session of the caller's, by id AND owner (monolith lane R2, PR 2b —
+ * moved verbatim from `routes/tests.ts`).
+ *
+ * THE `userId` PREDICATE IS THE ACCESS CONTROL. The API holds the service-role
+ * client, which BYPASSES RLS, so without it this hands any signed-in student any
+ * other student's session — questions, answers and all. The caller answers "not
+ * found or access denied" for both a miss and a foreign row, deliberately: a 403
+ * would confirm that the session id exists.
+ */
+export async function getOwnedTestSession(
+  supabase: DataClient,
+  sessionId: string,
+  userId: string,
+): Promise<{ data: any | null; error: any }> {
+  return await supabase
+    .from("test_sessions")
+    .select("*")
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .maybeSingle();
+}
