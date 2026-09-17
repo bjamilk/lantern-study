@@ -113,21 +113,29 @@ describe('replacing a study set plan', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: inserts the new units anyway when the old ones were not deleted', async () => {
-    // The student's plan is now the old units AND the new ones. The response
-    // lists only the new half, so nothing looks wrong until they reload.
+  it('does NOT insert the new units when the old ones were not deleted', async () => {
+    // The plan would otherwise silently DOUBLE, with the response listing only
+    // the new half.
     const { run, calls } = await replacePlan('units');
-    await expect(run()).resolves.toBeDefined();
-    expect(calls.some((call) => isInsert(call, 'study_set_units'))).toBe(true);
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    await expect(run()).rejects.toThrow(/study_set_units/);
+    expect(calls.some((call) => isInsert(call, 'study_set_units'))).toBe(false);
   });
 
-  it('TODAY: carries on when the old topics were not deleted', async () => {
+  it('stops at the FIRST delete, so the second one is never attempted', async () => {
     const { run, calls } = await replacePlan('topics');
-    await expect(run()).resolves.toBeDefined();
-    expect(calls.some((call) => isDelete(call, 'study_set_units'))).toBe(true);
-    expect(logger.error).not.toHaveBeenCalled();
+    await expect(run()).rejects.toThrow(/study_set_topics/);
+    expect(calls.some((call) => isDelete(call, 'study_set_units'))).toBe(false);
+    expect(calls.some((call) => isInsert(call, 'study_set_units'))).toBe(false);
+  });
+
+  it('names the set and what it was clearing', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
+    const { run } = await replacePlan('units');
+    const error = await run().catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WriteFailedError);
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({ userId: 'user_1', setId: 'set_1', reason: 'replace_plan_clear' }),
+    );
   });
 });
 
@@ -148,10 +156,18 @@ describe('the study-pack draft status writes', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: leaves the draft unlinked from its job, silently', async () => {
+  it('reports an unlinked draft at ERROR level and to Sentry', async () => {
+    // The student's credits were spent; a draft that never names its job is one
+    // nobody can follow to a refund.
     await attach(true);
-    expect(logger.error).not.toHaveBeenCalled();
-    expect(captureScopedException).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'study_pack_drafts', draftId: 'draft_1', reason: 'link_job' }),
+    );
+    expect(captureScopedException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ fingerprint: ['studypack-draft-job-link-failed'] }),
+    );
   });
 });
 
@@ -175,16 +191,21 @@ describe('the presence row of someone who opted out', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: answers "not shared" while they stay listed as studying', async () => {
+  it('still answers "not shared" when the delete fails, and only warns', async () => {
+    // Warn, not error: the row expires on its own within PRESENCE_TTL_MINUTES.
     const { result } = await heartbeat(true);
     expect(result).toEqual({ shared: false });
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'study_presence', reason: 'opted_out' }),
+    );
     expect(logger.error).not.toHaveBeenCalled();
     expect(captureScopedException).not.toHaveBeenCalled();
   });
 });
 
 describe('the self-healing stamps', () => {
-  it('TODAY: a stale challenge expiry is silent', async () => {
+  it('warns when a stale challenge expiry fails', async () => {
     const { ChallengeService } = await import('./challengeService');
     const { client } = scriptedDb((call) =>
       call.table === 'group_challenges' && call.ops.some((op) => op.fn === 'update')
@@ -195,15 +216,22 @@ describe('the self-healing stamps', () => {
     service.data = { getClient: () => client };
     Object.defineProperty(service, 'db', { get: () => client, configurable: true });
     await expect((service as any).expireStalePending()).resolves.toBeUndefined();
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'group_challenges', reason: 'expire_stale_pending' }),
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('TODAY: a companion conversation touch is silent', async () => {
+  it('warns when a companion conversation touch fails', async () => {
     const { touchConversation } = await import('./companionConversations');
     const { client } = scriptedDb(() => ({ data: null, error: WRITE_ERROR }));
     await expect(
       touchConversation(client as never, 'user_1', 'conv_1'),
     ).resolves.toBeUndefined();
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'ai_companion_conversations', conversationId: 'conv_1' }),
+    );
   });
 });

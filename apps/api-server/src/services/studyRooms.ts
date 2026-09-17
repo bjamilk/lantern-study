@@ -46,6 +46,7 @@
  * half of the same hotfix.
  */
 import type { CommunityModerationHost } from './communityModeration';
+import { bestEffortWrite } from './data/writeResult';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -197,11 +198,20 @@ export class StudyRoomsService {
           .select('id');
         if (closeError) throw closeError;
         if (closed && closed.length > 0) {
-          await this.db
-            .from('study_session_participants')
-            .update({ left_at: nowIso })
-            .in('session_id', closed.map((r: { id: string }) => r.id))
-            .is('left_at', null);
+          // BEST EFFORT (#108): housekeeping inside a sweep that re-runs.
+          bestEffortWrite(
+            await this.db
+              .from('study_session_participants')
+              .update({ left_at: nowIso })
+              .in('session_id', closed.map((r: { id: string }) => r.id))
+              .is('left_at', null),
+            {
+              table: 'study_session_participants',
+              op: 'update',
+              sessionCount: closed.length,
+              reason: 'sweep_close_participants',
+            },
+          );
         }
 
         const purgeCutoff = new Date(
@@ -450,7 +460,14 @@ export class StudyRoomsService {
       .eq('session_id', roomId)
       .is('left_at', null);
     if ((count ?? 0) === 0) {
-      await this.db.from('study_sessions').update({ is_active: false, ends_at: now }).eq('id', roomId);
+      // BEST EFFORT (#108): closing the room the last participant just left.
+      // `sweepExpired` closes an empty room that outlives its cutoff anyway, so
+      // a lost write costs a stale entry in the room list, not a wrong answer
+      // to the person leaving.
+      bestEffortWrite(
+        await this.db.from('study_sessions').update({ is_active: false, ends_at: now }).eq('id', roomId),
+        { table: 'study_sessions', op: 'update', roomId, reason: 'close_empty_room' },
+      );
     }
     return { left: true };
   }

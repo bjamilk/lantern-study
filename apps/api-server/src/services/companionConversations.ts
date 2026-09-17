@@ -2,6 +2,7 @@
  * Companion conversation (thread) helpers — auth-scoped list/create/resolve.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { bestEffortWrite } from './data/writeResult';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -127,11 +128,16 @@ export async function touchConversation(
   if (patch?.title !== undefined) {
     updates.title = patch.title;
   }
-  await client
-    .from('ai_companion_conversations')
-    .update(updates)
-    .eq('id', conversationId)
-    .eq('user_id', userId);
+  // BEST EFFORT (#108): an `updated_at` touch that keeps the conversation at
+  // the top of the list, plus an optional title. A lost one costs list order.
+  bestEffortWrite(
+    await client
+      .from('ai_companion_conversations')
+      .update(updates)
+      .eq('id', conversationId)
+      .eq('user_id', userId),
+    { table: 'ai_companion_conversations', op: 'update', conversationId, userId },
+  );
 }
 
 export async function ensureConversationTitle(

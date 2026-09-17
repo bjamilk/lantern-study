@@ -14,6 +14,7 @@
  * follow-up — the content shape already carries a `kind` on each question.
  */
 import type { DataLayer } from './data';
+import { bestEffortWrite } from './data/writeResult';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
@@ -177,10 +178,19 @@ export class StudyPackFactoryService {
   }
 
   async attachJobId(draftId: string, jobId: string): Promise<void> {
-    await this.db
-      .from('study_pack_drafts')
-      .update({ job_id: jobId, updated_at: nowIso() })
-      .eq('id', draftId);
+    // BEST EFFORT at ERROR level (#108): the draft and the queued job both
+    // exist by now, so throwing would report failure for work already in
+    // flight. But the student's credits were spent, and a draft that never
+    // names its job is one nobody can follow to a refund.
+    bestEffortWrite(
+      await this.db
+        .from('study_pack_drafts')
+        .update({ job_id: jobId, updated_at: nowIso() })
+        .eq('id', draftId),
+      { table: 'study_pack_drafts', op: 'update', draftId, jobId, reason: 'link_job' },
+      'error',
+      'studypack-draft-job-link-failed',
+    );
   }
 
   /**
@@ -197,10 +207,15 @@ export class StudyPackFactoryService {
     if (!draft) throw new Error('Study pack draft not found');
     const userId = String(draft.user_id);
 
-    await this.db
-      .from('study_pack_drafts')
-      .update({ status: 'generating', updated_at: nowIso() })
-      .eq('id', draftId);
+    // BEST EFFORT (#108): a progress marker. The `ready` or `failed` write at
+    // the end of this method overwrites it either way.
+    bestEffortWrite(
+      await this.db
+        .from('study_pack_drafts')
+        .update({ status: 'generating', updated_at: nowIso() })
+        .eq('id', draftId),
+      { table: 'study_pack_drafts', op: 'update', draftId, reason: 'mark_generating' },
+    );
 
     try {
       const noteIds = (Array.isArray(draft.source_note_ids) ? draft.source_note_ids : []).map(String);
@@ -341,7 +356,12 @@ export class StudyPackFactoryService {
         cover,
       };
 
-      await this.db
+      // BEST EFFORT at ERROR level (#108): every AI step has already run and
+      // the student's credits are spent. Throwing here would trigger the job's
+      // failure-refund for a pack that WAS generated; losing it silently leaves
+      // them charged with a draft stuck at `generating`. Report and return.
+      bestEffortWrite(
+        await this.db
         .from('study_pack_drafts')
         .update({
           status: 'ready',
@@ -354,17 +374,29 @@ export class StudyPackFactoryService {
           error: null,
           updated_at: nowIso(),
         })
-        .eq('id', draftId);
+        .eq('id', draftId),
+        { table: 'study_pack_drafts', op: 'update', draftId, reason: 'mark_ready' },
+        'error',
+        'studypack-draft-status-write-failed',
+      );
 
       return { draftId, status: 'ready' };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // Best-effort: only fail a draft still 'generating' (a later retry may fix it).
-      await this.db
-        .from('study_pack_drafts')
-        .update({ status: 'failed', error: message, updated_at: nowIso() })
-        .eq('id', draftId)
-        .eq('status', 'generating');
+      // BEST EFFORT at ERROR level (#108): it must not throw over `err`, which
+      // is what triggers the refund below. Losing it leaves the draft stuck at
+      // `generating` with no recorded reason, which someone has to clear.
+      bestEffortWrite(
+        await this.db
+          .from('study_pack_drafts')
+          .update({ status: 'failed', error: message, updated_at: nowIso() })
+          .eq('id', draftId)
+          .eq('status', 'generating'),
+        { table: 'study_pack_drafts', op: 'update', draftId, reason: 'mark_failed' },
+        'error',
+        'studypack-draft-status-write-failed',
+      );
       throw err; // → the job's failure-refund hands the credits back
     }
   }
