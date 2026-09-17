@@ -17,13 +17,13 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from '../ui/Menu';
  * WALL: which door sits where on one screen.
  */
 export const OWN_WAY_TOOL_ORDER: readonly StudySetHomeToolId[] = [
-  'import',
   'quiz',
   'cards',
   'ask',
   'lesson',
-  'recap',
   'lecture',
+  'import',
+  'recap',
   'play',
   'essay',
   'notes',
@@ -33,16 +33,26 @@ export const OWN_WAY_TOOL_ORDER: readonly StudySetHomeToolId[] = [
 ];
 
 /**
- * On the wall. Six, not thirteen: Hick's law. Record, arcade, essay, notes,
- * walkthrough, test and plan already live in the set rail (or in More).
+ * On the wall. Six, not thirteen: Hick's law.
+ *
+ * ORDERED BY WHAT A STUDENT ACTUALLY OPENS, not by the pipeline. `import`
+ * (Add materials) led the row because it is what you do FIRST — once. Every
+ * visit after that it is a door the student reads past to reach the quiz, so
+ * it moves to the end and the two doors that carry the most traffic lead.
+ * `recap` (Start listening) takes its place behind More: it is the same
+ * generated-audio promise as `lecture` from the student's side, and the
+ * cheaper one to reach from a note.
+ *
+ * Arcade, essay, notes, walkthrough, test and plan already live in the set
+ * rail as well as in More.
  */
 export const OWN_WAY_FEATURED_IDS: readonly StudySetHomeToolId[] = [
-  'import',
   'quiz',
   'cards',
   'ask',
   'lesson',
-  'recap',
+  'lecture',
+  'import',
 ];
 
 interface OwnWayGridProps {

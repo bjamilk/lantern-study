@@ -158,6 +158,36 @@ interface UIState {
   isChatsSectionExpanded: boolean;
   setChatsSectionExpanded: (expanded: boolean) => void;
   toggleChatsSection: () => void;
+
+  /**
+   * Which nav panels the study room's FOCUS mode stood down, so it knows which
+   * ones are its to put back. Persisted with the panels themselves.
+   *
+   * WHY IT IS STORE STATE AND NOT A REF IN THE HOOK. It was a ref, and that
+   * lost the common path: a reload inside a studio (or closing the tab, or any
+   * hard navigation) skips React's unmount, so the ref died while the persisted
+   * `isSidebarExpanded: false` survived — the student came back to a collapsed
+   * sidebar with nothing that knew to restore it, and read it as the app
+   * randomly collapsing their navigation. The bit has to outlive the mount by
+   * exactly as much as the collapse does, which means living beside it.
+   *
+   * Every write goes through the three actions below, never by hand, so the
+   * flag and the panel it describes change in ONE `set` and cannot disagree.
+   */
+  focusStoodDown: { sidebar: boolean; chats: boolean };
+  /**
+   * Close a panel on entering a studio, and record that we did.
+   *
+   * A no-op when the panel is ALREADY closed — that covers both the student
+   * who works with a collapsed sidebar (never ours, never restored) and the
+   * reload-inside-a-studio case, where the panel is down and the flag already
+   * says so. Never toggles blind.
+   */
+  standDownForFocus: (panel: 'sidebar' | 'chats') => void;
+  /** Reopen a panel we closed, and clear the flag. No-op when it was not ours. */
+  restoreFromFocus: (panel: 'sidebar' | 'chats') => void;
+  /** The student took the panel back. It stops being ours to restore. */
+  clearFocusStandDown: (panel: 'sidebar' | 'chats') => void;
   
   // Modal States
   modals: {
@@ -447,6 +477,44 @@ export const useUIStore = create<UIState>()(
       setChatsSectionExpanded: (expanded) => set({ isChatsSectionExpanded: expanded }),
       toggleChatsSection: () =>
         set((state) => ({ isChatsSectionExpanded: !state.isChatsSectionExpanded })),
+
+      focusStoodDown: { sidebar: false, chats: false },
+      standDownForFocus: (panel) =>
+        set((state) => {
+          if (panel === 'sidebar') {
+            if (!state.isSidebarExpanded) return {};
+            return {
+              isSidebarExpanded: false,
+              focusStoodDown: { ...state.focusStoodDown, sidebar: true },
+            };
+          }
+          if (!state.isChatsSectionExpanded) return {};
+          return {
+            isChatsSectionExpanded: false,
+            focusStoodDown: { ...state.focusStoodDown, chats: true },
+          };
+        }),
+      restoreFromFocus: (panel) =>
+        set((state) => {
+          if (panel === 'sidebar') {
+            if (!state.focusStoodDown.sidebar) return {};
+            return {
+              isSidebarExpanded: true,
+              focusStoodDown: { ...state.focusStoodDown, sidebar: false },
+            };
+          }
+          if (!state.focusStoodDown.chats) return {};
+          return {
+            isChatsSectionExpanded: true,
+            focusStoodDown: { ...state.focusStoodDown, chats: false },
+          };
+        }),
+      clearFocusStandDown: (panel) =>
+        set((state) =>
+          state.focusStoodDown[panel]
+            ? { focusStoodDown: { ...state.focusStoodDown, [panel]: false } }
+            : {}
+        ),
       
       // Modals
       modals: { ...initialModals },
@@ -571,6 +639,10 @@ export const useUIStore = create<UIState>()(
         theme: state.theme,
         isSidebarExpanded: state.isSidebarExpanded,
         isChatsSectionExpanded: state.isChatsSectionExpanded,
+        // Persisted WITH the two flags above, never apart from them: the whole
+        // point is that "the sidebar is closed" and "focus closed it" survive
+        // a reload together. See `focusStoodDown`.
+        focusStoodDown: state.focusStoodDown,
         lowDataMode: state.lowDataMode,
         libraryTab: state.libraryTab,
         isLibraryRailCollapsed: state.isLibraryRailCollapsed,
