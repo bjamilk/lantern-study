@@ -42,7 +42,7 @@ import {
   WEAK_TOPIC_SESSION_LIMIT,
   buildTagBreakdown,
   deriveWeakTopics,
-} from './companionWeakTopics';
+} from '@lantern/shared/study/weakTopics';
 
 const MAX_HINT_LEN = 120;
 /**

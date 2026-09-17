@@ -1,13 +1,27 @@
 /**
- * Server-side per-tag accuracy for the AI companion's weak-topic context.
+ * The ONE weak-topic rule: which tags the student is weak on, and how weak.
  *
- * companionContext used to read `result.tagBreakdown`, which nothing produced,
- * so the companion never knew a weak topic. This is a server port of the
- * shared dashboard builder (packages/shared/src/utils/buildDashboardStats.ts
- * buildTopicPerformance): walk each session's `questions` jsonb, look up the
- * user's answer by question id, and tally correct/total per tag. Untagged
- * questions fall under "General" exactly as the dashboard shows them, so the
- * companion and the dashboards agree on what the weak topics are.
+ * Exports: the four thresholds, `buildTagBreakdown` (tally per tag) and
+ *  `deriveWeakTopics` (thresholds + ordering + cap).
+ * Touches: nothing but its arguments — no stores, no network, no DOM. It is a
+ *  pure function of the sessions handed to it, which is why both the server
+ *  companion and the web companion can share it.
+ * Gotchas:
+ *  - The rule used to exist twice: the server's
+ *    `apps/api-server/src/services/companionWeakTopics.ts` and the web's copy
+ *    in `utils/companionContext.ts` (#70). Both are gone; the thresholds and
+ *    the ordering live HERE and nowhere else. Each side keeps only a thin
+ *    adapter, because their inputs differ: the API works from stored rows
+ *    (newest first, `user_answers`), the web from sessions already in memory
+ *    (oldest first, `userAnswers`). Slicing the right end of the list is the
+ *    adapter's job; everything after that is this module's.
+ *  - Untagged questions fall under "General" exactly as the dashboards show
+ *    them (packages/shared/src/utils/buildDashboardStats.ts
+ *    buildTopicPerformance), so the companion and the dashboards agree on what
+ *    the weak topics are.
+ *  - A question with no answer record was never attempted and contributes
+ *    nothing — it must not count as wrong, or an abandoned test would invent
+ *    weak topics.
  */
 
 export interface TagBreakdownEntry {
@@ -23,7 +37,7 @@ export const WEAK_TOPIC_MIN_QUESTIONS = 3;
 export const WEAK_TOPIC_MAX_ACCURACY = 0.6;
 /** How many weak topics the companion context carries. */
 export const WEAK_TOPIC_LIMIT = 5;
-/** Sessions inspected per request — keeps the tally bounded and recent. */
+/** Sessions tallied — keeps the companion on current standing, not all-time. */
 export const WEAK_TOPIC_SESSION_LIMIT = 10;
 
 export interface TagBreakdownSession {
