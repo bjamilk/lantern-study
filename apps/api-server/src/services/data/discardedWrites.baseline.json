@@ -1,14 +1,1 @@
-{
-  "queue/processors/index.ts": 1,
-  "routes/auth.ts": 2,
-  "services/communities.ts": 3,
-  "services/creators.ts": 1,
-  "services/data/categories.ts": 1,
-  "services/data/directMessages.ts": 1,
-  "services/data/marketplace.ts": 1,
-  "services/data/readState.ts": 1,
-  "services/marketplaceAlerts.ts": 2,
-  "services/marketplaceFavoriteMilestones.ts": 1,
-  "services/marketplaceSellerTools.ts": 1,
-  "services/referrals.ts": 3
-}
+{}

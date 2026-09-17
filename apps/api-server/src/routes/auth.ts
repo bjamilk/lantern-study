@@ -69,6 +69,7 @@
  *   `/api/v1/auth` so it is not attached to ordinary API traffic.
  */
 import { Router, type Request, type Response } from 'express';
+import { bestEffortWrite } from '../services/data/writeResult';
 import { createClient } from '@supabase/supabase-js';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, evictAuthTokenCache, optionalAuthMiddleware, rejectIfBannedOnly } from '../middleware/auth';
@@ -517,12 +518,18 @@ router.post(
     await setUserSessionCutoff(userId);
 
     try {
-      // KNOWN ISSUE (tracked, #108): GoTrue RESOLVES with `{error}` rather than
-      // throwing, so this catch cannot see a reported failure and it is
-      // discarded. Not a session-integrity hole today because
-      // `setUserSessionCutoff` above has already invalidated the outstanding
-      // tokens. Left as-is; R2 moves calls, it does not fix them.
-      await dataLayer.users.signOutUserGlobally(userId);
+      // FIXED (#108): GoTrue RESOLVES with `{error}` rather than throwing, so
+      // the catch below could never see a reported failure and it was
+      // discarded. It is read now.
+      //
+      // BEST EFFORT at warn, and the ORDER above is why: `setUserSessionCutoff`
+      // has already invalidated the outstanding tokens, so this is a reporting
+      // gap and not a session-integrity one — exactly what #110 pinned. There
+      // is nothing for a person to repair, so it does not page.
+      bestEffortWrite(
+        await dataLayer.users.signOutUserGlobally(userId),
+        { table: 'gotrue_sessions', op: 'delete', userId, reason: 'logout_global_signout' },
+      );
     } catch (err) {
       logger.warn('Supabase global signOut failed', { userId, err });
     }
@@ -554,9 +561,12 @@ router.post(
     await setUserSessionCutoff(userId);
 
     try {
-      // KNOWN ISSUE (tracked, #108): see the note in POST /logout — the returned
-      // `{error}` is discarded, and the cutoff above is what ends the sessions.
-      await dataLayer.users.signOutUserGlobally(userId);
+      // FIXED (#108): see the note in POST /logout — the returned `{error}` is
+      // read now, and the cutoff above is still what ends the sessions.
+      bestEffortWrite(
+        await dataLayer.users.signOutUserGlobally(userId),
+        { table: 'gotrue_sessions', op: 'delete', userId, reason: 'revoke_global_signout' },
+      );
     } catch (err) {
       logger.warn('Supabase global signOut failed on session revoke', { userId, err });
     }

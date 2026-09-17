@@ -38,6 +38,7 @@
  *   `refundJobCreditOnce` makes all of those idempotent.
  */
 import { UnrecoverableError, Worker, type Job } from "bullmq";
+import { bestEffortWrite } from "../../services/data/writeResult";
 import { getQueueConnectionOptions } from "../connection";
 import { QUEUE_NAMES } from "../jobs/types";
 import { setJobStage, getJobRecord, refundJobCreditOnce } from "../jobStatus";
@@ -462,7 +463,17 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       await progress.stage("saving");
       progress.ref({ type: "conversation", id: conversation.id });
       const now = new Date().toISOString();
-      await client.from("ai_companion_messages").insert([
+      // BEST EFFORT at ERROR level (#108): this stores the STUDENT's turn, and
+      // the assistant's reply is written beside it. Losing it leaves a
+      // conversation whose question is missing and whose answer is not.
+      //
+      // Idempotency is moot here rather than satisfied: because this write
+      // cannot fail the job, the job is never retried for it, so nothing
+      // re-runs and nothing is duplicated. Making it throw would hand the
+      // decision to BullMQ's retry — and a retried companion job re-bills the
+      // inference, so it must not.
+      bestEffortWrite(
+        await client.from("ai_companion_messages").insert([
         {
           user_id: userId,
           role: "user",
@@ -480,7 +491,17 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
           note_context_id: effectiveNoteId,
           conversation_id: conversation.id,
         },
-      ]);
+      ]),
+        {
+          table: "ai_companion_messages",
+          op: "insert",
+          userId,
+          conversationId: conversation.id,
+          reason: "companion_turn",
+        },
+        "error",
+        "companion-transcript-write-failed",
+      );
       await touchConversation(client, userId, conversation.id);
       await ensureConversationTitle(client, userId, conversation, trimmed);
 

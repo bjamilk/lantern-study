@@ -1,4 +1,5 @@
 import type { DataLayer } from "./data";
+import { bestEffortWrite } from "./data/writeResult";
 import { logger } from "../utils/logger";
 
 const INTERVAL_MS = parseInt(
@@ -133,10 +134,15 @@ export async function processSavedSearchAlerts(
       .slice(0, 5);
 
     if (matches.length === 0) {
-      await db
-        .from("saved_searches")
-        .update({ last_checked_at: now })
-        .eq("id", search.id);
+      // BEST EFFORT (#108): the watermark. A lost stamp widens the next scan,
+      // which re-stamps it.
+      bestEffortWrite(
+        await db
+          .from("saved_searches")
+          .update({ last_checked_at: now })
+          .eq("id", search.id),
+        { table: "saved_searches", op: "update", searchId: search.id, reason: "alert_watermark" },
+      );
       continue;
     }
 
@@ -178,10 +184,14 @@ export async function processSavedSearchAlerts(
       sent += await batchCreateNotifications(layer, pending);
     }
 
-    await db
-      .from("saved_searches")
-      .update({ last_checked_at: now })
-      .eq("id", search.id);
+    // BEST EFFORT (#108): the same watermark, on the path that did send.
+    bestEffortWrite(
+      await db
+        .from("saved_searches")
+        .update({ last_checked_at: now })
+        .eq("id", search.id),
+      { table: "saved_searches", op: "update", searchId: search.id, reason: "alert_watermark" },
+    );
   }
 
   if (sent > 0) {

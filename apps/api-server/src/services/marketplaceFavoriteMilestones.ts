@@ -1,4 +1,5 @@
 import type { DataLayer } from './data';
+import { bestEffortWrite } from './data/writeResult';
 import { logger } from '../utils/logger';
 
 export async function notifySellerFavoriteMilestone(
@@ -41,10 +42,15 @@ export async function notifySellerFavoriteMilestone(
 
     if (existing) continue;
 
-    await db.from('marketplace_favorite_milestones').insert({
-      listing_id: listingId,
-      milestone,
-    });
+    // BEST EFFORT (#108): the dedupe row for a seller nudge. Losing it can
+    // repeat one nudge on a later run; it cannot lose one.
+    bestEffortWrite(
+      await db.from('marketplace_favorite_milestones').insert({
+        listing_id: listingId,
+        milestone,
+      }),
+      { table: 'marketplace_favorite_milestones', op: 'insert', listingId, milestone },
+    );
 
     await layer.notifications.createNotification(listing.user_id, {
       type: 'marketplace_favorite_milestone',

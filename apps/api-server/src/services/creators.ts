@@ -9,6 +9,7 @@
  * ratings, learners-helped and the trust level.
  */
 import type { ActivityFeedHost } from './activityFeed';
+import { bestEffortWrite } from './data/writeResult';
 
 /**
  * FLIPPED (monolith lane M3, Phase B): `creators` reaches only `getClient()`
@@ -400,10 +401,20 @@ export class CreatorsService {
         .maybeSingle();
       if ((payout as any)?.status === 'active') level = 2;
     }
-    await this.db
-      .from('profiles')
-      .update({ email_confirmed_at: emailConfirmedAt, verification_level: level })
-      .eq('id', userId);
+    // BEST EFFORT at ERROR level (#108): the level is RETURNED to the caller
+    // either way, so a lost write means the answer and the profile disagree —
+    // the creator is told they are verified while every gate that reads the
+    // profile still says they are not. Throwing would deny a level they have
+    // genuinely earned, so this reports and someone re-runs it.
+    bestEffortWrite(
+      await this.db
+        .from('profiles')
+        .update({ email_confirmed_at: emailConfirmedAt, verification_level: level })
+        .eq('id', userId),
+      { table: 'profiles', op: 'update', userId, level, reason: 'verification_level' },
+      'error',
+      'creator-verification-write-failed',
+    );
     return level;
   }
 

@@ -7,11 +7,13 @@
  *
  *   await db.from('marketplace_orders').update(patch).eq('id', id);
  *
- * ignores failure, and a `try/catch` around it catches nothing. 87 of these
- * are in the tree today; `docs/write-errors-plan.md` classifies them. Fixing
- * them is several pull requests of careful, money-path work, so the number is
- * frozen here and this test fails on any INCREASE — and on any decrease too,
- * so a gain is banked rather than quietly given back later.
+ * ignores failure, and a `try/catch` around it catches nothing. There were 87
+ * of these when this ratchet was written and the baseline is now ZERO: #108 is
+ * finished, and `docs/write-errors-plan.md` records what each site became.
+ *
+ * The ratchet stays, and it is now a floor of zero: any new discarded write
+ * fails the build. It still fails on a DECREASE too, which at zero can only
+ * mean the baseline file drifted — the instruction to re-freeze covers that.
  *
  * ## The four shapes it counts
  *
@@ -27,7 +29,7 @@
  *     `await (isSeller ? scoped.eq(…) : scoped.eq(…))` (#111).
  *  4. `unread` — a write whose result IS destructured but whose `error` is
  *     never read again in the enclosing scope, or is not bound at all. There
- *     are none today: this codebase checks when it destructures.
+ *     were none at any point: this codebase checks when it destructures.
  *
  * Two edge shapes are self-tested below because both appear in the tree:
  * `…insert({…}).then(({ error }) => …)` IS a check (data/boardActions.ts),
@@ -59,9 +61,13 @@
  *
  * ## The gotcha
  *
- * A scanner that silently stops matching passes forever. The last describe
- * block feeds the matcher positive and negative fixtures, and the totals below
- * are asserted to be non-trivial, so regex rot fails loudly.
+ * A scanner that silently stops matching passes forever, and at a baseline of
+ * zero that is the ONLY failure mode left — there is no live site whose absence
+ * would give it away. So the matcher is proved entirely on fixtures in the last
+ * describe block: every shape it counts, and every shape it must not, is fed to
+ * it directly. Three assertions in this file have already had to be rewritten
+ * because they were pinned to live examples and the work removed them; none
+ * are now.
  */
 import fs from 'fs';
 import path from 'path';
@@ -391,21 +397,22 @@ describe('discarded write errors do not grow', () => {
     );
   });
 
-  it('still finds the shape the bare-await regex cannot see', () => {
-    // `await dataLayer.users.signOutUserGlobally(id)` (#110) and
-    // `await dataLayer.marketplace.updateOrderFieldsAsParty(…)` (#111) are both
-    // bare awaits of a helper that RESOLVES with `{ error }`. If this reaches
-    // zero because the detector rotted rather than because the sites were
-    // fixed, the ratchet's decrease check fires first — this says which shape
-    // went missing.
+  it('still finds the shapes the bare-await regex cannot see, while any remain', () => {
+    // The `helper` and `chain` shapes are the ones a plain `.from(` regex
+    // cannot reach, and for most of this issue's life the tree carried live
+    // examples of both. It no longer carries any: #108 is finished, the
+    // baseline is empty, and asserting on live examples here would be the
+    // third self-test in this file to fail BECAUSE the work succeeded.
+    //
+    // So the detectors are proved on fixtures in the matcher block below, and
+    // this only asserts the tree while there is anything left in it.
     const kinds = Object.values(found).flat().map((finding) => finding.kind);
-    expect(kinds).toContain('helper');
-    // `chain` has no site in the tree right now: #111 moved the one R2 found
-    // (`await (isSeller ? scoped.eq(…) : scoped.eq(…))`) behind
-    // `updateOrderFieldsAsParty`, which is the `helper` shape. The detector
-    // stays, with a fixture instead of a live site — the pattern is easy to
-    // write again.
-    expect(kinds).not.toContain('chain');
+    const baselineTotal = Object.values(baseline).reduce((a, b) => a + b, 0);
+    if (baselineTotal === 0) {
+      expect(kinds).toEqual([]);
+      return;
+    }
+    expect(kinds.length).toBeGreaterThan(0);
   });
 });
 

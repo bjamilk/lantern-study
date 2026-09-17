@@ -14,6 +14,7 @@
  * calendar days, which cannot be manufactured in one burst.
  */
 import type { DataLayer } from './data';
+import { bestEffortWrite, reconcileLaterWrite } from './data/writeResult';
 import { getWalletService, type WalletService } from './walletService';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
@@ -91,8 +92,17 @@ export class ReferralsService {
       const { data: generated } = await this.db.rpc('generate_referral_code');
       const code = typeof generated === 'string' ? generated : null;
       if (!code) return null;
-      await this.db.from('profiles').update({ referral_code: code }).eq('id', userId);
-      return code;
+      // BEST EFFORT at ERROR level (#108) — but the ANSWER changes with it.
+      // Returning a code the profile does not carry hands the user a link that
+      // resolves to nobody, and the next call mints a different one. The
+      // `try/catch` around this could never see the failure anyway.
+      const stamped = bestEffortWrite(
+        await this.db.from('profiles').update({ referral_code: code }).eq('id', userId),
+        { table: 'profiles', op: 'update', userId, reason: 'mint_referral_code' },
+        'error',
+        'referral-code-write-failed',
+      );
+      return stamped ? code : null;
     } catch (err) {
       logger.warn('referral code mint failed', {
         userId,
@@ -211,11 +221,17 @@ export class ReferralsService {
       });
       if (error) throw error;
       if (activated === true) {
-        await this.db
-          .from('profiles')
-          .update({ activated_at: new Date().toISOString() })
-          .eq('id', refereeId)
-          .is('activated_at', null);
+        // BEST EFFORT (#108): `referral_activation_check` is the source of
+        // truth and is re-run on every check, so a lost stamp is re-applied the
+        // next time. The `.is(null)` guard is what makes that safe.
+        bestEffortWrite(
+          await this.db
+            .from('profiles')
+            .update({ activated_at: new Date().toISOString() })
+            .eq('id', refereeId)
+            .is('activated_at', null),
+          { table: 'profiles', op: 'update', userId: refereeId, reason: 'stamp_activated_at' },
+        );
       }
 
       if (!row) return { rewarded: false };
@@ -272,14 +288,31 @@ export class ReferralsService {
       // are honest only about the half `wallet_award_once` just paid. The stamp
       // goes on before the AI grant so that if the AI ledger is absent, the
       // rewarded_at branch above heals it forward on a later check.
-      await this.db
-        .from('referrals')
-        .update({
-          qualified_at: row.qualified_at ?? now,
-          rewarded_at: now,
-          reward_amount: REFERRAL_REWARD_REFERRER,
-        })
-        .eq('id', row.id);
+      // MONEY ALREADY MOVED (#108): `awardWalletOnce` has paid both sides by
+      // the time this runs, so this cannot throw.
+      //
+      // What stops a DOUBLE reward is NOT this stamp — it is the wallet's own
+      // `wallet_award_once` key (`referral:referrer:<id>`), which makes a
+      // second call a no-op. Losing the stamp therefore costs the record, not
+      // the money: the referral reads unrewarded, and the reward branch re-runs
+      // on every later check and pays nothing.
+      reconcileLaterWrite(
+        await this.db
+          .from('referrals')
+          .update({
+            qualified_at: row.qualified_at ?? now,
+            rewarded_at: now,
+            reward_amount: REFERRAL_REWARD_REFERRER,
+          })
+          .eq('id', row.id),
+        {
+          table: 'referrals',
+          op: 'update',
+          referralId: row.id,
+          amount: REFERRAL_REWARD_REFERRER,
+          reason: 'stamp_reward_paid',
+        },
+      );
 
       // AI uses are a separate ledger and are NEVER allowed to fail or reverse
       // the coins above: `grantReferralBonusUses` cannot throw, and when the

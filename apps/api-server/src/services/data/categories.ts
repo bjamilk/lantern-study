@@ -26,6 +26,7 @@
  * still yields every field a client expects.
  */
 import { logger } from "../../utils/logger";
+import { bestEffortWrite } from "./writeResult";
 
 import type { DataClient } from "./client";
 
@@ -90,10 +91,14 @@ export async function incrementCategoryUsage(
     .single();
 
   if (data) {
-    await supabase
-      .from("custom_categories")
-      .update({ usage_count: (data.usage_count || 0) + 1 })
-      .eq("name", categoryName);
+    // BEST EFFORT (#108): a usage counter that only orders a suggestion list.
+    bestEffortWrite(
+      await supabase
+        .from("custom_categories")
+        .update({ usage_count: (data.usage_count || 0) + 1 })
+        .eq("name", categoryName),
+      { table: "custom_categories", op: "update", reason: "usage_counter" },
+    );
   }
 }
 

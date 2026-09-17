@@ -61,6 +61,7 @@
  * there.
  */
 import type { ConnectionInput as LearningConnectionInput } from "../learningConnections";
+import { bestEffortWrite } from "./writeResult";
 import { logger } from "../../utils/logger";
 import { normalizeReactions } from "@lantern/shared/chat";
 import {
@@ -488,7 +489,14 @@ export async function sendDirectMessage(
       senderId,
     );
 
-    await supabase
+    // BEST EFFORT at ERROR level (#108): the message itself is already stored,
+    // so this cannot throw. But this write carries the thread's REQUEST state
+    // (`status`, `requested_by`) as well as its preview, so losing it can leave
+    // a message request that never appears as one — not something the next
+    // send repairs, because the next send writes today's state, not the
+    // transition that was missed.
+    bestEffortWrite(
+      await supabase
       .from("dm_threads")
       .update({
         last_message: content,
@@ -499,7 +507,11 @@ export async function sendDirectMessage(
         requested_by: nextRequestedBy,
         history_cleared_at: nextHistoryClearedAt,
       })
-      .eq("id", threadId);
+      .eq("id", threadId),
+      { table: "dm_threads", op: "update", threadId, reason: "thread_state_after_send" },
+      "error",
+      "dm-thread-state-write-failed",
+    );
 
     const senderProfile = Array.isArray(data.profiles)
       ? (data.profiles as unknown as any[])[0]

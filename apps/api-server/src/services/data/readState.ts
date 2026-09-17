@@ -65,6 +65,7 @@
  * same.)
  */
 import { logger } from "../../utils/logger";
+import { bestEffortWrite } from "./writeResult";
 import {
   effectiveDmUnreadFloor,
   readDmHistoryClearedAt,
@@ -518,13 +519,19 @@ export async function deleteDmThread(
 
     // Anchor read cursor at delete time so unread math cannot revive old rows
     // before history_cleared_at is applied everywhere.
-    await supabase.from("dm_read_status").upsert(
-      {
-        thread_id: threadId,
-        user_id: userId,
-        last_read_at: clearedAt,
-      },
-      { onConflict: "thread_id,user_id" },
+    // BEST EFFORT (#108): a read cursor. Losing it can make a cleared thread
+    // reappear unread until the user opens it once, which is annoying rather
+    // than wrong — and the thread is already hidden by the checked write above.
+    bestEffortWrite(
+      await supabase.from("dm_read_status").upsert(
+        {
+          thread_id: threadId,
+          user_id: userId,
+          last_read_at: clearedAt,
+        },
+        { onConflict: "thread_id,user_id" },
+      ),
+      { table: "dm_read_status", op: "upsert", threadId, userId, reason: "anchor_after_clear" },
     );
 
     return true;
