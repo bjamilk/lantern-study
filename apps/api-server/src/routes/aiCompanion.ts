@@ -358,19 +358,26 @@ router.post('/analytics', async (req: Request, res: Response) => {
   }
 
   try {
-    // KNOWN ISSUE (tracked, found during R2): this catch cannot fire on a
-    // database error — PostgREST resolves with `{error}` rather than throwing —
-    // so a failed insert is still answered `{success: true}`. Left exactly as it
-    // was; R2 moves queries, it does not fix them.
-    await dataLayer.aiCompanion.recordAnalyticsEvent(
+    // FIXED (#107): the returned `error` was never read. PostgREST RESOLVES
+    // with `{error}` on a failed write rather than throwing, so the catch below
+    // could not fire for a database failure and a dropped row was answered
+    // `{success: true}` with nothing logged. Telemetry still never fails the
+    // student's request — it stays a 200 — but the answer and the log are honest.
+    const { error } = await dataLayer.aiCompanion.recordAnalyticsEvent(
       userId,
       event,
       metadata || {},
       new Date().toISOString()
     );
+    if (error) {
+      console.warn('AI analytics insert failed (non-critical):', error.message ?? error);
+      res.json({ success: false });
+      return;
+    }
 
     res.json({ success: true });
   } catch (err: any) {
+    // A THROWN failure (the client itself blew up, e.g. a network error).
     console.warn('AI analytics insert failed (non-critical):', err.message);
     res.json({ success: false });
   }
