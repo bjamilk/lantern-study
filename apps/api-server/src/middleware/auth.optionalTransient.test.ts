@@ -61,7 +61,8 @@ async function run(headers: Record<string, string>) {
 
 beforeEach(() => {
   verifySupabaseTokenDetailed.mockReset();
-  initializeAuthMiddleware({ verifySupabaseTokenDetailed } as any);
+  // The layer's `client` namespace owns token verification (M3 Phase B).
+  initializeAuthMiddleware({ client: { verifySupabaseTokenDetailed } } as any);
 });
 
 describe('optionalAuthMiddleware and infrastructure failures', () => {

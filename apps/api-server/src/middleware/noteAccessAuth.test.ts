@@ -6,7 +6,7 @@ import {
   requireNoteEdit,
   requireNoteOwner,
 } from './authorizeResource';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 
 jest.mock('../utils/platformAdminAuth', () => ({
   isLivePlatformAdmin: jest.fn(),
@@ -60,11 +60,10 @@ describe('note access authorization middleware', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsLivePlatformAdmin.mockResolvedValue(false);
+    // All three note predicates belong to the `notes` namespace on the layer.
     initializeAuthorizeResource({
-      resolveNoteAccess,
-      canEditNote,
-      isNoteOwner,
-    } as unknown as SupabaseService);
+      notes: { resolveNoteAccess, canEditNote, isNoteOwner },
+    } as unknown as DataLayer);
   });
 
   it('requireNoteAccess denies outsiders', async () => {

@@ -3,8 +3,11 @@ import { AuthenticatedRequest } from '../types';
 import {
   initializeAuthorizeResource,
   requireDeckAccess,
+  requireGroupAdmin,
+  requireGroupMember,
+  requireTestOwner,
 } from './authorizeResource';
-import { SupabaseService } from '../services/supabase';
+import type { DataLayer } from '../services/data';
 
 jest.mock('../utils/platformAdminAuth', () => ({
   isLivePlatformAdmin: jest.fn(),
@@ -33,7 +36,7 @@ function mockRes(): Response {
 }
 
 function runMiddleware(
-  middleware: ReturnType<typeof requireDeckAccess>,
+  middleware: ReturnType<typeof requireDeckAccess | typeof requireGroupMember>,
   req: AuthenticatedRequest
 ): Promise<{ res: Response; nextCalled: boolean }> {
   return new Promise((resolve) => {
@@ -55,10 +58,11 @@ describe('requireDeckAccess live admin bypass', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    const service = {
-      verifyDeckAccess,
-    } as unknown as SupabaseService;
-    initializeAuthorizeResource(service);
+    // Regrouped onto the namespace that owns the predicate (M3 Phase B); the
+    // stub itself is the same `jest.fn()`.
+    initializeAuthorizeResource({
+      offlineBundles: { verifyDeckAccess },
+    } as unknown as DataLayer);
   });
 
   it('denies when deck access fails and JWT isAdmin is stale', async () => {
@@ -89,5 +93,69 @@ describe('requireDeckAccess live admin bypass', () => {
     const { nextCalled } = await runMiddleware(requireDeckAccess(), req);
 
     expect(nextCalled).toBe(true);
+  });
+});
+
+
+/**
+ * The group and test predicates read through the layer's `groups` and `tests`
+ * namespaces (monolith lane M3, Phase B). Nothing drove them before — this is
+ * the security boundary, and a predicate that reads the wrong handle denies
+ * everyone or, worse, denies no one.
+ */
+describe('group and test predicates read through the layer', () => {
+  const getGroupById = jest.fn();
+  const getTestById = jest.fn();
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockIsLivePlatformAdmin.mockResolvedValue(false);
+    initializeAuthorizeResource({
+      groups: { getGroupById },
+      tests: { getTestById },
+    } as unknown as DataLayer);
+  });
+
+  const req = (params: Record<string, string>) =>
+    ({
+      user: { id: 'user-1', permissions: [], credentialType: 'jwt' },
+      params,
+    }) as unknown as AuthenticatedRequest;
+
+  it('requireGroupMember passes a member and denies a stranger', async () => {
+    getGroupById.mockResolvedValueOnce({ id: 'group-1' });
+    const pass = await runMiddleware(requireGroupMember(), req({ groupId: 'group-1' }));
+    expect(pass.nextCalled).toBe(true);
+    expect(getGroupById).toHaveBeenCalledWith('group-1', 'user-1');
+
+    getGroupById.mockResolvedValueOnce(null);
+    const deny = await runMiddleware(requireGroupMember(), req({ groupId: 'group-1' }));
+    expect(deny.nextCalled).toBe(false);
+    expect(deny.res.statusCode).toBe(403);
+  });
+
+  it('requireGroupAdmin denies a plain member and passes a live platform admin', async () => {
+    getGroupById.mockResolvedValue({ id: 'group-1', adminIds: ['someone-else'] });
+
+    const deny = await runMiddleware(requireGroupAdmin(), req({ groupId: 'group-1' }));
+    expect(deny.nextCalled).toBe(false);
+    expect(deny.res.statusCode).toBe(403);
+
+    // The bypass is the LIVE lookup, never the JWT claim.
+    mockIsLivePlatformAdmin.mockResolvedValue(true);
+    const pass = await runMiddleware(requireGroupAdmin(), req({ groupId: 'group-1' }));
+    expect(pass.nextCalled).toBe(true);
+  });
+
+  it('requireTestOwner 404s a test the caller cannot see', async () => {
+    getTestById.mockResolvedValueOnce(null);
+    const deny = await runMiddleware(requireTestOwner(), req({ testId: 'test-1' }));
+    expect(deny.nextCalled).toBe(false);
+    expect(deny.res.statusCode).toBe(404);
+
+    getTestById.mockResolvedValueOnce({ id: 'test-1' });
+    const pass = await runMiddleware(requireTestOwner(), req({ testId: 'test-1' }));
+    expect(pass.nextCalled).toBe(true);
+    expect(getTestById).toHaveBeenCalledWith('test-1', 'user-1');
   });
 });

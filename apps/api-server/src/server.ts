@@ -233,12 +233,12 @@ async function initializeServices() {
 
     // Initialize auth middleware with supabase service
     const { initializeAuthMiddleware } = await import('./middleware/auth');
-    initializeAuthMiddleware(supabaseService, dataLayer);
+    initializeAuthMiddleware(dataLayer);
 
     const { initializeAuthorizeResource, assertProductionAuthStrict } = await import('./middleware/authorizeResource');
-    initializeAuthorizeResource(supabaseService);
+    initializeAuthorizeResource(dataLayer);
     const { initializePlatformAdminAuth } = await import('./utils/platformAdminAuth');
-    initializePlatformAdminAuth(supabaseService);
+    initializePlatformAdminAuth(dataLayer);
     assertProductionAuthStrict();
 
     // Route modules hold their Supabase/cache handles in module scope and are

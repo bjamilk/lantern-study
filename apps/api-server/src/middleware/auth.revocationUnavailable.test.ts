@@ -67,7 +67,8 @@ beforeEach(() => {
   verifySupabaseToken.mockResolvedValue({ isValid: true, user: { id: 'user-1' } });
   checkAccessTokenDenied.mockReset().mockResolvedValue('allowed');
   checkTokenIssuedBeforeUserCutoff.mockReset().mockResolvedValue('allowed');
-  initializeAuthMiddleware({ verifySupabaseToken } as any);
+  // The layer's `client` namespace owns token verification (M3 Phase B).
+  initializeAuthMiddleware({ client: { verifySupabaseToken } } as any);
 });
 
 describe('authMiddleware and an unverifiable revocation state', () => {
