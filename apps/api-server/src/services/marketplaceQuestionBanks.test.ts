@@ -15,6 +15,11 @@ jest.mock('./marketplacePayments', () => ({
 }));
 
 import { MarketplaceQuestionBanksService } from './marketplaceQuestionBanks';
+// The service takes `MarketplaceServiceHost` since M3 Phase B. The stand-ins
+// below stay FLAT and are regrouped by the production adapter
+// (`marketplaceHostFromFlat`), so every assertion still names the same
+// `jest.fn()` and the adapter itself is exercised by these suites.
+import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 import { PublicError } from '../utils/safeError';
 
 type TableResult = { data: unknown; error?: unknown };
@@ -102,7 +107,7 @@ function makeService(overrides: {
     saveOfflineBundle,
   };
   return {
-    service: new MarketplaceQuestionBanksService(supabaseService),
+    service: new MarketplaceQuestionBanksService(marketplaceHostFromFlat(supabaseService)),
     supabaseService,
     writes,
     saveOfflineBundle,
@@ -382,7 +387,7 @@ describe('recordScore', () => {
     const supabaseService: any = {
       getClient: () => ({ from: () => chain, rpc }),
     };
-    return { service: new MarketplaceQuestionBanksService(supabaseService), rpc };
+    return { service: new MarketplaceQuestionBanksService(marketplaceHostFromFlat(supabaseService)), rpc };
   }
 
   it('refuses users who do not own the bank', async () => {

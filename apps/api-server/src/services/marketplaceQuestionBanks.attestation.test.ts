@@ -4,6 +4,11 @@
  * sources_cited). Stubbed SupabaseService; no network.
  */
 import { MarketplaceQuestionBanksService } from './marketplaceQuestionBanks';
+// The service takes `MarketplaceServiceHost` since M3 Phase B. The stand-ins
+// below stay FLAT and are regrouped by the production adapter
+// (`marketplaceHostFromFlat`), so every assertion still names the same
+// `jest.fn()` and the adapter itself is exercised by these suites.
+import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 import { ATTESTATION_REQUIRED_MESSAGE, RIGHTS_ATTESTATION_VERSION } from '@lantern/shared/moderation';
 import { COURSE_ANCHOR_COPY } from '@lantern/shared/marketplace';
 
@@ -66,7 +71,7 @@ function service(db: ReturnType<typeof makeDb>) {
       category_specific_fields: {},
     })),
   };
-  const svc = new MarketplaceQuestionBanksService(supabaseService);
+  const svc = new MarketplaceQuestionBanksService(marketplaceHostFromFlat(supabaseService));
   // deliverBundle touches offline_bundles; not under test here.
   (svc as any).deliverBundle = jest.fn(async () => undefined);
   return { svc, createMarketplaceListing };

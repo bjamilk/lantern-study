@@ -525,7 +525,7 @@ router.post(
         const created = await dataLayer.marketplace.createMarketplaceListing(listingData, userId);
 
         if (contentFlags.length > 0 && (created as { id?: string })?.id) {
-          await getModerationService(supabaseService).recordListingFlags(
+          await getModerationService(dataLayer).recordListingFlags(
             (created as { id: string }).id,
             userId,
             contentFlags,
@@ -541,7 +541,7 @@ router.post(
 
         try {
           const { getMarketplaceSellerToolsService } = await import('../../services/marketplaceSellerTools');
-          await getMarketplaceSellerToolsService(supabaseService).ensureSellerShop(userId);
+          await getMarketplaceSellerToolsService(dataLayer).ensureSellerShop(userId);
         } catch (e) {
           logger.warn('Failed to ensure seller shop on listing create', e);
         }
@@ -728,11 +728,11 @@ router.put(
       attestationSent &&
       (!alreadyAttested || isAcademicListing({ listingKind: listing.listing_kind, category: nextCategory }))
     ) {
-      await getModerationService(supabaseService).markListingAttested(id);
+      await getModerationService(dataLayer).markListingAttested(id);
       updatedListing = { ...updatedListing, ...listingRightsFields(true) };
     }
     if (updatedListing && contentFlags.length > 0) {
-      await getModerationService(supabaseService).recordListingFlags(id, listing.user_id, contentFlags);
+      await getModerationService(dataLayer).recordListingFlags(id, listing.user_id, contentFlags);
     }
 
     if ((courseWasProvided || nextTopicId !== undefined) && updatedListing) {
@@ -754,7 +754,7 @@ router.put(
     if (priceChanged) {
       const { notifyFavoritePriceDrop } = await import('../../services/marketplaceFavoriteAlerts');
       await notifyFavoritePriceDrop(
-        supabaseService,
+        dataLayer,
         { ...listing, ...updatedListing, id, user_id: listing.user_id, title: updatedListing?.title || listing.title },
         listing
       );
@@ -763,7 +763,7 @@ router.put(
     if (updates?.status === 'active' && listing.status !== 'active') {
       const { notifyListingBackAvailable } = await import('../../services/marketplaceFavoriteAlerts');
       await notifyListingBackAvailable(
-        supabaseService,
+        dataLayer,
         { id, user_id: listing.user_id, title: updatedListing?.title || listing.title },
         listing.status
       );
@@ -1052,7 +1052,7 @@ router.post(
     }
 
     try {
-      const report = await getModerationService(supabaseService).createReport({
+      const report = await getModerationService(dataLayer).createReport({
         reporterId: userId,
         targetType: 'listing',
         targetId: id,
@@ -1082,7 +1082,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const result = await getModerationService(supabaseService).appealListing(
+      const result = await getModerationService(dataLayer).appealListing(
         req.params.id,
         userId,
         req.body?.note

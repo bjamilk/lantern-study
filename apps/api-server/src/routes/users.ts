@@ -360,7 +360,7 @@ router.get(
         const { getCreatorsService } = await import('../services/creators');
         const { data: authUser } = await dataLayer.getClient()
           .auth.admin.getUserById(userId);
-        await getCreatorsService(legacyService()).syncVerificationLevel(
+        await getCreatorsService(dataLayer).syncVerificationLevel(
           userId,
           (authUser?.user as { email_confirmed_at?: string | null } | undefined)?.email_confirmed_at ?? null
         );
@@ -419,7 +419,7 @@ router.get(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { getModerationService } = await import('../services/moderation');
-    const state = await getModerationService(legacyService()).getModerationState(userId);
+    const state = await getModerationService(dataLayer).getModerationState(userId);
     res.json({ success: true, data: state });
   })
 );
@@ -850,7 +850,7 @@ router.put(
     if (updateData.bio !== undefined) {
       const { getCreatorsService } = await import('../services/creators');
       try {
-        updateData.bio = getCreatorsService(legacyService()).normalizeBio(updateData.bio);
+        updateData.bio = getCreatorsService(dataLayer).normalizeBio(updateData.bio);
       } catch (error) {
         if (error instanceof PublicError) {
           return res.status(400).json({ success: false, error: error.message });
@@ -2254,7 +2254,7 @@ router.post(
     if (!userId) return;
     const { getCreatorsService } = await import('../services/creators');
     try {
-      const data = await getCreatorsService(legacyService()).follow(userId, req.params.userId);
+      const data = await getCreatorsService(dataLayer).follow(userId, req.params.userId);
       res.json({ success: true, data });
     } catch (err: any) {
       // Only user-facing PublicErrors become 4xx; DB/internal errors must keep
@@ -2279,7 +2279,7 @@ router.delete(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const { getCreatorsService } = await import('../services/creators');
-    const data = await getCreatorsService(legacyService()).unfollow(userId, req.params.userId);
+    const data = await getCreatorsService(dataLayer).unfollow(userId, req.params.userId);
     res.json({ success: true, data });
   })
 );
@@ -2295,7 +2295,7 @@ router.get(
     if (!viewerId) return;
     const { getCreatorsService } = await import('../services/creators');
     const page = req.query?.page ? Number(req.query.page) : 1;
-    const data = await getCreatorsService(legacyService()).listFollowers(
+    const data = await getCreatorsService(dataLayer).listFollowers(
       req.params.userId,
       page,
       30,
@@ -2316,7 +2316,7 @@ router.get(
     if (!viewerId) return;
     const { getCreatorsService } = await import('../services/creators');
     const page = req.query?.page ? Number(req.query.page) : 1;
-    const data = await getCreatorsService(legacyService()).listFollowing(
+    const data = await getCreatorsService(dataLayer).listFollowing(
       req.params.userId,
       page,
       30,

@@ -61,7 +61,12 @@ function makeDb(resolve: (op: Op, ops: Op[]) => { data?: unknown; error?: unknow
 
 function service(db: ReturnType<typeof makeDb>) {
   const createNotification = jest.fn(async () => null);
-  const svc = new ModerationService({ getClient: () => db, createNotification } as any);
+  // Regrouped onto the namespaced host the service takes since M3 Phase B;
+  // the stub itself is unchanged.
+  const svc = new ModerationService({
+    getClient: () => db,
+    notifications: { createNotification },
+  } as any);
   return { svc, createNotification };
 }
 

@@ -8,7 +8,13 @@
  * SEC-08 invariant: a creator profile NEVER exposes earnings — only counts,
  * ratings, learners-helped and the trust level.
  */
-import type { SupabaseService } from './supabase';
+import type { ActivityFeedHost } from './activityFeed';
+
+/**
+ * FLIPPED (monolith lane M3, Phase B): `creators` reaches only `getClient()`
+ * itself, but it records to the activity feed, so it holds what the FEED needs.
+ */
+type CreatorsHost = ActivityFeedHost;
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 
@@ -28,10 +34,10 @@ export interface CreatorStatsRow {
 }
 
 export class CreatorsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: CreatorsHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   private assertUuid(id: string, label = 'user id'): void {
@@ -89,19 +95,19 @@ export class CreatorsService {
     // Phase 3: a follow is both feed-worthy and a learning connection. Actor is
     // the FOLLOWEE — they are the one whose work reached someone new — which is
     // also why this is not symmetric with unfollow.
-    const [{ getActivityFeedService, feedHostFromFlat }, { getLearningConnectionsService }] = await Promise.all([
+    const [{ getActivityFeedService }, { getLearningConnectionsService }] = await Promise.all([
       import('./activityFeed'),
       import('./learningConnections'),
     ]);
     await Promise.all([
-      getActivityFeedService(feedHostFromFlat(this.supabaseService)).record({
+      getActivityFeedService(this.host).record({
         actorId: followerId,
         verb: 'followed_creator',
         objectType: 'profile',
         objectId: followeeId,
         audienceType: 'followers',
       }),
-      getLearningConnectionsService(this.supabaseService).record({
+      getLearningConnectionsService(this.host).record({
         actorId: followeeId,
         beneficiaryId: followerId,
         kind: 'followed',
@@ -416,7 +422,7 @@ export class CreatorsService {
 
 let service: CreatorsService | null = null;
 
-export function getCreatorsService(supabaseService: SupabaseService): CreatorsService {
-  if (!service) service = new CreatorsService(supabaseService);
+export function getCreatorsService(host: CreatorsHost): CreatorsService {
+  if (!service) service = new CreatorsService(host);
   return service;
 }

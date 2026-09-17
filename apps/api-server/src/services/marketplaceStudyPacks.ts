@@ -14,7 +14,13 @@
  * makes re-delivery (update-pull, restore, re-download) idempotent instead of
  * minting duplicate decks/notes.
  */
-import type { SupabaseService } from './supabase';
+/**
+ * FLIPPED (monolith lane M3, Phase B): takes `MarketplaceServiceHost` — the
+ * shared, narrow host of the money cluster — instead of the whole
+ * `SupabaseService`. See `services/marketplaceServiceHost.ts` for why the six
+ * money services share one type and how the last facade-side callers adapt.
+ */
+import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { PublicError } from '../utils/safeError';
 import { isMissingTopicColumn } from './academicCourses';
 import {
@@ -148,10 +154,10 @@ function withDeliveryLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 }
 
 export class MarketplaceStudyPacksService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: MarketplaceServiceHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   /** Deterministic per listing so re-grants and restores upsert, never duplicate. */
@@ -355,10 +361,10 @@ export class MarketplaceStudyPacksService {
       if (!marketplacePaystackEnabled()) {
         throw new PublicError('Paid study packs require in-app payments, which are not enabled');
       }
-      await getMarketplacePaymentsService(this.supabaseService).assertSellerCanReceivePayout(userId);
+      await getMarketplacePaymentsService(this.host).assertSellerCanReceivePayout(userId);
     }
 
-    const listing = await this.supabaseService.createMarketplaceListing(
+    const listing = await this.host.marketplace.createMarketplaceListing(
       {
         title,
         description: input.description || '',
@@ -419,7 +425,7 @@ export class MarketplaceStudyPacksService {
 
     if (contentFlags.length > 0) {
       try {
-        await getModerationService(this.supabaseService).recordListingFlags(
+        await getModerationService(this.host).recordListingFlags(
           listing.id,
           userId,
           contentFlags,
@@ -431,12 +437,12 @@ export class MarketplaceStudyPacksService {
 
     // Creator counters (Phase 2 · J) — never throws.
     const { getCreatorsService } = await import('./creators');
-    await getCreatorsService(this.supabaseService).refreshStats(userId);
+    await getCreatorsService(this.host).refreshStats(userId);
 
     // Academic feed (Phase 3 · M): announce the publish to the creator's
     // followers. Best-effort — the listing is already live.
-    const { getActivityFeedService, feedHostFromFlat } = await import('./activityFeed');
-    await getActivityFeedService(feedHostFromFlat(this.supabaseService)).record({
+    const { getActivityFeedService } = await import('./activityFeed');
+    await getActivityFeedService(this.host).record({
       actorId: userId,
       verb: 'published_pack',
       objectType: 'listing',
@@ -592,12 +598,12 @@ export class MarketplaceStudyPacksService {
       const sellerId = (listing as { user_id?: string } | null)?.user_id;
       if (sellerId && sellerId !== userId) {
         const { getCreatorsService } = await import('./creators');
-        await getCreatorsService(this.supabaseService).refreshStats(sellerId);
+        await getCreatorsService(this.host).refreshStats(sellerId);
 
         // North-star metric (Phase 3 · O): a creator's pack reaching a new
         // student IS the learning connection. Actor = the creator who helped.
         const { getLearningConnectionsService } = await import('./learningConnections');
-        await getLearningConnectionsService(this.supabaseService).record({
+        await getLearningConnectionsService(this.host).record({
           actorId: sellerId,
           beneficiaryId: userId,
           kind: 'pack_entitled',
@@ -688,7 +694,7 @@ export class MarketplaceStudyPacksService {
       const questions = (pack.content?.questions || []) as Array<{ type?: string }>;
       if (questions.length > 0 || prior.bundleId) {
         const bundleId = this.bundleIdForListing(listingId);
-        await this.supabaseService.saveOfflineBundle(userId, {
+        await this.host.offlineBundles.saveOfflineBundle(userId, {
           bundleId,
           config: {
             numberOfQuestions: questions.length,
@@ -715,7 +721,7 @@ export class MarketplaceStudyPacksService {
         // A new version dropped its flashcards: clear the delivered deck's cards
         // (best-effort — the buyer may have deleted the deck).
         try {
-          await this.supabaseService.replaceDeckCards(prior.deckId, []);
+          await this.host.decks.replaceDeckCards(prior.deckId, []);
           refs.deckId = prior.deckId;
         } catch {
           // deck gone; nothing to clear
@@ -754,7 +760,7 @@ export class MarketplaceStudyPacksService {
   ): Promise<string | undefined> {
     if (priorDeckId) {
       try {
-        await this.supabaseService.replaceDeckCards(priorDeckId, flashcards);
+        await this.host.decks.replaceDeckCards(priorDeckId, flashcards);
         return priorDeckId;
       } catch (err) {
         // The buyer may have deleted the deck (FK gone); fall through to recreate.
@@ -780,7 +786,7 @@ export class MarketplaceStudyPacksService {
     // retry below: a half-filed deck beats a failed delivery.
     let resolvedTopicId: string | null | undefined = null;
     try {
-      resolvedTopicId = await this.supabaseService.resolveArtefactTopic({ topicId, courseId });
+      resolvedTopicId = await this.host.academic.resolveArtefactTopic({ topicId, courseId });
     } catch (err) {
       logger.warn('Study pack topic rejected; delivering the deck unfiled', {
         courseId,
@@ -789,7 +795,7 @@ export class MarketplaceStudyPacksService {
       });
       resolvedTopicId = null;
     }
-    const created = await this.supabaseService.importDeck(
+    const created = await this.host.decks.importDeck(
       { deck: { name: title, description: `Flashcards from “${title}”` }, flashcards },
       userId,
     );
@@ -820,7 +826,7 @@ export class MarketplaceStudyPacksService {
   ): Promise<string | undefined> {
     if (priorNoteId) {
       try {
-        await this.supabaseService.updateNote(userId, priorNoteId, { body });
+        await this.host.notes.updateNote(userId, priorNoteId, { body });
         return priorNoteId;
       } catch (err) {
         // The buyer may have deleted the note; re-create it.
@@ -831,7 +837,7 @@ export class MarketplaceStudyPacksService {
         });
       }
     }
-    const note = await this.supabaseService.createNote(userId, {
+    const note = await this.host.notes.createNote(userId, {
       title,
       body,
       sourceType: 'import',
@@ -849,7 +855,7 @@ export class MarketplaceStudyPacksService {
     userId: string,
     options: { surface?: LearningSurface } = {},
   ) {
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing || listing.listing_kind !== 'study_pack') {
       throw new PublicError('Study pack not found');
     }
@@ -868,7 +874,7 @@ export class MarketplaceStudyPacksService {
 
     const granted = await this.grantEntitlement(listingId, userId, null);
 
-    await recordLearningEvent(this.supabaseService, {
+    await recordLearningEvent(this.host, {
       userId,
       eventType: 'pack_downloaded',
       targetType: 'listing',
@@ -967,7 +973,7 @@ export class MarketplaceStudyPacksService {
     const pack = await this.getPackForListing(listingId);
     if (!pack) throw new PublicError('Study pack not found');
 
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing) throw new PublicError('Listing not found');
     if (listing.user_id !== userId) {
       throw new PublicError('Only the seller can update this study pack');
@@ -1032,7 +1038,7 @@ export class MarketplaceStudyPacksService {
    * fronts and a few answer-stripped questions. Safe for guests.
    */
   async getStudyPackPreview(listingId: string, viewerId?: string) {
-    const listing = await this.supabaseService.getMarketplaceListingById(listingId);
+    const listing = await this.host.marketplace.getMarketplaceListingById(listingId);
     if (!listing || listing.listing_kind !== 'study_pack') {
       throw new PublicError('Study pack not found');
     }
@@ -1201,8 +1207,8 @@ export class MarketplaceStudyPacksService {
 let service: MarketplaceStudyPacksService | null = null;
 
 export function getMarketplaceStudyPacksService(
-  supabaseService: SupabaseService,
+  host: MarketplaceServiceHost,
 ): MarketplaceStudyPacksService {
-  if (!service) service = new MarketplaceStudyPacksService(supabaseService);
+  if (!service) service = new MarketplaceStudyPacksService(host);
   return service;
 }

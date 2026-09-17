@@ -146,7 +146,7 @@ router.get('/stats', adminRoute(async (req: any, res: any) => {
 // relationships rather than repeat activity between the same two people.
 router.get('/learning-connections', adminRoute(async (req: any, res: any) => {
   const { getLearningConnectionsService } = await import('../../services/learningConnections');
-  const data = await getLearningConnectionsService(supabaseService).weekly(
+  const data = await getLearningConnectionsService(dataLayer).weekly(
     req.query.weeks ? Number(req.query.weeks) : 12
   );
   res.json({ success: true, data });

@@ -5,6 +5,11 @@
  * does not fence it and the service has to.
  */
 import { MarketplaceOrdersService } from './marketplaceOrders';
+// The service takes `MarketplaceServiceHost` since M3 Phase B. The stand-ins
+// below stay FLAT and are regrouped by the production adapter
+// (`marketplaceHostFromFlat`), so every assertion still names the same
+// `jest.fn()` and the adapter itself is exercised by these suites.
+import { marketplaceHostFromFlat } from './marketplaceServiceHost';
 
 jest.mock('../utils/marketplaceCache', () => ({
   invalidateListingCaches: jest.fn(async () => undefined),
@@ -33,10 +38,10 @@ function makeDb() {
 function serviceFor(listing: Record<string, unknown>) {
   const db = makeDb();
   const self: any = Object.create(MarketplaceOrdersService.prototype);
-  self.supabaseService = {
+  self.host = marketplaceHostFromFlat({
     getMarketplaceListingById: jest.fn(async () => listing),
     getClient: () => db,
-  };
+  } as never);
   return { self, db };
 }
 

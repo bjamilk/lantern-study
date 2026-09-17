@@ -98,10 +98,6 @@ export type DataLayerHost = {
    * (`getCommunitiesService`, `getActivityFeedService`, …).
    */
   legacyService: SupabaseService;
-  createOrderFromBuyNow: marketplaceData.MarketplaceDeps["createOrderFromBuyNow"];
-  createOrderFromOfferAccept: marketplaceData.MarketplaceDeps["createOrderFromOfferAccept"];
-  consumeBoostCredit: marketplaceData.MarketplaceDeps["consumeBoostCredit"];
-  notifyListingBackAvailable: marketplaceData.MarketplaceDeps["notifyListingBackAvailable"];
 };
 
 /**
@@ -253,6 +249,38 @@ export function createDataLayer(options: CreateDataLayerOptions) {
         layer,
         userId,
       );
+  const createOrderFromBuyNow: marketplaceData.MarketplaceDeps["createOrderFromBuyNow"] =
+    async (listingId, buyerId, couponCode, quantity) => {
+      const { getMarketplaceOrdersService } = await import("../marketplaceOrders");
+      return getMarketplaceOrdersService(layer).createOrderFromBuyNow(
+        listingId,
+        buyerId,
+        couponCode,
+        quantity,
+      );
+    };
+  const createOrderFromOfferAccept: marketplaceData.MarketplaceDeps["createOrderFromOfferAccept"] =
+    async (offerId, actorId) => {
+      const { getMarketplaceOrdersService } = await import("../marketplaceOrders");
+      return getMarketplaceOrdersService(layer).createOrderFromOfferAccept(
+        offerId,
+        actorId,
+      );
+    };
+  const consumeBoostCredit: marketplaceData.MarketplaceDeps["consumeBoostCredit"] =
+    async (sellerId) => {
+      const { getMarketplaceSellerToolsService } = await import(
+        "../marketplaceSellerTools"
+      );
+      return getMarketplaceSellerToolsService(layer).consumeBoostCredit(sellerId);
+    };
+  const notifyListingBackAvailable: marketplaceData.MarketplaceDeps["notifyListingBackAvailable"] =
+    async (listing, previousStatus) => {
+      const { notifyListingBackAvailable: notify } = await import(
+        "../marketplaceFavoriteAlerts"
+      );
+      await notify(layer, listing, previousStatus);
+    };
   const recordActivity: notesData.NotesDeps["recordActivity"] = async (input) => {
     const { getActivityFeedService } = await import("../activityFeed");
     await getActivityFeedService(layer).record(input);
@@ -369,9 +397,9 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     attachMarketplaceReviewSignals: (lid, reviews, viewerId) => layer.marketplace.attachMarketplaceReviewSignals(lid, reviews, viewerId),
     attachSellerTrust: (rows) => layer.marketplace.attachSellerTrust(rows),
     canUserReviewListing: (lid, uid) => layer.marketplace.canUserReviewListing(lid, uid),
-    consumeBoostCredit: host.consumeBoostCredit,
-    createOrderFromBuyNow: host.createOrderFromBuyNow,
-    createOrderFromOfferAccept: host.createOrderFromOfferAccept,
+    consumeBoostCredit,
+    createOrderFromBuyNow,
+    createOrderFromOfferAccept,
     deleteMarketplaceListing: (lid) => layer.marketplace.deleteMarketplaceListing(lid),
     fetchSellerTrust: (ids) => layer.marketplace.fetchSellerTrust(ids),
     getClient: () => layer.getClient(),
@@ -391,7 +419,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
     createNotification: (uid, notification) => layer.notifications.createNotification(uid, notification),
     signStorageDisplayUrl: (url, expiresInSeconds, variant) => layer.storageAcl.signStorageDisplayUrl(url, expiresInSeconds, variant),
     noteRatingColumnsMissing: () => layer.marketplace.noteRatingColumnsMissing(),
-    notifyListingBackAvailable: host.notifyListingBackAvailable,
+    notifyListingBackAvailable,
     pickCompactListingFields: (l) => layer.marketplace.pickCompactListingFields(l),
     ratingColumnsAvailable: () => layer.marketplace.ratingColumnsAvailable(),
     recordLearningConnection,

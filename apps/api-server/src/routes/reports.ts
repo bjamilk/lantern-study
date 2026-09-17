@@ -95,7 +95,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const result = await getModerationService(legacyService()).createReport({
+      const result = await getModerationService(dataLayer).createReport({
         reporterId: userId,
         targetType: req.body.targetType,
         targetId: req.body.targetId,

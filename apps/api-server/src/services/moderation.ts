@@ -14,7 +14,15 @@
  * logAdminAction; every seller/owner-facing consequence notifies with
  * force:true (createNotification otherwise honours mute settings).
  */
-import type { SupabaseService } from './supabase';
+import type { DataLayer } from './data';
+
+/**
+ * FLIPPED (monolith lane M3, Phase B): the client, plus the one notification
+ * it sends when a report is actioned.
+ */
+export type ModerationHost = Pick<DataLayer, 'getClient'> & {
+  notifications: Pick<DataLayer['notifications'], 'createNotification'>;
+};
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import { invalidateBanCache, logAdminAction, type AdminAuditAction } from './adminAudit';
@@ -189,10 +197,10 @@ export interface ReportActionInput {
 }
 
 export class ModerationService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(private host: ModerationHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   // ─── Targets ─────────────────────────────────────────────────────────────
@@ -614,7 +622,7 @@ export class ModerationService {
       if (error) throw error;
     };
     const audit = (auditAction: AdminAuditAction, metadata: Record<string, unknown> = {}) =>
-      logAdminAction(this.supabaseService, {
+      logAdminAction(this.host, {
         actorId,
         action: auditAction,
         targetType: 'report',
@@ -829,7 +837,7 @@ export class ModerationService {
       } else {
         await this.setSuspendedUntil(userId, proposed);
         suspendedUntil = proposed;
-        await logAdminAction(this.supabaseService, {
+        await logAdminAction(this.host, {
           actorId: input.createdBy,
           action: 'user_suspend',
           targetType: 'user',
@@ -1077,7 +1085,7 @@ export class ModerationService {
       link: `marketplace:listing:${listingId}`,
       data: { listingId, decision, kind: 'listing_appeal_decision' },
     });
-    await logAdminAction(this.supabaseService, {
+    await logAdminAction(this.host, {
       actorId,
       action: decision === 'reversed' ? 'listing_appeal_reversed' : 'listing_appeal_upheld',
       targetType: 'listing',
@@ -1146,7 +1154,7 @@ export class ModerationService {
     notification: { message: string; link?: string; data?: Record<string, unknown> },
   ): Promise<void> {
     try {
-      await this.supabaseService.createNotification(userId, {
+      await this.host.notifications.createNotification(userId, {
         type: 'warning',
         message: notification.message,
         link: notification.link,
@@ -1197,7 +1205,7 @@ function formatDate(iso: string | null): string {
 
 let service: ModerationService | null = null;
 
-export function getModerationService(supabaseService: SupabaseService): ModerationService {
-  if (!service) service = new ModerationService(supabaseService);
+export function getModerationService(host: ModerationHost): ModerationService {
+  if (!service) service = new ModerationService(host);
   return service;
 }

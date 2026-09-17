@@ -5803,7 +5803,12 @@ export class SupabaseService {
           const { getMarketplaceOrdersService } = await import(
             "./marketplaceOrders"
           );
-          return getMarketplaceOrdersService(this).createOrderFromBuyNow(
+          const { marketplaceHostFromFlat } = await import(
+            "./marketplaceServiceHost"
+          );
+          return getMarketplaceOrdersService(
+            marketplaceHostFromFlat(this),
+          ).createOrderFromBuyNow(
             lid,
             buyerId,
             couponCode,
@@ -5829,7 +5834,12 @@ export class SupabaseService {
         consumeBoostCredit: async (sellerId) => {
           const { getMarketplaceSellerToolsService } =
             await import("./marketplaceSellerTools");
-          return getMarketplaceSellerToolsService(this).consumeBoostCredit(
+          const { marketplaceHostFromFlat } = await import(
+            "./marketplaceServiceHost"
+          );
+          return getMarketplaceSellerToolsService(
+            marketplaceHostFromFlat(this),
+          ).consumeBoostCredit(
             sellerId,
           );
         },
@@ -5922,7 +5932,12 @@ export class SupabaseService {
           const { getMarketplaceOrdersService } = await import(
             "./marketplaceOrders"
           );
-          return getMarketplaceOrdersService(this).createOrderFromOfferAccept(
+          const { marketplaceHostFromFlat } = await import(
+            "./marketplaceServiceHost"
+          );
+          return getMarketplaceOrdersService(
+            marketplaceHostFromFlat(this),
+          ).createOrderFromOfferAccept(
             offerId,
             actorId,
           );
@@ -6185,7 +6200,14 @@ export class SupabaseService {
         notifyListingBackAvailable: async (listing, previousStatus) => {
           const { notifyListingBackAvailable } =
             await import("./marketplaceFavoriteAlerts");
-          await notifyListingBackAvailable(this, listing, previousStatus);
+          const { marketplaceHostFromFlat } = await import(
+            "./marketplaceServiceHost"
+          );
+          await notifyListingBackAvailable(
+            marketplaceHostFromFlat(this),
+            listing,
+            previousStatus,
+          );
         },
       },
       listingId,

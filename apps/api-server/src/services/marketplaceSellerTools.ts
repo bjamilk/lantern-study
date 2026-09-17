@@ -1,9 +1,15 @@
+/**
+ * FLIPPED (monolith lane M3, Phase B): takes `MarketplaceServiceHost` — the
+ * shared, narrow host of the money cluster — instead of the whole
+ * `SupabaseService`. See `services/marketplaceServiceHost.ts` for why the six
+ * money services share one type and how the last facade-side callers adapt.
+ */
 import {
   isPrivateStorageBucket,
   parseStoredStorageRef,
   toPersistedMarketplaceImageUrl,
 } from '@lantern/shared/utils/storageUrl';
-import type { SupabaseService } from './supabase';
+import type { MarketplaceServiceHost } from './marketplaceServiceHost';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 
@@ -65,10 +71,10 @@ export type PickupNudge = {
 };
 
 export class MarketplaceSellerToolsService {
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(private readonly host: MarketplaceServiceHost) {}
 
   private get db() {
-    return this.supabaseService.getClient();
+    return this.host.getClient();
   }
 
   private defaultPreferences(sellerId: string): SellerPreferencesRow {
@@ -237,7 +243,7 @@ export class MarketplaceSellerToolsService {
     if (!shop.coverImageUrl) return shop;
     return {
       ...shop,
-      coverImageUrl: await this.supabaseService.signStorageDisplayUrl(
+      coverImageUrl: await this.host.storageAcl.signStorageDisplayUrl(
         shop.coverImageUrl,
         60 * 60 * 24,
         'original',
@@ -256,7 +262,7 @@ export class MarketplaceSellerToolsService {
           ...listing,
           images: await Promise.all(
             images.map((image: string) =>
-              this.supabaseService.signStorageDisplayUrl(image, 60 * 60 * 24, 'thumb'),
+              this.host.storageAcl.signStorageDisplayUrl(image, 60 * 60 * 24, 'thumb'),
             ),
           ),
         };
@@ -486,7 +492,7 @@ export class MarketplaceSellerToolsService {
       })
       .filter(Boolean) as Array<{ bucket: string; path: string; index: number }>;
     if (coverRefs.length > 0) {
-      const signedByIndex = await this.supabaseService.signStorageDisplayUrls(coverRefs, {
+      const signedByIndex = await this.host.storageAcl.signStorageDisplayUrls(coverRefs, {
         expiresInSeconds: 60 * 60 * 24,
         variant: 'original',
       });
@@ -615,7 +621,7 @@ export class MarketplaceSellerToolsService {
     if (message.length > 500) throw new PublicError('Message must be 500 characters or fewer');
 
     const { getMarketplaceOrdersService } = await import('./marketplaceOrders');
-    const buyers = await getMarketplaceOrdersService(this.supabaseService).getSellerBuyersWithSegments(
+    const buyers = await getMarketplaceOrdersService(this.host).getSellerBuyersWithSegments(
       sellerId,
       input.segment
     );
@@ -646,7 +652,7 @@ export class MarketplaceSellerToolsService {
 
     for (const buyer of batch) {
       try {
-        await this.supabaseService.createNotification(buyer.buyerId, {
+        await this.host.notifications.createNotification(buyer.buyerId, {
           type: 'marketplace_seller_campaign',
           message: message.slice(0, 240),
           link: 'marketplace:MY_LISTINGS',
@@ -654,7 +660,7 @@ export class MarketplaceSellerToolsService {
         });
 
         try {
-          await this.supabaseService.sendDirectMessage(
+          await this.host.directMessages.sendDirectMessage(
             sellerId,
             buyer.buyerId,
             `[Marketplace update] ${message}`
@@ -738,8 +744,8 @@ export class MarketplaceSellerToolsService {
 let sellerToolsService: MarketplaceSellerToolsService | null = null;
 
 export function getMarketplaceSellerToolsService(
-  supabaseService: SupabaseService
+  host: MarketplaceServiceHost
 ): MarketplaceSellerToolsService {
-  if (!sellerToolsService) sellerToolsService = new MarketplaceSellerToolsService(supabaseService);
+  if (!sellerToolsService) sellerToolsService = new MarketplaceSellerToolsService(host);
   return sellerToolsService;
 }
