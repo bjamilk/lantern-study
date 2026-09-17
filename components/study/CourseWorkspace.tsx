@@ -64,6 +64,7 @@ import {
   testsFiledInStudySet,
   buildStudySetPath,
   firstQuestionPreview,
+  isSetRoomFocus,
   resumeKindFromActivity,
   upcomingExamsFromNotes,
   workspaceActivityFromPath,
@@ -121,6 +122,7 @@ import { CreateFromSource } from './CreateFromSource';
 import { NoteRoomRow } from './NoteRoomRow';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
 import { SetRoomHeader, type SetRoomHeaderMenuItem } from './SetRoomHeader';
+import { SetRoomFocusBar } from './SetRoomFocusBar';
 import { shareStudySet } from './shareStudySet';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
 import { StudyWorkspaceBar } from './StudyWorkspaceBar';
@@ -1028,23 +1030,29 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       showToast(WORKSPACE_LATER_COPY, 'info');
       return;
     }
-    go(id);
-    if (id === 'quiz') {
-      setQuizSeed(null);
-      setQuizLive(false);
-    }
     if (id === 'notes') {
+      // The note this lands on goes in the URL rather than only in the store.
+      // FOCUS is read off the path (`isSetRoomFocus`), so a notes room opened
+      // with the id left behind would draw the set home's chrome over an open
+      // note — and Back/refresh would lose the note as well.
       const current = useNotesStore.getState().selectedNote;
-      if (
+      const wrongKind =
         current &&
         (isCalendarNote(current) ||
           isEssayNote(current) ||
           isLectureNote(current) ||
           isLessonNote(current) ||
-          isRecapNote(current))
-      ) {
-        if (readingNotes[0]) void openNote(readingNotes[0].id);
-      }
+          isRecapNote(current));
+      const keepCurrent = Boolean(current && !wrongKind && noteInRoom(current));
+      const target = keepCurrent ? current?.id : readingNotes[0]?.id;
+      go('notes', target ? { noteId: target } : {});
+      if (target && target !== current?.id) void openNote(target);
+      return;
+    }
+    go(id);
+    if (id === 'quiz') {
+      setQuizSeed(null);
+      setQuizLive(false);
     }
     if (id === 'essay') {
       const decision = resolveEssayStudioNote({
@@ -1393,6 +1401,19 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
    * while you were not on it, which is a control that appears and disappears
    * depending on where you are; in a menu that is simply a row.
    */
+  /**
+   * FOCUS: a studio is open in a SET room, so the chrome collapses to one bar.
+   *
+   * Course rooms are deliberately excluded — they still need the activity chip
+   * strip and the Materials column, neither of which a set room draws any more.
+   * `focusActivity` is the same answer narrowed to a studio id, so the bar can
+   * take a `WorkspaceActivityId` without a cast: `home` and `add` are not FOCUS
+   * by definition, and TypeScript should get to see that rather than be told.
+   */
+  const focusMode = Boolean(studySetId) && isSetRoomFocus(activity, routePath);
+  const focusActivity: WorkspaceActivityId | null =
+    focusMode && activity !== 'home' && activity !== 'add' ? activity : null;
+
   const roomMenu: SetRoomHeaderMenuItem[] = studySetId
     ? [
         ...(activity !== 'home'
@@ -1522,12 +1543,17 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
-      <StudyWorkspaceBar
-        active="study"
-        onSelect={(section) => {
-          if (section === 'library') onOpenLibrary();
-        }}
-      />
+      {/* Study/Library. A tab bar is a choice between two PLACES, and a student
+          inside a quiz has already chosen one — so it is drawn on the set home
+          and nowhere else. The focus bar's Back button is the way out. */}
+      {!focusActivity ? (
+        <StudyWorkspaceBar
+          active="study"
+          onSelect={(section) => {
+            if (section === 'library') onOpenLibrary();
+          }}
+        />
+      ) : null}
       {/* Room layout. Stacked below lg, side-by-side with the companion rail at
           lg+. `min-h-0` + `min-w-0` repeat down every level of this nesting on
           purpose: each is a flex child that must be allowed to shrink, or the
@@ -1536,9 +1562,33 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           flex column is crushed vertically as the content beside it grows unless
           it refuses to shrink. */}
       <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
-        <div className="flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden px-4 md:px-6 pt-4">
+        <div
+          className={`flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden px-4 md:px-6 ${
+            focusActivity ? 'pt-0' : 'pt-4'
+          }`}
+        >
         <div className="shrink-0">
-        {studySetId ? (
+        {focusActivity && studySetId ? (
+          // The bleed puts the bar's hairline against the window edge while the
+          // studio below keeps the room's gutter. Negative margin only — no new
+          // flex child, so the documented min-h-0 / shrink-0 chain is untouched.
+          <div className="-mx-4 md:-mx-6 mb-2 px-2 md:px-4">
+            <SetRoomFocusBar
+              setId={studySetId}
+              setName={label}
+              coverPath={studySet?.coverPath}
+              tileHue={studySet?.tileHue}
+              tileGlyph={studySet?.tileGlyph}
+              activity={focusActivity}
+              onBack={() => go('home')}
+              onActivity={handleActivity}
+              onOpenSettings={() => setSettingsOpen(true)}
+              menu={roomMenu}
+              timer={<StudySetTimer setId={studySetId} />}
+              {...(companionRail ? {} : { onOpenChat: () => openSetChat() })}
+            />
+          </div>
+        ) : studySetId ? (
           // The set room's header is the SET AS AN OBJECT — identity tile,
           // serif name, gear, and a bordered chip strip carrying the plan's
           // counts and its progress. `ScreenHeader` (below, for a course room)
