@@ -166,10 +166,19 @@ it('answers 200 when settlement succeeds', async () => {
   expect(body).toEqual(expect.objectContaining({ success: true }));
 });
 
-it('TODAY: answers 200 even when the order was never marked paid', async () => {
-  // Paystack is told the event is handled. It will not deliver again, and the
-  // order stays in `awaiting_payment` with the buyer's money taken.
+it('answers 500 when the order could not be marked paid, so Paystack retries', async () => {
+  // A 4xx would tell Paystack the event is bad and stop the retries, stranding
+  // a paid order; a 2xx would do the same more quietly. Only a 5xx brings the
+  // event back.
   const { status, body } = await postWebhook(true);
-  expect(status).toBe(200);
-  expect(body).toEqual(expect.objectContaining({ success: true }));
+  expect(status).toBe(500);
+  expect(body).toEqual({ success: false, error: 'Webhook processing failed' });
+});
+
+it('leaks nothing about the failure to Paystack', async () => {
+  // The body is a fixed string by design: a PostgREST message in Paystack's
+  // dashboard logs is our internals on someone else's screen.
+  const { body } = await postWebhook(true);
+  expect(JSON.stringify(body)).not.toContain('deadlock');
+  expect(JSON.stringify(body)).not.toContain('marketplace_orders');
 });

@@ -984,10 +984,21 @@ export class MarketplacePaymentsService {
       }
 
       if (payment.checkout_id) {
-        await this.db
-          .from('marketplace_checkouts')
-          .update({ status: 'paid', updated_at: now })
-          .eq('id', payment.checkout_id);
+        // BEST EFFORT (#108): a display mirror. `getCheckout` returns it to the
+        // checkout page; no money decision reads it, and the orders below are
+        // the authoritative record.
+        bestEffortWrite(
+          await this.db
+            .from('marketplace_checkouts')
+            .update({ status: 'paid', updated_at: now })
+            .eq('id', payment.checkout_id),
+          {
+            table: 'marketplace_checkouts',
+            op: 'update',
+            checkoutId: payment.checkout_id,
+            paymentId,
+          },
+        );
       }
     }
 
@@ -1020,14 +1031,26 @@ export class MarketplacePaymentsService {
         .eq('checkout_id', checkoutId);
       rows = (checkoutOrders || []) as typeof rows;
       if (rows.length > 0) {
-        await this.db
-          .from('marketplace_cart_items')
-          .delete()
-          .eq('buyer_id', payment.buyer_id)
-          .in(
-            'listing_id',
-            rows.map((row) => row.listing_id),
-          );
+        // BEST EFFORT (#108): a cart row left behind is an annoyance the buyer
+        // can clear themselves. Failing settlement over it would be worse than
+        // the bug.
+        bestEffortWrite(
+          await this.db
+            .from('marketplace_cart_items')
+            .delete()
+            .eq('buyer_id', payment.buyer_id)
+            .in(
+              'listing_id',
+              rows.map((row) => row.listing_id),
+            ),
+          {
+            table: 'marketplace_cart_items',
+            op: 'delete',
+            checkoutId,
+            paymentId: payment.id,
+            orderCount: rows.length,
+          },
+        );
       }
     } else if (payment.order_id) {
       const { data: single } = await this.db
@@ -1044,11 +1067,28 @@ export class MarketplacePaymentsService {
       if (!awaiting && !['paid'].includes(String(order.status))) continue;
 
       if (awaiting) {
-        await this.db
-          .from('marketplace_orders')
-          .update({ status: 'paid', payment_id: payment.id })
-          .eq('id', order.id)
-          .in('status', ['awaiting_payment', 'pending_payment']);
+        // MUST SUCCEED (#108), and on the webhook path that means answering a
+        // non-2xx so Paystack delivers again. This is the authoritative record
+        // that the buyer's money bought this order; everything downstream —
+        // payout, refund eligibility, the buyer's own order list — reads it.
+        // Re-running is safe by construction: `processed_at` is stamped only
+        // after processing returns, so an unfinished claim is re-processed, and
+        // the `.in(status, …)` filter below makes a second run a no-op rather
+        // than a duplicate.
+        mustWrite(
+          await this.db
+            .from('marketplace_orders')
+            .update({ status: 'paid', payment_id: payment.id })
+            .eq('id', order.id)
+            .in('status', ['awaiting_payment', 'pending_payment']),
+          {
+            table: 'marketplace_orders',
+            op: 'update',
+            orderId: order.id,
+            paymentId: payment.id,
+            ...(checkoutId ? { checkoutId } : {}),
+          },
+        );
         await this.orders.stampOrderPaidAt(order.id, now);
       }
 
@@ -2094,10 +2134,19 @@ export class MarketplacePaymentsService {
 
     await this.processWebhookEvent(eventType, data, rawBody);
 
-    await this.db
-      .from('paystack_webhook_events')
-      .update({ processed_at: new Date().toISOString() })
-      .eq('event_key', eventKey);
+    // BEST EFFORT (#108), and deliberately so despite living on the webhook
+    // path. An unstamped claim makes the NEXT Paystack retry re-process the
+    // event, which every branch of `processWebhookEvent` is built to survive,
+    // so the failure direction is safe. The cost is repeated work until the
+    // retries stop, not a wrong state — and answering non-2xx here would
+    // guarantee that repeat instead of merely risking it.
+    bestEffortWrite(
+      await this.db
+        .from('paystack_webhook_events')
+        .update({ processed_at: new Date().toISOString() })
+        .eq('event_key', eventKey),
+      { table: 'paystack_webhook_events', op: 'update', eventKey, eventType },
+    );
 
     return { ok: true, duplicate: false, eventType };
   }

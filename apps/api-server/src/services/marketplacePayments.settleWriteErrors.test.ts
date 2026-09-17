@@ -21,6 +21,12 @@
  * re-selected by its own unfulfilled status, so a second run is a no-op rather
  * than a duplicate. Both halves are asserted here.
  *
+ * ## What each failure now does
+ *
+ * (1), (2) and (4) are BEST-EFFORT: a display mirror, a stale cart row, and a
+ * dedupe stamp whose absence makes the next retry re-process — all safe
+ * directions. (3) MUST SUCCEED, which on this path means answering a non-2xx.
+ *
  * ## The gotcha
  *
  * `markPaymentPaid` is reached from the webhook AND from
@@ -201,41 +207,69 @@ describe('a verified charge.success settles, with every write succeeding', () =>
   });
 });
 
-describe('TODAY: settlement with one write failing', () => {
-  it('answers ok when the checkout status mirror fails', async () => {
-    const { service } = await serviceFor('checkout_status');
+describe('settlement with one write failing', () => {
+  it('still settles when the checkout status mirror fails, and warns', async () => {
+    const { service, calls } = await serviceFor('checkout_status');
     await expect(service.handleWebhook(CHARGE_SUCCESS, 'sig')).resolves.toEqual(
       expect.objectContaining({ ok: true }),
     );
-    expect(logger.warn).not.toHaveBeenCalled();
+    // The orders — the part that matters — still moved.
+    expect(calls.filter((call) => which(call) === 'order_paid')).toHaveLength(2);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'marketplace_checkouts', checkoutId: 'chk_1' }),
+    );
   });
 
-  it('answers ok when clearing the bought cart fails', async () => {
-    const { service } = await serviceFor('cart_clear');
+  it('still settles when clearing the bought cart fails, and warns', async () => {
+    const { service, calls } = await serviceFor('cart_clear');
     await expect(service.handleWebhook(CHARGE_SUCCESS, 'sig')).resolves.toEqual(
       expect.objectContaining({ ok: true }),
     );
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(calls.filter((call) => which(call) === 'order_paid')).toHaveLength(2);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'marketplace_cart_items', op: 'delete' }),
+    );
   });
 
-  it('answers ok when the ORDERS were never marked paid, and stamps the event done', async () => {
-    // The worst one: Paystack is told the event is handled, the dedupe row is
-    // stamped so no retry will ever re-process it, and both orders are still
-    // sitting in `awaiting_payment` with the buyer's money taken.
+  it('REJECTS when the orders cannot be marked paid, so Paystack retries', async () => {
+    const { service } = await serviceFor('order_paid');
+    await expect(service.handleWebhook(CHARGE_SUCCESS, 'sig')).rejects.toThrow(
+      /marketplace_orders/,
+    );
+  });
+
+  it('does not stamp the event processed when it could not settle', async () => {
+    // The whole retry contract rests on this: a stamped claim is a permanent
+    // "already handled", so stamping an event that failed would strand the
+    // order for good.
     const { service, calls } = await serviceFor('order_paid');
-    await expect(service.handleWebhook(CHARGE_SUCCESS, 'sig')).resolves.toEqual(
-      expect.objectContaining({ ok: true, duplicate: false }),
-    );
-    expect(calls.some((call) => which(call) === 'processed_at')).toBe(true);
-    expect(logger.warn).not.toHaveBeenCalled();
-    expect(logger.error).not.toHaveBeenCalled();
+    await service.handleWebhook(CHARGE_SUCCESS, 'sig').catch(() => undefined);
+    expect(calls.some((call) => which(call) === 'processed_at')).toBe(false);
   });
 
-  it('answers ok when the processed_at stamp fails', async () => {
+  it('throws a typed WriteFailedError naming the order, payment and checkout', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
+    const { service } = await serviceFor('order_paid');
+    const error = await service.handleWebhook(CHARGE_SUCCESS, 'sig').catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WriteFailedError);
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({ orderId: 'ord_1', paymentId: 'pay_1', checkoutId: 'chk_1' }),
+    );
+  });
+
+  it('still answers ok when only the processed_at stamp fails, and warns', async () => {
+    // Deliberately best-effort even here: an unstamped claim makes the next
+    // retry RE-PROCESS, which every branch is built to survive. Failing the
+    // request would guarantee that repeat instead of merely risking it.
     const { service } = await serviceFor('processed_at');
     await expect(service.handleWebhook(CHARGE_SUCCESS, 'sig')).resolves.toEqual(
       expect.objectContaining({ ok: true }),
     );
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Database write failed (best-effort)',
+      expect.objectContaining({ table: 'paystack_webhook_events', eventType: 'charge.success' }),
+    );
   });
 });
