@@ -82,6 +82,11 @@ const EXPECTED_MAPPING: Record<string, Mapping> = {
   // #113: the read-only reconciliation findings. Registered with `adminRoute`
   // like its marketplace neighbours, so it takes the legacy mapping.
   'GET /marketplace/reconcile/findings': 'legacy',
+  // #113 Phase B. Registered with `moderationRoute` deliberately, unlike its
+  // GET neighbour: every refusal it makes is the caller's to fix — a wrong
+  // phrase, a flag that is off, a finding that no longer holds — and those must
+  // reach the console as the 4xx the service raised, not as a 500.
+  'POST /marketplace/reconcile/apply': 'moderation',
   'PATCH /marketplace/orders/:id/dispute': 'dispute',
   'GET /reports': 'moderation',
   'PUT /reports/:id': 'moderation',
@@ -123,7 +128,7 @@ const EXPECTED_MAPPING: Record<string, Mapping> = {
 const FAMILIES: Array<[string, RegExp]> = [
   ['dashboard / probe', /^GET \/(stats|ai\/provider-probe)$/],
   ['user administration', /^(GET|PATCH|POST) \/users(\/|$)/],
-  ['marketplace moderation', /^(GET|PATCH|DELETE|PUT) \/marketplace\//],
+  ['marketplace moderation', /^(GET|POST|PATCH|DELETE|PUT) \/marketplace\//],
   ['report queue and appeals', /^(GET|PUT) \/(reports|appeals)/],
   ['analytics and audit', /^GET \/(analytics|ai-analytics|ai-tokens|events|activity|audit|learning-connections)/],
   ['direct user tools', /^(POST|GET|PATCH|DELETE) \/(notifications|groups|messages|decks|offline)/],
@@ -230,10 +235,10 @@ const routes = collectRoutes(router);
 
 describe('admin router error convention', () => {
   it('covers every registered route, and only registered routes', () => {
-    // 47 at the split (M4), plus the one route added since: #113's read-only
-    // reconciliation findings. A route added without a line in EXPECTED_MAPPING
+    // 47 at the split (M4), plus the two added since: #113's read-only
+    // reconciliation findings and its by-hand repair. A route added without a line in EXPECTED_MAPPING
     // fails the assertion below, which is the point.
-    expect(routes.length).toBe(48);
+    expect(routes.length).toBe(49);
     expect(routes.map((r) => r.key).sort()).toEqual(Object.keys(EXPECTED_MAPPING).sort());
   });
 
