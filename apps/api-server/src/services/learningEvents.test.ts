@@ -31,6 +31,7 @@ import { logger } from '../utils/logger';
 import {
   LEARNING_EVENTS_BATCH_CAP,
   buildQuestionAnsweredEvents,
+  lookupDeckOwnerAndCourse,
   normalizeSurface,
   recordLearningEvent,
   recordLearningEvents,
@@ -38,7 +39,9 @@ import {
   surfaceFromRequest,
   toLearningEventRow,
 } from './learningEvents';
-import { SupabaseService } from './supabase';
+import type { DataClientHost } from './data';
+import * as offlineBundlesData from './data/offlineBundles';
+import * as testsData from './data/tests';
 import { exportUserDataArchive } from './userDataLifecycle';
 import { runDataRetentionPurge } from './dataRetention';
 
@@ -101,7 +104,7 @@ function makeDb(opts: {
 }
 
 const service = (db: ReturnType<typeof makeDb>) =>
-  ({ getClient: () => db.client }) as unknown as Pick<SupabaseService, 'getClient'>;
+  ({ getClient: () => db.client }) as unknown as DataClientHost;
 const inserted = (db: ReturnType<typeof makeDb>, table = 'learning_events') =>
   db.writes.filter((w) => w.table === table && w.op === 'insert');
 const rowsOf = (db: ReturnType<typeof makeDb>) =>
@@ -223,7 +226,25 @@ describe('reviewFlashcard emits card_reviewed', () => {
 
   function stub(db: ReturnType<typeof makeDb>, overrides: Record<string, unknown> = {}) {
     return {
+      supabase: db.client,
       getClient: () => db.client,
+      // The four collaborator deps the FACADE built inline over `this`, written
+      // out here the same way: the real writers, hosted by this stand-in, so
+      // the rows below are the rows the review path actually emits.
+      lookupDeckOwnerAndCourse: function (this: any, deckId: unknown) {
+        return lookupDeckOwnerAndCourse(this, deckId);
+      },
+      recordLearningEvent: function (this: any, input: any) {
+        return recordLearningEvent(this, input);
+      },
+      refreshTopicMastery: async function (this: any, userId: string) {
+        const { getTopicMasteryService } = await import('./topicMastery');
+        getTopicMasteryService(this).refreshAsync(userId);
+      },
+      recordLearningConnection: async function (this: any, input: any) {
+        const { getLearningConnectionsService } = await import('./learningConnections');
+        await getLearningConnectionsService(this).record(input);
+      },
       getFlashcardForUser: jest.fn(async () => ({ id: CARD, deck_id: DECK, srs_data: BEFORE, version: 1 })),
       verifyDeckAccess: jest.fn(async () => true),
       getUserPreferences: jest.fn(async () => ({ settings: {} })),
@@ -232,7 +253,7 @@ describe('reviewFlashcard emits card_reviewed', () => {
     };
   }
   const review = (self: unknown, options?: Record<string, unknown>) =>
-    SupabaseService.prototype.reviewFlashcard.call(self as any, CARD, USER, 'good', options ?? {});
+    offlineBundlesData.reviewFlashcard((self as any).supabase, self as any, CARD, USER, 'good', options ?? {});
 
   it('writes one row with rating, srs before/after, deck, course, surface and occurred_at', async () => {
     const db = makeDb({ results: { decks: { course_id: COURSE } } });
@@ -366,11 +387,16 @@ describe('test completion emits question_answered', () => {
       supabase: db.client,
       getClient: () => db.client,
       getTestById: jest.fn(async () => session),
+      // As the facade built it: the real writer, hosted by this stand-in.
+      recordTestSessionAnswers: function (this: any, params: any) {
+        return recordTestSessionAnswers(this, params);
+      },
       calculateTestScore: jest.fn(() => 50),
       applyTestCompletionGamification: jest.fn(async () => undefined),
     };
     const call = (surface: 'web' | 'mobile') =>
-      SupabaseService.prototype.createTestResult.call(
+      testsData.createTestResult(
+        (self as any).supabase,
         self as any,
         SESSION,
         { score: 50, correctAnswersCount: 2, totalQuestions: 4 },
@@ -395,11 +421,16 @@ describe('test completion emits question_answered', () => {
       supabase: db.client,
       getClient: () => db.client,
       getTestById: jest.fn(async () => session),
+      // As the facade built it: the real writer, hosted by this stand-in.
+      recordTestSessionAnswers: function (this: any, params: any) {
+        return recordTestSessionAnswers(this, params);
+      },
       calculateTestScore: jest.fn(() => 50),
       applyTestCompletionGamification: jest.fn(async () => undefined),
     };
     await expect(
-      SupabaseService.prototype.createTestResult.call(
+      testsData.createTestResult(
+        (self as any).supabase,
         self as any,
         SESSION,
         { score: 50, correctAnswersCount: 2, totalQuestions: 4 },

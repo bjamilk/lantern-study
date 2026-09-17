@@ -6,6 +6,15 @@
  * the stale cached card, validated against its stale version, and was silently
  * dropped. The reset must purge every card's cache entries.
  */
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as offlineBundlesData from './data/offlineBundles';
 jest.mock("./cache", () => ({
   cacheService: {
     get: jest.fn(async () => null),
@@ -22,7 +31,6 @@ jest.mock("../utils/logger", () => ({
 }));
 
 import { cacheService } from "./cache";
-import { SupabaseService } from "./supabase";
 
 type Op = { fn: string; args: any[] };
 
@@ -59,7 +67,7 @@ function fakeSelf(cardIds: string[]) {
 }
 
 const reset = (self: unknown) =>
-  SupabaseService.prototype.resetDeckStatistics.call(self as any, "deck-1", "u1");
+  offlineBundlesData.resetDeckStatistics((self as any).supabase, self as any, "deck-1", "u1");
 
 beforeEach(() => {
   jest.clearAllMocks();

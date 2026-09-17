@@ -7,7 +7,15 @@
  * service_role change that column, so the write has to go through the service
  * client. These tests pin that contract.
  */
-import { SupabaseService } from './supabase';
+/**
+ * HARNESS (monolith lane M3, Phase B): this suite used to drive
+ * `SupabaseService.prototype.<m>.call(self, …)`. It now calls the data module
+ * that owns the body. Nothing else moved: the same stand-in is built the same
+ * way, and it is passed as the `deps` literal, which is what the facade's
+ * inline `deps` arrows read off `this` anyway. Every `it` title, every
+ * `expect` and every fixture is byte-identical.
+ */
+import * as gamificationData from './data/gamification';
 import { cacheService } from './cache';
 import { checkAndAwardBadges, initialUserStats } from '@lantern/shared/utils/testHelpers';
 
@@ -53,10 +61,16 @@ function makeDb(profile: Record<string, unknown> | null) {
 // Only `supabase` is provided: if awardBadge reached for updateUser or any
 // other service method, the call would throw, so a green run also proves the
 // write went straight through the service-role client.
-const service = (db: ReturnType<typeof makeDb>) => ({ supabase: db });
+const service = (db: ReturnType<typeof makeDb>) => ({
+  supabase: db,
+  // The FACADE built this dep inline as an arrow into `activityFeed`, hosted by
+  // itself; against this stand-in the feed wrote nothing (it has no client to
+  // reach) and swallowed its own failure. Same nothing, said out loud.
+  recordActivity: async () => undefined,
+});
 
 const award = (self: unknown, userId: string, badgeId: string, actorId?: string) =>
-  SupabaseService.prototype.awardBadge.call(self as any, userId, badgeId, actorId);
+  gamificationData.awardBadge((self as any).supabase, self as any, userId, badgeId, actorId);
 
 const existingBadge = {
   id: 'GROUP_FOUNDER',
