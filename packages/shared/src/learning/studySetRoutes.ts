@@ -76,6 +76,53 @@ export function workspaceActivityFromPath(
   return activity;
 }
 
+/**
+ * What the room's chrome is allowed to be: the set room has exactly two states.
+ *
+ * HOME is browsing the set — the header, the tab bar and the breadcrumb strip
+ * all belong there, because the student has not chosen anything yet. FOCUS is a
+ * studio that is already open, where every one of those is a re-offer of a
+ * choice the student has just made. Measured on production, the quiz route
+ * arrived under ~36 interactive controls and a ~540px sticky header block; the
+ * quiz itself was below the fold.
+ *
+ * ONE predicate, because the answer is consumed in four unrelated places (the
+ * room header, the Study/Library tab bar, the app-shell breadcrumb in App.tsx
+ * and the sidebar-collapse hook), and four copies of a rule this small drift
+ * within a release.
+ *
+ * NOTES IS THE ONE ACTIVITY THAT IS BOTH. `/notes` with nothing open is a list
+ * of a set's notes — browsing, not studying — so it stays HOME. `/notes/<id>`
+ * and `/notes/new` are a note being read or written, which is FOCUS.
+ *
+ * The rule is read off the URL and NOTHING ELSE. The room could ask its notes
+ * store whether a note happens to be loaded, but App.tsx (which owns the
+ * breadcrumb strip) cannot, and a predicate that answered differently in the
+ * two places would draw a breadcrumb trail underneath the focus bar. Every
+ * caller in the room that opens a note already routes the id, so the URL is
+ * not a lossy copy of that state — it is the state.
+ */
+export interface SetRoomFocusInput {
+  activity?: StudySetPathActivity;
+  noteId?: string;
+  createNew?: boolean;
+}
+
+export function isSetRoomFocus(
+  activity: WorkspaceActivityId | 'home' | 'add' | null | undefined,
+  routePath?: SetRoomFocusInput | null
+): boolean {
+  if (!activity || activity === 'home' || activity === 'add') return false;
+  if (activity === 'notes') return Boolean(routePath?.noteId || routePath?.createNew);
+  return true;
+}
+
+/** The same question asked of a URL alone — what App.tsx's breadcrumb has. */
+export function isSetRoomFocusPath(routePath?: SetRoomFocusInput | null): boolean {
+  if (!routePath) return false;
+  return isSetRoomFocus(workspaceActivityFromPath(routePath.activity), routePath);
+}
+
 export interface StudySetPath {
   studySetId: string;
   activity: StudySetPathActivity;

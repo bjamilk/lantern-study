@@ -1,9 +1,12 @@
 import {
   buildStudySetPath,
   formatStudySetTypeChips,
+  isSetRoomFocus,
+  isSetRoomFocusPath,
   parseStudySetPath,
   sortStudySets,
   studySetRootPath,
+  STUDY_SET_PATH_ACTIVITIES,
   workspaceActivityFromPath,
 } from './studySetRoutes';
 
@@ -79,5 +82,47 @@ describe('study set nested paths', () => {
         cards: 3,
       })
     ).toEqual(['8 materials', '4', '3', '2', '3']);
+  });
+});
+
+describe('set room focus', () => {
+  it('keeps the set home and the add flow out of focus', () => {
+    expect(isSetRoomFocus('home', { activity: 'home' })).toBe(false);
+    expect(isSetRoomFocus('add', { activity: 'add' })).toBe(false);
+    expect(isSetRoomFocus(undefined)).toBe(false);
+    expect(isSetRoomFocus(null)).toBe(false);
+  });
+
+  it('puts every studio in focus', () => {
+    for (const activity of ['walkthrough', 'cards', 'quiz', 'test', 'lecture', 'lesson', 'recap', 'play', 'plan', 'essay'] as const) {
+      expect(isSetRoomFocus(activity, { activity })).toBe(true);
+    }
+  });
+
+  it('treats a notes list as browsing and an open note as studying', () => {
+    expect(isSetRoomFocus('notes', { activity: 'notes' })).toBe(false);
+    expect(isSetRoomFocus('notes', { activity: 'notes', noteId: 'n1' })).toBe(true);
+    expect(isSetRoomFocus('notes', { activity: 'notes', createNew: true })).toBe(true);
+  });
+
+  it('answers the same question from a parsed path', () => {
+    expect(isSetRoomFocusPath(parseStudySetPath('/study/sets/s/quiz'))).toBe(true);
+    // `calendar` and `read` are aliases; the alias must not fall out of focus.
+    expect(isSetRoomFocusPath(parseStudySetPath('/study/sets/s/calendar'))).toBe(true);
+    expect(isSetRoomFocusPath(parseStudySetPath('/study/sets/s/read'))).toBe(true);
+    expect(isSetRoomFocusPath(parseStudySetPath('/study/sets/s'))).toBe(false);
+    expect(isSetRoomFocusPath(parseStudySetPath('/study/sets/s/notes'))).toBe(false);
+    expect(isSetRoomFocusPath(parseStudySetPath('/study/sets/s/notes/n1'))).toBe(true);
+    expect(isSetRoomFocusPath(null)).toBe(false);
+  });
+
+  it('has an answer for every path activity in the vocabulary', () => {
+    // A tool added to STUDY_SET_PATH_ACTIVITIES without a decision here would
+    // silently inherit "focus", which is the safe default — but the assertion
+    // exists so the two lists are read together.
+    const browsing = new Set(['home', 'add', 'notes']);
+    for (const activity of STUDY_SET_PATH_ACTIVITIES) {
+      expect(isSetRoomFocusPath({ activity })).toBe(!browsing.has(activity));
+    }
   });
 });
