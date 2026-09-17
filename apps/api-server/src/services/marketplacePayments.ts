@@ -2447,17 +2447,33 @@ export class MarketplacePaymentsService {
               orderId: order.id,
               error: unwindErr.message || String(unwindErr),
             });
-            await this.db
-              .from('marketplace_orders')
-              .update({
-                payout_status: 'pending',
-                payout_transfer_code: null,
-                payout_reference: null,
-                payout_failed_reason: `paystack_${eventType}`,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', order.id)
-              .in('payout_status', ['paying', 'paid_out']);
+            // MUST SUCCEED (#108): this is the last attempt at telling the
+            // truth about money Paystack has taken back. If it fails too, the
+            // order keeps reading `paid_out` and the buyer's refund is refused
+            // as "after seller payout". On the webhook path that means a
+            // non-2xx so Paystack re-delivers — safe because the CAS below
+            // matches nothing once the unwind has succeeded, so a replay can
+            // neither double-unwind nor double-bump the attempt counter.
+            mustWrite(
+              await this.db
+                .from('marketplace_orders')
+                .update({
+                  payout_status: 'pending',
+                  payout_transfer_code: null,
+                  payout_reference: null,
+                  payout_failed_reason: `paystack_${eventType}`,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', order.id)
+                .in('payout_status', ['paying', 'paid_out']),
+              {
+                table: 'marketplace_orders',
+                op: 'update',
+                orderId: order.id,
+                eventType,
+                reason: 'unwind_without_attempt_bump',
+              },
+            );
           }
         }
       }
@@ -2500,11 +2516,24 @@ export class MarketplacePaymentsService {
             transferCode,
             error: resetErr.message || String(resetErr),
           });
-          await this.db
-            .from('marketplace_payments')
-            .update(reset)
-            .eq('payout_transfer_code', transferCode)
-            .in('status', ['payout_pending', 'paid_out']);
+          // MUST SUCCEED (#108), for the same reason and with the same safety
+          // as the order unwind above: leaving the payment at `paid_out` says
+          // the seller has money Paystack has reclaimed, and the CAS makes a
+          // re-delivered event a no-op.
+          mustWrite(
+            await this.db
+              .from('marketplace_payments')
+              .update(reset)
+              .eq('payout_transfer_code', transferCode)
+              .in('status', ['payout_pending', 'paid_out']),
+            {
+              table: 'marketplace_payments',
+              op: 'update',
+              transferCode,
+              eventType,
+              reason: 'payout_reset_without_attempt_bump',
+            },
+          );
         }
       }
     }

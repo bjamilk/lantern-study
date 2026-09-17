@@ -160,18 +160,50 @@ describe('a reversal on a database without the payout_attempt column', () => {
   });
 });
 
-describe('TODAY: the fallback unwind failing too', () => {
-  it('answers ok while returned money still reads as paid out', async () => {
-    // Nothing was unwound. The order stays `paid_out`, the payment stays
-    // `paid_out`, the seller reads as paid for money Paystack took back, and
-    // the buyer's refund will be refused as "after seller payout". Paystack is
-    // told the event is handled, so it never comes again.
-    const { service, calls } = await serviceFor({ bumpFails: true, plainFails: true });
-    await expect(service.handleWebhook(TRANSFER_REVERSED, 'sig')).resolves.toEqual(
-      expect.objectContaining({ ok: true }),
+describe('the fallback unwind failing too', () => {
+  it('REJECTS so Paystack re-delivers the reversal', async () => {
+    // Nothing was unwound: the order and the payment both still read
+    // `paid_out` for money Paystack has taken back. Answering ok would mean the
+    // event never comes again and the seller reads as paid for cash they no
+    // longer have.
+    const { service } = await serviceFor({ bumpFails: true, plainFails: true });
+    await expect(service.handleWebhook(TRANSFER_REVERSED, 'sig')).rejects.toThrow(
+      /marketplace_orders/,
     );
-    expect(calls.some((call) => call.table === 'paystack_webhook_events' && writePayload(call, 'update'))).toBe(
-      true,
+  });
+
+  it('does not stamp the event processed, so the retry actually re-processes', async () => {
+    const { service, calls } = await serviceFor({ bumpFails: true, plainFails: true });
+    await service.handleWebhook(TRANSFER_REVERSED, 'sig').catch(() => undefined);
+    const stamped = calls.some(
+      (call) => call.table === 'paystack_webhook_events' && writePayload(call, 'update'),
+    );
+    expect(stamped).toBe(false);
+  });
+
+  it('names the order, the event and which attempt this was', async () => {
+    const { WriteFailedError } = await import('./data/writeResult');
+    const { service } = await serviceFor({ bumpFails: true, plainFails: true });
+    const error = await service.handleWebhook(TRANSFER_REVERSED, 'sig').catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WriteFailedError);
+    expect((error as InstanceType<typeof WriteFailedError>).context).toEqual(
+      expect.objectContaining({
+        orderId: 'ord_1',
+        eventType: 'transfer.reversed',
+        reason: 'unwind_without_attempt_bump',
+      }),
+    );
+  });
+
+  it('still reports the FIRST attempt before failing on the fallback', async () => {
+    // The two are different failures and both are worth reading: the first
+    // usually means the migration is not applied, the second that the database
+    // refused the write outright.
+    const { service } = await serviceFor({ bumpFails: true, plainFails: true });
+    await service.handleWebhook(TRANSFER_REVERSED, 'sig').catch(() => undefined);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Payout unwind with attempt bump failed; retrying without it',
+      expect.objectContaining({ orderId: 'ord_1' }),
     );
   });
 });
