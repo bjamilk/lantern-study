@@ -41,6 +41,8 @@ import http from 'http';
 import ordersRouter from './orders';
 import { initializeMarketplaceContext } from './context';
 import { setIdempotencyClient } from '../../middleware/idempotency';
+import * as marketplaceData from '../../services/data/marketplace';
+import { bindDataModule } from '../../services/data/testStub';
 
 const ORDER_ID = 'ord_1';
 
@@ -136,7 +138,14 @@ describe('PATCH /orders/:id replay window', () => {
     // version-aware fallback.
     setIdempotencyClient(() => fakeClient() as any);
     initializeMarketplaceContext(
-      { getClient: () => fakeClient() } as any,
+      {
+        getClient: () => fakeClient(),
+        // The order field update moved into `services/data/marketplace.ts`
+        // (lane R2), so the route reaches it through the layer. Binding the
+        // real module to the same fake client leaves the write this suite
+        // asserts on exactly as it was.
+        marketplace: bindDataModule(marketplaceData, fakeClient()),
+      } as any,
       {
         get: async () => null,
         set: async () => undefined,
