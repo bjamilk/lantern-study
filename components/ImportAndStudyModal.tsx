@@ -46,6 +46,7 @@ import {
   type ImportGeneratedArtifact,
   type ImportKind,
   type ImportRunState,
+  uploadStageOf,
   type ImportStageId,
 } from '@lantern/shared/utils/importStages';
 import { ImportStages, WhereNextFork } from './study/ImportProgress';
@@ -92,21 +93,6 @@ interface ImportAndStudyModalProps {
 }
 
 type Step = 'input' | 'processing' | 'done';
-
-/**
- * Which stage card an upload-path error belongs on.
- *
- * The transport failures are the two `notesUploadRequest` raises itself; every
- * other message came back FROM the server, which means the bytes arrived and it
- * was reading them that failed. Getting this right is the whole point of the
- * stage cards: "check your connection" and "no text could be read out of this
- * PDF" are different problems, and a student who is shown the wrong one retries
- * the wrong thing.
- */
-export function uploadStageOf(error: unknown): ImportStageId {
-  const message = error instanceof Error ? error.message : '';
-  return /check your connection|timed out|Upload failed/i.test(message) ? 'uploaded' : 'processing';
-}
 
 export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   isOpen,

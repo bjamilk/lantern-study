@@ -37,6 +37,7 @@ import ImportCardsSheet from '../../components/flashcards/ImportCardsSheet';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useJobsStore } from '../../stores/jobsStore';
+import { useStudySetStore } from '../../stores/studySetStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useAuthStore } from '../../stores/authStore';
 import { createNote, createNoteFromYoutube, updateNote } from '../../services/notes';
@@ -78,6 +79,8 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
   const notes = useNotesStore((s) => s.notes);
   const decks = useFlashcardStore((s) => s.decks);
   const jobs = useJobsStore((s) => s.jobs);
+  /** Only to decide whether the completion fork may offer a plan card. */
+  const plan = useStudySetStore((s) => s.plans[studySetId]);
 
   const [importOpen, setImportOpen] = useState(false);
   const [autoPick, setAutoPick] = useState<ImportFileKind | null>(null);
@@ -379,6 +382,26 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
         onComplete={() => {
           refreshNotes();
           if (userId) void useFlashcardStore.getState().fetchDecks(userId).catch(() => undefined);
+        }}
+        // The "where next" fork. The plan card is drawn only when this set
+        // really has stored topics; otherwise the second card is the set room,
+        // which is also where this screen came from.
+        onViewStudyPlan={
+          (plan?.topics?.length ?? 0) > 0
+            ? () => {
+                closeImportSheet();
+                navigation.navigate('CourseRoom', {
+                  courseId,
+                  studySetId,
+                  courseLabel,
+                  segment: 'plan',
+                });
+              }
+            : undefined
+        }
+        onOpenSetHome={() => {
+          closeImportSheet();
+          navigation.navigate('CourseRoom', { courseId, studySetId, courseLabel });
         }}
       />
 

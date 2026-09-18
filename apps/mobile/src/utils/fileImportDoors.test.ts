@@ -98,4 +98,32 @@ describe('pickImportFile', () => {
       expect.objectContaining({ name: defaultImportFileName('presentation') })
     );
   });
+
+  it('asks the picker for both text mimes at the text door', async () => {
+    const getDocumentAsync = jest
+      .fn()
+      .mockResolvedValue(asset({ name: 'week-3.md' }));
+    await pickImportFile('text', getDocumentAsync);
+    expect(getDocumentAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ type: ['text/plain', 'text/markdown'] })
+    );
+  });
+
+  it('refuses a file the text door cannot read, by name', async () => {
+    // Android's picker honours a mime filter loosely and hands back whatever
+    // was long-pressed; read as UTF-8, a PDF would become a note of mojibake.
+    const getDocumentAsync = jest.fn().mockResolvedValue(asset({ name: 'paper.pdf' }));
+    await expect(pickImportFile('text', getDocumentAsync)).rejects.toThrow(
+      /not a \.txt or \.md file/i
+    );
+  });
+
+  it('accepts .txt, .md and .markdown at the text door', async () => {
+    for (const name of ['notes.txt', 'week-3.md', 'chapter.markdown']) {
+      const getDocumentAsync = jest.fn().mockResolvedValue(asset({ name }));
+      await expect(pickImportFile('text', getDocumentAsync)).resolves.toEqual(
+        expect.objectContaining({ name })
+      );
+    }
+  });
 });
