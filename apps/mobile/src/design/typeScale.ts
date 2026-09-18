@@ -44,15 +44,15 @@ export interface TypeStep {
 
 export const typeScale: Record<TypeStepName, TypeStep> = {
   /** Hero greeting, score numeral. */
-  display: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.56 },
-  /** Every screen h1, modal title. */
-  title: { fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.44 },
-  /** Section h2, card title, flashcard face. */
-  heading: { fontSize: 17, lineHeight: 24, fontWeight: '600', letterSpacing: -0.187 },
-  /** All prose, chat, list titles. */
-  body: { fontSize: 15, lineHeight: 22, fontWeight: '400', letterSpacing: -0.165 },
-  /** Secondary copy, timestamps, stat labels. */
-  caption: { fontSize: 13, lineHeight: 18, fontWeight: '400', letterSpacing: 0 },
+  display: { fontSize: 28, lineHeight: 36, fontWeight: '500', letterSpacing: 0 },
+  /** Every screen h1, modal title, section head. */
+  title: { fontSize: 24, lineHeight: 32, fontWeight: '500', letterSpacing: 0 },
+  /** Section eyebrow, card title, flashcard face. */
+  heading: { fontSize: 18, lineHeight: 28, fontWeight: '500', letterSpacing: 0 },
+  /** All prose, buttons, labels, chat, list titles. */
+  body: { fontSize: 14, lineHeight: 20, fontWeight: '400', letterSpacing: 0 },
+  /** Meta: secondary copy, timestamps, stat labels. */
+  caption: { fontSize: 12, lineHeight: 16, fontWeight: '400', letterSpacing: 0 },
   /** Uppercase eyebrows, badges, tab labels. The floor: never go below this. */
   label: { fontSize: 11, lineHeight: 16, fontWeight: '600', letterSpacing: 0.44 },
 };

@@ -131,7 +131,9 @@ describe('feature accent tokens', () => {
     expect(lightTheme.background).toBe('#f7f6ef');
     expect(lightTheme.backgroundSecondary).toBe('#f2f0e8');
     expect(lightTheme.surface).toBe('#ffffff');
-    expect(lightTheme.border).toBe('#eceae0');
+    // Re-measured 2026-09-17 (StudyFetch parity wave 1): the hairline is the
+    // neutral #e5e5e5, not the warm #eceae0 that vanished on a white card.
+    expect(lightTheme.border).toBe('#e5e5e5');
     expect(lightTheme.navColumn).toBe('#171717');
     expect(lightTheme.navColumnActive).toBe('#383838');
     expect(lightTheme.ink).toBe('#191919');
@@ -184,12 +186,26 @@ describe('type scale', () => {
       'caption',
       'label',
     ]);
-    expect(type.display).toMatchObject({ fontSize: 28, lineHeight: 34, fontWeight: '700' });
-    expect(type.title).toMatchObject({ fontSize: 22, lineHeight: 28, fontWeight: '700' });
-    expect(type.heading).toMatchObject({ fontSize: 17, lineHeight: 24, fontWeight: '600' });
-    expect(type.body).toMatchObject({ fontSize: 15, lineHeight: 22, fontWeight: '400' });
-    expect(type.caption).toMatchObject({ fontSize: 13, lineHeight: 18, fontWeight: '400' });
+    // The roles measured off the reference set room at 1440x900 on 2026-09-17
+    // (StudyFetch parity wave 1). `label` is the one step unchanged: it is
+    // Lantern's uppercase micro-role, which the reference does not have.
+    expect(type.display).toMatchObject({ fontSize: 28, lineHeight: 36, fontWeight: '500' });
+    expect(type.title).toMatchObject({ fontSize: 24, lineHeight: 32, fontWeight: '500' });
+    expect(type.heading).toMatchObject({ fontSize: 18, lineHeight: 28, fontWeight: '500' });
+    expect(type.body).toMatchObject({ fontSize: 14, lineHeight: 20, fontWeight: '400' });
+    expect(type.caption).toMatchObject({ fontSize: 12, lineHeight: 16, fontWeight: '400' });
     expect(type.label).toMatchObject({ fontSize: 11, lineHeight: 16, fontWeight: '600' });
+  });
+
+  it('tracks normally on every step but the uppercase micro-label', () => {
+    // The reference measures `letter-spacing: normal` everywhere. This is the
+    // assertion that stops a negative track creeping back one step at a time.
+    for (const name of TYPE_STEP_NAMES) {
+      if (name === 'label') continue;
+      expect(type[name].letterSpacing).toBe('0');
+      expect(type[name].letterSpacingPx).toBe(0);
+    }
+    expect(type.label.letterSpacing).toBe('0.04em');
   });
 
   it('never goes below the 11px floor', () => {
@@ -210,7 +226,7 @@ describe('type scale', () => {
     const vars = typeScaleToCssVars();
     expect(vars['--type-display-size']).toBe('28px');
     expect(vars['--type-label-tracking']).toBe('0.04em');
-    expect(vars['--type-body-lh']).toBe('22px');
+    expect(vars['--type-body-lh']).toBe('20px');
     expect(vars['--font-serif']).toContain('ui-serif');
     expect(vars['--font-mono']).toContain('ui-monospace');
     // --font-sans is owned by the user's font-mode setting, not the scale.

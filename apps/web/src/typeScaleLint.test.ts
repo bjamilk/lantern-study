@@ -169,12 +169,22 @@ describe('type scale tokens', () => {
     return bare ? { px: Number(bare[1]), floor: null } : null;
   };
 
+  /**
+   * The roles MEASURED off the StudyFetch set room at 1440x900 on 2026-09-17
+   * (docs/studyfetch-mysets-2026-09-17/02-style-and-subpages.md), pinned here
+   * so a later edit cannot drift one platform off the other.
+   *
+   * These are a deliberate, founder-approved change from the Wave T ladder
+   * (28/34, 22/28, 17/24, 15/22, 13/18): heads 24/32, eyebrow 18/28, base
+   * 14/20, meta 12/16. `label` is unchanged — it is Lantern's own uppercase
+   * micro-role, with no counterpart in the reference to measure.
+   */
   const EXPECTED_PX: Record<string, [number, number]> = {
-    display: [28, 34],
-    title: [22, 28],
-    heading: [17, 24],
-    body: [15, 22],
-    caption: [13, 18],
+    display: [28, 36],
+    title: [24, 32],
+    heading: [18, 28],
+    body: [14, 20],
+    caption: [12, 16],
     label: [11, 16],
   };
 
@@ -222,7 +232,7 @@ describe('type scale tokens', () => {
     // max() is plain CSS Values 4 — but a minifier or an over-eager autoprefixer
     // collapsing it would silently restore the bug, so assert the shipped form.
     expect(typeCss).toContain('--type-label-size: max(11px, calc(11px * var(--type-scale)))');
-    expect(typeCss).toContain('--type-caption-size: max(12px, calc(13px * var(--type-scale)))');
+    expect(typeCss).toContain('--type-caption-size: max(11px, calc(12px * var(--type-scale)))');
   });
 
   it('lets the app text-size setting scale every step', () => {

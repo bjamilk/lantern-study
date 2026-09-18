@@ -45,6 +45,44 @@
   src: url('/fonts/bitter-latin-italic-600.woff2') format('woff2');
 }
 
+/* ===== Body face: Inter (SIL OFL 1.1, public/fonts/INTER-OFL.txt) =====
+   The 2026-09-17 measurement of the reference set room reads Inter at 14/20
+   for every button, label and body-ui string, and the whole reason that ladder
+   looks settled there and loose here is the FACE: system-ui is San Francisco
+   on a Mac, Segoe on Windows and Roboto on Android, so the same 14px string is
+   three different widths and x-heights depending on who opened it. A named
+   face is the only way a measured scale means the same thing twice.
+
+   Three weights, no italic: 400 (prose), 500 (every label, button and chip —
+   the reference's default UI weight) and 600 (a list title, a chip index).
+   Latin-subset instances from @fontsource/inter@5.1.0 (`files/inter-latin-
+   <weight>-normal.woff2`), ~24 KB each, vendored the same way the Bitter faces
+   above are rather than fetched from a CDN at runtime.
+
+   `swap`, for the same reason Bitter swaps: the fallback is metrically close
+   enough that a reflow costs less than a blank page. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/inter-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/inter-latin-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/inter-latin-600.woff2') format('woff2');
+}
+
 /* Mobile home-indicator / notch spacing */
 @layer utilities {
   .safe-area-bottom {
@@ -134,7 +172,17 @@ svg[data-slot="icon"].w-24 {
      of that ink (#525252 / #666666) and clear AA above the slate values they
      replace. Mirrors packages/shared/src/design/tokens.ts. */
   --color-text: 25 25 25;
-  --color-text-secondary: 82 82 82;
+  /* 2026-09-17 parity: the reference's secondary ink is the WARM grey #716d66
+     rather than the neutral #525252 this replaces — warm is what seats it on
+     the paper ground instead of on top of it. Shipped two steps darker at
+     #5e5a54 because the measured value is 3.88:1 on the AI lilac tint; see
+     packages/shared/src/design/tokens.ts for the full reasoning. */
+  --color-text-secondary: 94 90 84;
+  /* DELIBERATELY NOT the reference's #A3A3A3. That value is 2.6:1 on white —
+     the reference sets its material-card titles in it and they are genuinely
+     hard to read. Lantern's #666666 is the same ROLE (the quietest ink) at
+     5.74:1, and `npm run design:contrast` would fail on the measured value.
+     This is one of the accessibility wins the parity pass keeps. */
   --color-text-tertiary: 102 102 102;
   /* 2026-09-12 colour pivot: primary is the theme's INK, not indigo. Light's
      ink is #191919 with white on it; `-light` (#333333) is hover and `-dark`
@@ -168,9 +216,11 @@ svg[data-slot="icon"].w-24 {
   /* New this wave: sky-700. sky-500 (the old `info` token) was 2.63:1 as text
      on cream, which is why no info var ever shipped. */
   --color-info: 3 105 161;
-  /* Hairline #eceae0: one step off the second plane, so a card's edge is a
-     seam rather than a rule and needs no shadow to separate from the page. */
-  --color-border: 236 234 224;
+  /* Hairline #e5e5e5, measured off the reference 2026-09-17. It was #eceae0
+     — a warm seam one step off the second plane — which disappeared against a
+     white card at 1px. The reference draws a neutral hairline and relies on it
+     instead of a shadow, which is the anatomy every card in this wave uses. */
+  --color-border: 229 229 229;
   --radius-lg: 16px;
   --radius-xl: 20px;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
@@ -201,7 +251,11 @@ svg[data-slot="icon"].w-24 {
      than to widen that list. The ring and the pill therefore consume
      `--color-feature-ai-*` and `--color-feature-recording-*`, which are already
      AA-paired ink-on-tint in both themes. */
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Inter leads (the @font-face block at the top of this file ships it);
+     system-ui stays behind it as the no-bytes fallback and as what
+     `.font-low-data` drops to. Mirrors `typeStack.sans` in
+     packages/shared/src/design/tokens.ts. */
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   /* The display voice is now a SERIF, which is the single biggest thing that
      makes the StudyFetch reference read as a study product rather than a SaaS
      dashboard. Georgia is the fallback because it is metrically close enough
@@ -275,7 +329,8 @@ svg[data-slot="icon"].w-24 {
   /* One ink, both themes: dark's ramp is the neutral twin of light's
      (#191919/#525252/#666666), not slate. `text` IS dark's primary ink. */
   --color-text: 245 245 245;
-  --color-text-secondary: 179 179 179;
+  /* Warmed with light's #716d66 (2026-09-17 parity) — see tokens.ts. */
+  --color-text-secondary: 179 174 164;
   /* UI-01 still holds: ≥4.5:1 on every dark surface (6.25:1 on #000). */
   --color-text-tertiary: 140 140 140;
   /* The ink INVERTS in dark — a near-black pill on a black page is a hole —
@@ -381,7 +436,7 @@ svg[data-slot="icon"].w-24 {
    / bandwidth affordance: it drops to system faces so that no font bytes are
    fetched at all. Any future mode must scale sizes, not reassign the family. */
 .font-full {
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .font-low-data {
@@ -416,14 +471,18 @@ body {
   background-image: var(--app-atmosphere);
   background-attachment: fixed;
   color: rgb(var(--color-text));
-  letter-spacing: -0.011em;
+  /* Normal, measured: the reference sets `letter-spacing: normal` on every
+     role, and this global -0.011em was tightening every string the six steps
+     do not own (inputs, tables, anything unmigrated) below what Inter is
+     drawn for. See design/type.css. */
+  letter-spacing: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.02em;
+  letter-spacing: normal;
 }
 
 .lantern-surface {

@@ -15,17 +15,18 @@ function size(fontScale: number, step?: Parameters<typeof resolveBodyTextStyle>[
 }
 
 describe('resolveBodyTextStyle', () => {
-  it('renders the body step at 15/22 at scale 1', () => {
-    expect(size(1)).toEqual({ fontSize: 15, lineHeight: 22 });
+  it('renders the body step at 14/20 at scale 1', () => {
+    // 14/20 since the 2026-09-17 parity measurement (was 15/22).
+    expect(size(1)).toEqual({ fontSize: 14, lineHeight: 20 });
     expect(resolveBodyTextStyle(1).fontWeight).toBe(CHAT_TYPE_STEPS.body.fontWeight);
   });
 
   it('scales the body step up at 1.15', () => {
-    expect(size(1.15)).toEqual({ fontSize: 17, lineHeight: 25 });
+    expect(size(1.15)).toEqual({ fontSize: 16, lineHeight: 23 });
   });
 
   it('scales the body step down at 0.9', () => {
-    expect(size(0.9)).toEqual({ fontSize: 14, lineHeight: 20 });
+    expect(size(0.9)).toEqual({ fontSize: 13, lineHeight: 18 });
   });
 
   it('never falls below the 11 sp floor', () => {
@@ -46,9 +47,9 @@ describe('resolveBodyTextStyle', () => {
   });
 
   it('falls back to scale 1 for a nonsense scale', () => {
-    expect(size(0)).toEqual({ fontSize: 15, lineHeight: 22 });
-    expect(size(Number.NaN)).toEqual({ fontSize: 15, lineHeight: 22 });
-    expect(size(-2)).toEqual({ fontSize: 15, lineHeight: 22 });
+    expect(size(0)).toEqual({ fontSize: 14, lineHeight: 20 });
+    expect(size(Number.NaN)).toEqual({ fontSize: 14, lineHeight: 20 });
+    expect(size(-2)).toEqual({ fontSize: 14, lineHeight: 20 });
   });
 
   it('is monotonic in the scale', () => {
