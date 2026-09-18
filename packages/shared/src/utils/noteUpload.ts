@@ -80,6 +80,94 @@ export function buildImportedDocumentBody(
   );
 }
 
+// --- Plain text and Markdown (.txt / .md) -------------------------------------
+// The cheapest door there is: a `.txt` or `.md` IS the note's body. Nothing is
+// uploaded, nothing is parsed on the server and no credit is spent reading it —
+// the client decodes the file as UTF-8 and hands the text to the same
+// create-note path the paste box uses. That is why these two extensions can be
+// added to the accept list without an API route to go with them.
+//
+// `.markdown` is accepted alongside `.md` because editors write both, and a
+// student whose file the picker refuses has no way to learn which one we meant.
+
+export const PLAIN_TEXT_MIME = 'text/plain';
+export const MARKDOWN_MIME = 'text/markdown';
+
+/** Is this a file we can read as text in the client, by name? */
+export function isPlainTextFileName(fileName: string): boolean {
+  return /\.(txt|md|markdown)$/i.test(fileName);
+}
+
+/**
+ * The note's title for a text import: the file name with its extension taken
+ * off, or a plain fallback when the name was only an extension.
+ */
+export function buildImportedTextTitle(fileName: string): string {
+  const base = String(fileName || '')
+    .replace(/^.*[\\/]/, '')
+    .replace(/\.(txt|md|markdown)$/i, '')
+    .trim();
+  return base || 'Imported notes';
+}
+
+/** Refuse an empty text file BEFORE a note with no body is created. */
+export function assertImportedTextBody(text: string, fileName: string): void {
+  if (text.trim().length > 0) return;
+  throw new Error(`“${fileName}” has no text in it.`);
+}
+
+// --- iPhone photographs (.heic / .heif) ---------------------------------------
+// A photo taken on an iPhone is HEIC unless the owner changed a setting, so a
+// picker that does not accept it refuses the most common photograph on campus.
+//
+// THE DECODE HAPPENS ON THE SERVER, not in the browser. `heic2any` is the usual
+// client-side answer and it is ~1.4 MB of libheif compiled to asm.js/WASM that
+// every page load would carry for a file type most uploads are not — while the
+// API already depends on `sharp`, whose libvips build decodes HEIC today
+// (verified by round-tripping a real `sips`-written .heic through
+// `sharp().metadata()` before this was written). So the bytes go up as they
+// are and come back normalised to WebP like every other photograph.
+//
+// GOTCHA: browsers disagree about the mime for a `.heic` — Safari says
+// `image/heic`, Chrome on macOS often says nothing at all. Anything matching by
+// NAME must therefore be treated as an image even when `File.type` is empty,
+// which is what `isHeicFileName` is for.
+export const HEIC_MIMES: readonly string[] = ['image/heic', 'image/heif'];
+
+export function isHeicFileName(fileName: string): boolean {
+  return /\.(heic|heif)$/i.test(fileName);
+}
+
+export function isHeicMime(mime: string | undefined | null): boolean {
+  return !!mime && HEIC_MIMES.includes(mime.toLowerCase());
+}
+
+/**
+ * The one `accept` string, spelled once.
+ *
+ * It lived in `components/study/uploadDoors.ts` (web only) until the phone's
+ * doors had to agree with it. A list that disagrees across platforms is a file
+ * a student can add on their laptop and not on their phone, with nothing
+ * anywhere saying why.
+ *
+ * `.doc` is NOT here. The pre-2007 binary format is not a ZIP and nothing in
+ * the stack can read it; offering it would mean accepting a file only to refuse
+ * it after a 25 MB upload. Audio and video files are not here either — there is
+ * no file-transcription path, only the lecture recorder's own.
+ */
+export const NOTE_UPLOAD_ACCEPT =
+  '.pdf,application/pdf,' +
+  '.pptx,.ppt,' +
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation,' +
+  'application/vnd.ms-powerpoint,' +
+  `.docx,${DOCX_MIME},` +
+  `.txt,${PLAIN_TEXT_MIME},.md,.markdown,${MARKDOWN_MIME},` +
+  `.heic,.heif,${HEIC_MIMES.join(',')},` +
+  'image/*';
+
+/** What the phone's document picker asks for on the text door. */
+export const TEXT_PICKER_MIMES: readonly string[] = [PLAIN_TEXT_MIME, MARKDOWN_MIME];
+
 /** Shown when storage upload succeeded but finalize/create-note failed. */
 export const NOTE_FINALIZE_FAILED_MESSAGE =
   "File uploaded but note wasn't created. Please try again.";
