@@ -177,3 +177,50 @@ describe('LectureStudio tab row', () => {
     expect(html).not.toContain('lantern:smart-notes');
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * The enhance row: depth and price unchanged, two optional steers added.
+ * ------------------------------------------------------------------ */
+
+describe('LectureStudio enhance controls', () => {
+  const renderStudio = (note: unknown, props: Record<string, unknown> = {}) =>
+    render(
+      <LectureStudio
+        courseId="course-1"
+        theme="light"
+        note={note as never}
+        lectures={note ? [note as never] : []}
+        onTurnInto={() => undefined}
+        onSmartNote={async () => undefined}
+        onNoteReady={async () => undefined}
+        {...props}
+      />
+    );
+
+  it('offers a one-line skill hint with two example chips', () => {
+    const html = renderStudio(noteWith(FULL_BODY));
+    expect(html).toContain('id="lecture-skill-hint"');
+    expect(visibleText(html)).toContain('How much do you already know?');
+    expect(visibleText(html)).toContain('Basic');
+    expect(visibleText(html)).toContain('Advanced');
+  });
+
+  it('caps the hint in the field itself, not only on the server', () => {
+    expect(renderStudio(noteWith(FULL_BODY))).toContain('maxLength="200"');
+  });
+
+  it('keeps the depth row and its prices untouched', () => {
+    const text = visibleText(renderStudio(noteWith(FULL_BODY)));
+    expect(text).toContain('Summarized');
+    expect(text).toContain('Enhance notes');
+    // A hint is a sentence in the prompt, not a second call: the price line
+    // is the same one the depth picker already showed.
+    expect(text).toContain('1 AI use');
+  });
+
+  it('offers no material picker when the lecture is not in a study set', () => {
+    // Without a set there is nothing to attach, and a "None"-only select is
+    // a dead door.
+    expect(renderStudio(noteWith(FULL_BODY))).not.toContain('id="lecture-context-note"');
+  });
+});
