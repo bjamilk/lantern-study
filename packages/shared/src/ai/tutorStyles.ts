@@ -50,17 +50,26 @@ export interface TutorStyle {
 export const DEFAULT_TUTOR_STYLE_ID: TutorStyleId = 'default';
 
 /**
+ * The style every account starts on.
+ *
+ * Named separately from the array so `getTutorStyle` has a fallback the
+ * compiler knows exists: the web build runs with `noUncheckedIndexedAccess`,
+ * under which `TUTOR_STYLES[0]` is `TutorStyle | undefined`.
+ */
+const DEFAULT_TUTOR_STYLE: TutorStyle = {
+  id: 'default',
+  label: 'Lantern',
+  description: 'Balanced explanations with a next step.',
+  icon: 'sparkles',
+  prompt:
+    'Teach in Lantern\'s balanced voice: warm, plain and practical. Explain the idea, give one concrete example, then say what to do next. Keep the reply short enough to read in one go.',
+};
+
+/**
  * In menu order. `default` is first because it is what every account starts on.
  */
 export const TUTOR_STYLES: readonly TutorStyle[] = [
-  {
-    id: 'default',
-    label: 'Lantern',
-    description: 'Balanced explanations with a next step.',
-    icon: 'sparkles',
-    prompt:
-      'Teach in Lantern\'s balanced voice: warm, plain and practical. Explain the idea, give one concrete example, then say what to do next. Keep the reply short enough to read in one go.',
-  },
+  DEFAULT_TUTOR_STYLE,
   {
     id: 'coach',
     label: 'Coach',
@@ -110,7 +119,7 @@ export function normalizeTutorStyleId(value: unknown): TutorStyleId {
 
 export function getTutorStyle(value: unknown): TutorStyle {
   const id = normalizeTutorStyleId(value);
-  return TUTOR_STYLES.find((style) => style.id === id) ?? TUTOR_STYLES[0];
+  return TUTOR_STYLES.find((style) => style.id === id) ?? DEFAULT_TUTOR_STYLE;
 }
 
 /** The fragment for a style id, normalised. Never empty. */
