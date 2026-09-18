@@ -31,10 +31,15 @@ import { AppState, type AppStateStatus } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { composeLectureNoteBody, displayLectureTranscript } from '@lantern/shared';
-import { maxLectureRecordingMs } from '@lantern/shared/utils/lectureAudio';
+import {
+  maxLectureRecordingMs,
+  normalizeLectureSpokenLanguage,
+  normalizeLectureTranscribeTarget,
+} from '@lantern/shared/utils/lectureAudio';
 import { startLiveCaptionStream } from '../services/liveSpeech';
 import { fetchAIUsage } from '../services/ai';
 import { transcribeAudioForNote } from '../services/notes';
+import { useSettingsStore } from './settingsStore';
 import {
   hasLectureForegroundService,
   startLectureForegroundService,
@@ -69,6 +74,21 @@ import {
  * student had just sat through was gone. Now the file is HELD, `Retry
  * transcription` is offered, and Discard is the only thing that deletes it.
  */
+/**
+ * The two language choices, read off the synced settings blob.
+ *
+ * Returns the wire shape rather than the setting shape so the call site reads
+ * as one spread; `normalize*` runs on the way out because a blob written by a
+ * newer build must not reach Whisper unchecked.
+ */
+function lectureTranscribeLanguages(): { language: string; translateTo: string } {
+  const lecture = useSettingsStore.getState().settings?.lecture;
+  return {
+    language: normalizeLectureSpokenLanguage(lecture?.spokenLanguage),
+    translateTo: normalizeLectureTranscribeTarget(lecture?.transcribeTo),
+  };
+}
+
 export type LectureRecordingStatus =
   | 'idle'
   | 'recording'
@@ -857,6 +877,11 @@ async function runTranscription(
       clientByteLength: byteLength || undefined,
       localFileUri: uri,
       useStoragePath: true,
+      // Read HERE rather than captured at start: a failed take keeps its file
+      // and offers "Retry transcription", and a student who retries after
+      // fixing the language in settings should get the language they fixed.
+      // Both values are narrowed again on the server.
+      ...lectureTranscribeLanguages(),
     });
 
     await useNotesStore.getState().loadNote(noteId);

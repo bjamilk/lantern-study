@@ -46,6 +46,8 @@ import {
   type LectureTabId,
 } from '@lantern/shared';
 import {
+  SMART_NOTES_SKILL_HINT_EXAMPLES,
+  SMART_NOTES_SKILL_HINT_MAX_CHARS,
   upsertSmartNotesSection,
   type SmartNotesDepth,
 } from '@lantern/shared/utils/smartNotes';
@@ -59,6 +61,7 @@ import { Button, ScreenHeader, T } from '../../components/ui';
 import { NoteBody } from '../../components/NoteBody';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
+import { LectureLanguagePicker } from '../../components/lecture/LectureLanguagePicker';
 import { LectureTabs } from '../../components/lecture/LectureTabs';
 import { lectureStudioView } from './lectureStudioView';
 import { useNotesStore } from '../../stores/notesStore';
@@ -136,6 +139,8 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   const [notesBody, setNotesBody] = useState('');
   const [askDraft, setAskDraft] = useState('');
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
+  /** One line about the reader, appended to the enhance prompt as a hint. */
+  const [skillHint, setSkillHint] = useState('');
   const [writing, setWriting] = useState(false);
   /**
    * Notes read as a hierarchy by default; Edit brings back the text box. A
@@ -342,7 +347,10 @@ export function LectureStudioScreen({ navigation, route }: Props) {
         title: snapshot.title,
         body: composeBody(snapshot.body, liveRef.current),
       });
-      const result = await summarizeNote(activeNote.id, { depth });
+      const result = await summarizeNote(activeNote.id, {
+        depth,
+        skillLevelHint: skillHint.trim() || undefined,
+      });
       if (result.note) {
         setSelectedNote({
           ...(useNotesStore.getState().selectedNote ?? activeNote),
@@ -431,7 +439,20 @@ export function LectureStudioScreen({ navigation, route }: Props) {
               />
               <T.Body>I can record this lecture.</T.Body>
             </Pressable>
-            <Button disabled={!agreed} onPress={() => void handleStart()}>
+            {/*
+              The pre-check, before the take rather than only during it. The
+              Level row reads "No signal yet" until the recorder is running —
+              expo-av meters a RECORDING, so unlike the browser there is no
+              live bar before Start. Every other row (permission, connection,
+              cost, length, screen) is a real reading at this moment.
+            */}
+            <LecturePreflightCard />
+            <LectureLanguagePicker />
+            <Button
+              disabled={!agreed}
+              onPress={() => void handleStart()}
+              accessibilityLabel="Start recording"
+            >
               {starting ? 'Starting…' : 'Start recording'}
             </Button>
           </View>
@@ -601,6 +622,35 @@ export function LectureStudioScreen({ navigation, route }: Props) {
                       <T.Body style={depth === option.id ? { color: '#ffffff' } : undefined}>
                         {`${option.label} · ${formatCreditCost(SMART_NOTES_CREDIT_COST[option.id])}`}
                       </T.Body>
+                    </Pressable>
+                  ))}
+                </View>
+                {/*
+                  One optional line about the reader. Free: a hint is a
+                  sentence in the prompt, not a second call, so the price above
+                  does not move.
+                */}
+                <T.Caption tone="secondary" className="mt-1">
+                  How much do you already know? (optional)
+                </T.Caption>
+                <TextInput
+                  value={skillHint}
+                  onChangeText={setSkillHint}
+                  maxLength={SMART_NOTES_SKILL_HINT_MAX_CHARS}
+                  accessibilityLabel="How much do you already know?"
+                  placeholder="e.g. I know the basics but not the maths"
+                  className="mt-1 min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 text-body text-lantern-text"
+                />
+                <View className="flex-row flex-wrap gap-2 mt-2 mb-2">
+                  {SMART_NOTES_SKILL_HINT_EXAMPLES.map((example) => (
+                    <Pressable
+                      key={example.id}
+                      onPress={() => setSkillHint(example.text)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${example.label} level`}
+                      className="min-h-[44px] justify-center rounded-full border border-lantern-border bg-lantern-surface px-3"
+                    >
+                      <T.Body>{example.label}</T.Body>
                     </Pressable>
                   ))}
                 </View>
