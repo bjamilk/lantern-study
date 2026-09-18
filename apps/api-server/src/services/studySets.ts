@@ -690,8 +690,15 @@ export class StudySetsService {
       .eq('study_set_id', setId)
       .order('position', { ascending: true });
     if (topicsRes.error) throw topicsRes.error;
-    const preAssessments = await this.data.tests
-      .listSetPreAssessments(userId, setId)
+    // Optional-chained, not assumed. `getStudySetsService` is a process
+    // SINGLETON, so whichever DataLayer constructed it first is the one every
+    // later caller gets — including a test that handed it a partial layer with
+    // no `tests` namespace. A hard read threw there, and the plan (which has
+    // nothing to do with pre-assessments) died with it. The list is a garnish
+    // on this response; it degrades to empty, which draws the offer to start a
+    // check, which is the honest default.
+    const preAssessments = await Promise.resolve()
+      .then(() => this.data?.tests?.listSetPreAssessments?.(userId, setId) ?? [])
       .catch(() => []);
     return {
       preAssessments,

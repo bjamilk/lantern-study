@@ -937,7 +937,13 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                   Q {session.currentQuestionIndex + 1}/{totalQuestions}
                 </span>
                 <span
-                  className="text-[11px] sm:text-xs text-lantern-text-secondary whitespace-nowrap tabular-nums"
+                  // `text-caption` (Inter 12/16), the measured meta role,
+                  // rather than the off-ladder sizes its neighbour still
+                  // carries. The type-scale lint's allowlist may only shrink,
+                  // and a new off-scale size is what it exists to refuse.
+                  // (It counts matches in COMMENTS too, so do not name the
+                  // offending classes here — that is a violation by itself.)
+                  className="text-caption text-lantern-text-secondary whitespace-nowrap tabular-nums"
                   aria-label={`${answeredPercent} percent answered`}
                 >
                   {answeredPercent}% done
