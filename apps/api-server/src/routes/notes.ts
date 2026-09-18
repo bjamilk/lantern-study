@@ -218,7 +218,13 @@ import {
   parseSmartNoteSources,
   upsertSmartNotesSection,
   type SmartNoteSourceId,
+  SMART_NOTES_CONTEXT_MAX_CHARS,
+  SMART_NOTES_SKILL_HINT_MAX_CHARS,
 } from '@lantern/shared/utils/smartNotes';
+import {
+  needsWhisperTranslation,
+  whisperLanguageParam,
+} from '@lantern/shared/utils/lectureAudio';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/youtube';
 import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
@@ -1969,6 +1975,16 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   const currentBody = body.currentBody;
   const durationMs = body.durationMs;
   const clientByteLength = body.clientByteLength;
+  // What the student picked in the recorder's settings popover. Both values go
+  // through the shared allowlists rather than being trusted: `language`
+  // becomes an ISO-639-1 code or nothing (auto-detect), and `translateTo` only
+  // ever selects Whisper's translate task, whose single output is English.
+  const spokenLanguage = body.language;
+  const translateTo = body.translateTo;
+  const transcribeOptions = {
+    language: whisperLanguageParam(spokenLanguage),
+    translate: needsWhisperTranslation(spokenLanguage, translateTo),
+  };
   const hasBase64 = typeof audioBase64 === 'string' && audioBase64.length > 0;
   const hasStoragePath = typeof storagePath === 'string' && storagePath.length > 0;
   if (!hasBase64 && !hasStoragePath) {
@@ -2012,10 +2028,16 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
       return transcribeAudioBuffer(
         downloaded.buffer,
         mimeType || downloaded.contentType || 'audio/webm',
-        logContext
+        logContext,
+        transcribeOptions
       );
     }
-    return transcribeAudioBase64(String(audioBase64), mimeType || 'audio/webm', logContext);
+    return transcribeAudioBase64(
+      String(audioBase64),
+      mimeType || 'audio/webm',
+      logContext,
+      transcribeOptions
+    );
   });
 
   const { logAIInference } = await import('../services/aiInferenceLog');
@@ -3382,6 +3404,59 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
   const guidance = guidanceRaw ? guidanceRaw.slice(0, SMART_NOTES_GUIDANCE_MAX_CHARS) : undefined;
   const depth: SmartNotesDepth =
     req.body?.depth === 'concise' || req.body?.depth === 'deep' ? req.body.depth : 'standard';
+  // "How much do you already know?" — one line about the reader, not a second
+  // brief. Trimmed and capped here; `aiService` sanitizes again and frames it.
+  const skillHintRaw =
+    typeof req.body?.skillLevelHint === 'string' ? req.body.skillLevelHint.trim() : '';
+  const skillLevelHint = skillHintRaw
+    ? skillHintRaw.slice(0, SMART_NOTES_SKILL_HINT_MAX_CHARS)
+    : undefined;
+
+  /**
+   * "Attach a material": another note read alongside this one.
+   *
+   * Two checks, both here rather than in the model layer. `getNote` already
+   * 404s a note this account cannot reach, and on top of that the attached
+   * note must be OWNED by the caller (a note merely shared with them is not
+   * theirs to feed into their own generation) and must live in the SAME study
+   * set — the control that offers it only ever lists this set's materials, so
+   * anything else is a request that did not come from that control.
+   *
+   * A failure is a 404 rather than a 403: the honest answer to "attach the
+   * note with this id" from someone it is not visible to is that there is no
+   * such material to attach, and a 403 would confirm the id exists.
+   */
+  const contextNoteId =
+    typeof req.body?.contextNoteId === 'string' && req.body.contextNoteId.trim()
+      ? req.body.contextNoteId.trim()
+      : undefined;
+  let contextMaterial: { title?: string; text: string } | undefined;
+  if (contextNoteId && contextNoteId !== note.id) {
+    let attached: Awaited<ReturnType<typeof dataLayer.notes.getNote>> | null = null;
+    try {
+      attached = await dataLayer.notes.getNote(contextNoteId, userId);
+    } catch {
+      attached = null;
+    }
+    const sameOwner = Boolean(attached) && attached.userId === userId;
+    const sameSet =
+      Boolean(attached) &&
+      Boolean(note.studySetId) &&
+      attached.studySetId === note.studySetId;
+    if (!sameOwner || !sameSet) {
+      res.status(404).json({
+        error: 'That material is not in this study set.',
+      });
+      return;
+    }
+    const attachedText = (await resolveNoteStudyContent(attached.id, attached)).trim();
+    if (attachedText) {
+      contextMaterial = {
+        title: attached.title,
+        text: attachedText.slice(0, SMART_NOTES_CONTEXT_MAX_CHARS),
+      };
+    }
+  }
   const outcome = await runSyncOrEnqueue(
     'notes.ai.summarize',
     {
@@ -3391,6 +3466,8 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
       sourceType: note.sourceType,
       guidance,
       depth,
+      skillLevelHint,
+      contextMaterial,
     },
     userId,
     async () => {
@@ -3399,6 +3476,8 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
         sourceType: note.sourceType,
         guidance,
         depth,
+        skillLevelHint,
+        contextMaterial,
       });
       const latest = await dataLayer.notes.getNote(note.id, userId);
       const nextBody = upsertSmartNotesSection(latest.body || '', result.summary);

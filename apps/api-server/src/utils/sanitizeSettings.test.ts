@@ -262,4 +262,43 @@ describe('sanitizeSettings', () => {
     expect(merged.appearance).toEqual(expect.objectContaining({ theme: 'dark' }));
     expect(merged.study).toEqual(expect.objectContaining({ dailyCardGoal: 30 }));
   });
+
+  describe('the lecture recorder category', () => {
+    it('stores a language the recorder offers', () => {
+      const merged = mergeUserSettings(
+        {},
+        { lecture: { spokenLanguage: 'yo', transcribeTo: 'en' } }
+      ) as any;
+      expect(merged.lecture).toEqual({ spokenLanguage: 'yo', transcribeTo: 'en' });
+    });
+
+    it('narrows a language it does not offer to auto-detect', () => {
+      const merged = mergeUserSettings({}, { lecture: { spokenLanguage: 'klingon' } }) as any;
+      expect(merged.lecture.spokenLanguage).toBe('auto');
+    });
+
+    it('narrows a transcribe target Whisper cannot produce', () => {
+      // Whisper translates into English and nothing else, so "to Yoruba" is
+      // not a target — it degrades to same-as-spoken rather than being stored.
+      const merged = mergeUserSettings({}, { lecture: { transcribeTo: 'yo' } }) as any;
+      expect(merged.lecture.transcribeTo).toBe('same');
+    });
+
+    it('drops unknown sub-keys rather than merging them', () => {
+      const merged = mergeUserSettings(
+        {},
+        { lecture: { spokenLanguage: 'en', is_platform_admin: true } }
+      ) as any;
+      expect(merged.lecture).toEqual({ spokenLanguage: 'en', transcribeTo: 'same' });
+      expect(merged.is_platform_admin).toBeUndefined();
+    });
+
+    it('keeps the other half when only one half is patched', () => {
+      const merged = mergeUserSettings(
+        { lecture: { spokenLanguage: 'ha', transcribeTo: 'en' } },
+        { lecture: { transcribeTo: 'same' } }
+      ) as any;
+      expect(merged.lecture).toEqual({ spokenLanguage: 'ha', transcribeTo: 'same' });
+    });
+  });
 });

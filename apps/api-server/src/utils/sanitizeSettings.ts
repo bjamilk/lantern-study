@@ -36,6 +36,11 @@ const SETTINGS_CATEGORY_KEYS = [
   // surface another device already recorded.
   'onboardingVisited',
   'flashcardGeneration',
+  // The recorder's two language choices (W1). A category rather than a scalar
+  // because there are two of them, and `applySettingsPatch` narrows both
+  // through the shared allowlists — an unknown language, a smuggled object or
+  // a privileged key name under this key never survives the patch.
+  'lecture',
   // NOTE: `tutorStyle` is deliberately NOT here. This list is for CATEGORY
   // objects; the tutor style is a scalar and is read separately below.
 ] as const;
