@@ -122,6 +122,7 @@ import { CreateFromSource } from './CreateFromSource';
 import { NoteRoomRow } from './NoteRoomRow';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
 import { SetRoomHeader, type SetRoomHeaderMenuItem } from './SetRoomHeader';
+import { SetRoomTopBar } from './SetRoomTopBar';
 import { SetRoomFocusBar } from './SetRoomFocusBar';
 import { shareStudySet } from './shareStudySet';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
@@ -1601,14 +1602,39 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       {/* Study/Library. A tab bar is a choice between two PLACES, and a student
           inside a quiz has already chosen one — so it is drawn on the set home
           and nowhere else. The focus bar's Back button is the way out. */}
-      {!focusActivity ? (
+      {focusActivity ? null : studySetId ? (
+        // The set room's own top bar: where you are, and what you can do to
+        // the whole set. It replaces the Study/Library tab row INSIDE a set —
+        // a tab row that switches destination is a strange thing to leave in
+        // a room the student has already entered, and Library is still two
+        // clicks away (the kebab's `All materials`, the rail's `View all`).
+        <SetRoomTopBar
+          setName={label}
+          onOpenStudy={() => {
+            openPicker();
+            navigateTo(AppMode.STUDY_HUB);
+          }}
+          onShare={() =>
+            void shareStudySet({
+              setId: studySetId,
+              title: label,
+              visibility: studySet?.visibility,
+            })
+          }
+          timer={<StudySetTimer setId={studySetId} />}
+          // Only where there is no rail at all — the rail's own Chat row is
+          // the control whenever a rail exists (#126).
+          {...(rail.mode === 'none' ? { onOpenChat: () => openSetChat() } : {})}
+          menu={roomMenu}
+        />
+      ) : (
         <StudyWorkspaceBar
           active="study"
           onSelect={(section) => {
             if (section === 'library') onOpenLibrary();
           }}
         />
-      ) : null}
+      )}
       {/* Room layout, and THE ELEMENT THE COMPANION IS MEASURED AGAINST: its
           width is what the room actually has, after the shell's sidebar and
           chats flyout have taken theirs. `rail.rowRef` observes it; nothing
@@ -1694,18 +1720,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 : undefined
             }
             onOpenSettings={() => setSettingsOpen(true)}
-            menu={roomMenu}
-            controls={
-              <>
-                <StudySetTimer setId={studySetId} />
-                {rail.mode === 'none' ? (
-                  <Button variant="secondary" onClick={() => openSetChat()} aria-label="Chat">
-                    <AppIcon name="chatbubbles" size={16} />
-                    <span className="ml-1.5">Chat</span>
-                  </Button>
-                ) : null}
-              </>
-            }
+            // The timer, Chat and the kebab moved UP into `SetRoomTopBar`:
+            // they are actions on the ROOM, and leaving them here made the
+            // set's own name carry a toolbar. The header is now the set as an
+            // object — tile, title, gear, stats — and nothing else.
+            menu={[]}
           />
         ) : (
           <ScreenHeader
