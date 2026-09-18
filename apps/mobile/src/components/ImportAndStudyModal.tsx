@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -21,9 +21,9 @@ import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import {
   WORD_DOOR_LABEL,
   importWordDocument,
-  pickWordDocument,
   wordDoorState,
 } from '../utils/wordImport';
+import { pickImportFile, type ImportFileKind } from '../utils/fileImportDoors';
 import { useSyncStatus } from '../hooks/useSync';
 import { useAuthStore } from '../stores/authStore';
 import { useNotesStore } from '../stores/notesStore';
@@ -31,7 +31,7 @@ import { useStudyGoalsStore } from '../stores/studyGoalsStore';
 import { useJobsStore } from '../stores/jobsStore';
 import { saveGeneratedDeck } from '../services/jobArtifacts';
 import { brand, useTheme } from '../theme';
-import { Button, SheetShell } from './ui';
+import { Button, SheetShell, T } from './ui';
 import { AppIcon } from './ui/AppIcon';
 
 export interface ImportAndStudyResult {
@@ -56,6 +56,16 @@ interface ImportAndStudyModalProps {
   onTurnIntoStudyProduct?: (result: ImportAndStudyResult) => void;
   courseId?: string | null;
   studySetId?: string | null;
+  /**
+   * Fire one file picker the moment the sheet opens.
+   *
+   * The set room's PDF / PPT / Word chips set this. A chip names a file type,
+   * so pressing it has to show a file browser — landing on a sheet and hunting
+   * for the matching row is the "door with nothing behind it" of issue #137.
+   * The doors stay drawn in the sheet, so backing out of the picker leaves the
+   * student somewhere they can act rather than nowhere.
+   */
+  autoPick?: ImportFileKind | null;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -68,6 +78,7 @@ export default function ImportAndStudyModal({
   onTurnIntoStudyProduct,
   courseId,
   studySetId,
+  autoPick,
 }: ImportAndStudyModalProps) {
   const { colors } = useTheme();
   const [step, setStep] = useState<Step>('input');
@@ -231,18 +242,23 @@ export default function ImportAndStudyModal({
   };
 
   /**
-   * A Word document (.docx).
+   * The three file doors: PDF, PowerPoint and Word (.docx).
    *
-   * It goes through `createNote` — the SAME path the paste box below uses —
+   * Word goes through `createNote` — the SAME path the paste box below uses —
    * because the server hands back text rather than a stored file: a Word
    * document has no page model and no preview, so there is nothing to attach.
-   * Filing into the course/set and the flashcard + quiz run therefore come free
-   * from the existing path instead of being re-implemented here.
+   * A PDF and a deck ARE stored, because they have pages a student reads and a
+   * preview the room renders, so those two go through the upload routes the
+   * Notes import sheet has always used and are filed into the set afterwards,
+   * exactly as the photo path above does.
+   *
+   * Either way the note ends up in `enrichNote`, so the flashcard + quiz job is
+   * the same one every other door in this sheet starts.
    */
-  const handlePickWordDocument = async () => {
+  const handlePickFile = async (kind: ImportFileKind) => {
     let picked;
     try {
-      picked = await pickWordDocument(DocumentPicker.getDocumentAsync);
+      picked = await pickImportFile(kind, DocumentPicker.getDocumentAsync);
     } catch (e: unknown) {
       // A legacy .doc or an oversized file, refused before anything uploaded.
       setError(e instanceof Error ? e.message : 'That file cannot be imported.');
@@ -253,22 +269,55 @@ export default function ImportAndStudyModal({
     setStep('processing');
     setError(null);
     try {
-      const note = await importWordDocument({
-        file: picked,
-        extractDocumentText: notesApi.extractDocumentTextViaApi,
-        createNote: (payload) =>
-          useNotesStore.getState().createNote({
-            ...payload,
-            ...(courseId ? { courseId } : {}),
-            ...(studySetId ? { studySetId } : {}),
-          }),
-      });
-      enrichNote(note);
+      if (kind === 'document') {
+        const note = await importWordDocument({
+          file: picked,
+          extractDocumentText: notesApi.extractDocumentTextViaApi,
+          createNote: (payload) =>
+            useNotesStore.getState().createNote({
+              ...payload,
+              ...(courseId ? { courseId } : {}),
+              ...(studySetId ? { studySetId } : {}),
+            }),
+        });
+        enrichNote(note);
+        return;
+      }
+
+      const uploaded =
+        kind === 'pdf'
+          ? await notesApi.uploadNotePdfViaApi(picked.uri, picked.name)
+          : await notesApi.uploadPresentationViaApi(picked.uri, picked.name);
+      const attachments = uploaded.attachment ? [uploaded.attachment] : [];
+      useNotesStore.getState().upsertNote({ ...uploaded.note, attachments });
+      enrichNote({ ...uploaded.note, attachments });
+      await fileNote(uploaded.note.id);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Word document import failed');
+      setError(e instanceof Error ? e.message : 'Import failed');
       setStep('input');
     }
   };
+
+  /**
+   * A chip that names a file type opens that file browser, not this sheet.
+   *
+   * Guarded by a ref rather than by state so a re-render (the sync hook ticks,
+   * a toggle moves) cannot open a second picker on top of the first; it is
+   * cleared when the sheet closes, so the same chip works again next time.
+   */
+  const autoPickedRef = useRef<ImportFileKind | null>(null);
+  useEffect(() => {
+    if (!visible) {
+      autoPickedRef.current = null;
+      return;
+    }
+    if (!autoPick || autoPickedRef.current === autoPick) return;
+    autoPickedRef.current = autoPick;
+    void handlePickFile(autoPick);
+    // handlePickFile is re-created every render; the ref above is what makes
+    // this run once per open, so it is deliberately not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, autoPick]);
 
   const importPhotos = async (assets: ImagePicker.ImagePickerAsset[]) => {
     if (!assets.length) return;
@@ -378,8 +427,8 @@ export default function ImportAndStudyModal({
             {step === 'input' ? (
               <>
                 <Text className="text-sm text-lantern-text-secondary mb-3">
-                  Photograph handwritten pages, bring in a Word document, or paste lecture notes,
-                  to create study materials.
+                  Photograph handwritten pages, bring in a PDF, slides or a Word document, or
+                  paste lecture notes, to create study materials.
                 </Text>
                 <Text className="text-xs text-lantern-text-secondary mb-3">
                   {formatMaxNoteUploadLabel()}
@@ -403,6 +452,42 @@ export default function ImportAndStudyModal({
                   </View>
                 </Pressable>
 
+                {/* The PDF and slides doors. They were reachable only from the
+                    Notes import sheet, so a set room's PDF and PPT chips opened
+                    this sheet and found nothing (issue #137). The upload routes
+                    are the ones Notes has always called; the note is filed into
+                    the course/set straight after. */}
+                <Pressable
+                  onPress={() => void handlePickFile('pdf')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Import PDF"
+                  accessibilityHint="Text is read out of the PDF"
+                  className="flex-row items-center gap-3 border-2 border-dashed border-lantern-border rounded-xl px-3 py-3 mb-3"
+                >
+                  <AppIcon name="document-text" size={22} color={brand.text} />
+                  <View className="flex-1">
+                    {/* `T` rather than a raw `text-sm`: the type-scale gate
+                        freezes this file's backlog, and a new door is not a
+                        reason to raise it. */}
+                    <T.Body className="font-semibold">Import PDF</T.Body>
+                    <T.Caption tone="secondary">Text is read out of the PDF</T.Caption>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void handlePickFile('presentation')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Import PowerPoint"
+                  accessibilityHint="Text is read off the slides"
+                  className="flex-row items-center gap-3 border-2 border-dashed border-lantern-border rounded-xl px-3 py-3 mb-3"
+                >
+                  <AppIcon name="easel" size={22} color={brand.text} />
+                  <View className="flex-1">
+                    <T.Body className="font-semibold">Import PowerPoint</T.Body>
+                    <T.Caption tone="secondary">Text is read off the slides</T.Caption>
+                  </View>
+                </Pressable>
+
                 {/* The Word door. Disabled — visibly, with the reason under it
                     — when there is no connection, because the document is
                     parsed on the server: offline the picker would open, the
@@ -411,7 +496,7 @@ export default function ImportAndStudyModal({
                 <Pressable
                   onPress={() => {
                     if (wordDoor.disabled) return;
-                    void handlePickWordDocument();
+                    void handlePickFile('document');
                   }}
                   disabled={wordDoor.disabled}
                   accessibilityRole="button"

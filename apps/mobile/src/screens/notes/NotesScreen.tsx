@@ -63,9 +63,9 @@ import {
 import {
   WORD_DOOR_LABEL,
   importWordDocument,
-  pickWordDocument,
   wordDoorState,
 } from '../../utils/wordImport';
+import { pickImportFile } from '../../utils/fileImportDoors';
 import { useSyncStatus } from '../../hooks/useSync';
 import { trackNoteCreated } from '../../services/productAnalytics';
 import {
@@ -939,33 +939,14 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
     await createFolder(name);
   };
 
+  // The mimes and the size refusal moved to `utils/fileImportDoors.ts` so the
+  // set room's PDF and PPT chips could call the same door (issue #137) — and so
+  // a node test can reach them, which a picker written inside a screen is not.
   const handlePickFile = async (mode: 'pdf' | 'presentation') => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        copyToCacheDirectory: true,
-        multiple: false,
-        type:
-          mode === 'pdf'
-            ? 'application/pdf'
-            : [
-                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                'application/vnd.ms-powerpoint',
-              ],
-      });
-      if (result.canceled || !result.assets[0]) return;
-
-      const asset = result.assets[0];
-      const fileName = asset.name || (mode === 'pdf' ? 'document.pdf' : 'slides.pptx');
-      const size = asset.size ?? 0;
-
-      try {
-        assertNoteUploadSize(size, fileName);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : 'File is too large');
-        return;
-      }
-
-      setPendingImport({ uri: asset.uri, name: fileName, size, mode });
+      const picked = await pickImportFile(mode, DocumentPicker.getDocumentAsync);
+      if (!picked) return;
+      setPendingImport({ ...picked, mode });
       setError(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Could not open file picker');
@@ -979,7 +960,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
    */
   const handlePickWordDocument = async () => {
     try {
-      const picked = await pickWordDocument(DocumentPicker.getDocumentAsync);
+      const picked = await pickImportFile('document', DocumentPicker.getDocumentAsync);
       if (!picked) return;
       setPendingImport({ ...picked, mode: 'document' });
       setError(null);
