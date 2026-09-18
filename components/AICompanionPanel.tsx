@@ -155,6 +155,9 @@ function withHardBreaks(content: string): string {
 import Drawer from './ui/Drawer';
 import { Illustration } from './ui/Illustration';
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from './ui/Menu';
+import { TutorStylePicker } from './companion/TutorStylePicker';
+import { getTutorStyle, type TutorStyleId } from '@lantern/shared/ai';
+import { currentTutorStyleId, setTutorStyle } from '../utils/tutorStyle';
 
 interface AICompanionPanelProps {
   context?: CompanionUserContext;
@@ -928,16 +931,34 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     };
   }, [discardDictation]);
 
+  /**
+   * The tutor style this account is on (F2).
+   *
+   * Read off the profile in memory rather than held in component state, so the
+   * drawer and a docked rail agree and a pick made in one is visible in the
+   * other on the next render. `setTutorStyle` writes the profile through, which
+   * is what re-renders this.
+   */
+  const tutorStyle = currentTutorStyleId(currentUser?.settings);
+  const tutorStyleLabel = getTutorStyle(tutorStyle).label;
+  const handlePickTutorStyle = useCallback((styleId: TutorStyleId) => {
+    setTutorStyle(styleId);
+  }, []);
+
   // The context object sent with every turn: the host's context plus the user's
   // name, with `mode: 'guided'` layered LAST so the pill always wins.
   const enrichedContext: CompanionUserContext = useMemo(() => ({
     userName: currentUser?.firstName || currentUser?.name || 'Student',
     ...context,
+    // The tutor style rides with every send, like `mode`: the server keeps
+    // nothing per thread, and the account default is only the fallback. It is
+    // read from the profile in memory, so a pick applies to the NEXT send.
+    tutorStyle,
     // Every send in this thread carries the mode while Guided is on — the
     // server keeps nothing, so a turn that omitted it would silently drop back
     // to `explain` mid-lesson. Off, the host's own mode (if any) stands.
     ...(guided ? { mode: 'guided' as const } : {}),
-  }), [currentUser?.firstName, currentUser?.name, context, guided]);
+  }), [currentUser?.firstName, currentUser?.name, context, guided, tutorStyle]);
 
   /**
    * The picker's rows, from material the client already holds. Pure and local:
@@ -1276,15 +1297,41 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
                 </MenuItem>
               </MenuContent>
             </Menu>
-            <p className={`px-2 truncate text-caption ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
-              {guided
-                ? 'Guided'
-                : context?.currentScreen
-                  ? `On: ${context.currentScreen}`
-                  : 'Your AI study companion'}
+            <p className={`px-2 flex items-center gap-1.5 truncate text-caption ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+              {/* The style chip, and only when it is not the default one. A
+                  chip that says "Style: Lantern" over every thread is the
+                  wave-4 header problem again — chrome that is always there
+                  stops being read. It lives here rather than in a toast because
+                  a toast is gone before the next message is sent, and NEXT
+                  message is exactly when the pick takes effect. */}
+              {tutorStyle !== 'default' && (
+                <span
+                  className={`flex-shrink-0 rounded-full px-2 py-0.5 text-caption ${
+                    theme === 'dark'
+                      ? 'bg-lantern-surface-secondary text-lantern-text-secondary'
+                      : 'bg-lantern-background-secondary text-lantern-text-secondary'
+                  }`}
+                >
+                  Style: {tutorStyleLabel}
+                </span>
+              )}
+              <span className="truncate">
+                {guided
+                  ? 'Guided'
+                  : context?.currentScreen
+                    ? `On: ${context.currentScreen}`
+                    : 'Your AI study companion'}
+              </span>
             </p>
           </div>
           <div className="flex items-center gap-0.5">
+            {/* Tutor style. Next to the thread menu, as the reference puts its
+                own persona control in the chat header. */}
+            <TutorStylePicker
+              value={tutorStyle}
+              onChange={handlePickTutorStyle}
+              theme={theme}
+            />
             {onTurnInto && activeNoteContext && (
               <button
                 onClick={() => { setShowTurnInto((v) => !v); setShowHistoryList(false); }}
@@ -1376,6 +1423,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               // `context.userName` is already `firstName || name`; the store's
               // own user is the fallback for a host that passes no context.
               firstName={context?.userName || currentUser?.firstName || ''}
+              tutorStyleLabel={tutorStyleLabel}
               suggestions={suggestions}
               onOpenDoor={handleSuggestionDoor}
               promptsExpanded={promptsExpanded}
@@ -2020,6 +2068,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 };
 
 const EmptyState: React.FC<{
+  /** The tutor style in force, named under the greeting (F2). */
+  tutorStyleLabel: string;
   theme: 'light' | 'dark';
   /** The student's first name, when the app knows one. */
   firstName?: string;
@@ -2036,6 +2086,7 @@ const EmptyState: React.FC<{
 }> = ({
   theme,
   firstName,
+  tutorStyleLabel,
   onQuickPrompt,
   suggestions,
   onOpenDoor,
@@ -2066,6 +2117,14 @@ const EmptyState: React.FC<{
       <p className={`text-title ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
         How can I help?
       </p>
+      {/* The style, under the question, and only when one has been picked. It
+          names a VOICE, not a different tutor: "Coach mode" is the same model
+          on the same material, said differently. */}
+      {tutorStyleLabel && (
+        <p className={`text-caption mt-1 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+          {tutorStyleLabel} mode
+        </p>
+      )}
       <p className={`text-body mt-2 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
         {guided ? GUIDED_MODE_PROMISE : 'Your personal AI study companion. Ask me anything.'}
       </p>

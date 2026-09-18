@@ -5,6 +5,11 @@ import {
   DEFAULT_FLASHCARD_GENERATION_OPTIONS,
   type FlashcardTypeMix,
 } from '../flashcards/generationOptions';
+import {
+  DEFAULT_TUTOR_STYLE_ID,
+  normalizeTutorStyleId,
+  type TutorStyleId,
+} from '../ai/tutorStyles';
 
 export interface NotificationSettings {
   pushEnabled: boolean;
@@ -154,6 +159,19 @@ export interface UserSettings {
   featureTips?: FeatureTipsSettings;
   onboardingVisited?: OnboardingVisitedSettings;
   flashcardGeneration?: FlashcardGenerationSettings;
+  /**
+   * Which tutor style the companion answers in by default.
+   *
+   * A SCALAR at the top level rather than a category, because there is exactly
+   * one choice and no sub-keys — which also means an unknown value cannot smuggle
+   * anything: it is run through `normalizeTutorStyleId` (a four-id allowlist) on
+   * every read and every patch, and anything else becomes `default`.
+   *
+   * Non-privileged and account-wide: it is a preference about tone, so the
+   * phone and the laptop should agree, and a request may still override it for
+   * one turn without persisting.
+   */
+  tutorStyle?: TutorStyleId;
   version: number;
   updatedAt: string;
 }
@@ -252,6 +270,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     count: DEFAULT_FLASHCARD_GENERATION_OPTIONS.count,
     typeMix: DEFAULT_FLASHCARD_GENERATION_OPTIONS.typeMix,
   },
+  tutorStyle: DEFAULT_TUTOR_STYLE_ID,
   version: 1,
   updatedAt: new Date().toISOString(),
 };
@@ -329,6 +348,9 @@ export function normalizeUserSettings(raw: unknown): UserSettings {
   merged.onboardingVisited = normalizeOnboardingVisited(
     record.onboardingVisited ?? merged.onboardingVisited
   );
+  // Same reason as the two above: the deep merge would have carried a stored
+  // string of any shape through. Four ids or `default`, nothing else.
+  merged.tutorStyle = normalizeTutorStyleId(record.tutorStyle ?? merged.tutorStyle);
   return merged;
 }
 
