@@ -147,6 +147,86 @@ describe('WizardShell', () => {
   });
 });
 
+/**
+ * The 205px illustration column and the Exit pill (Wave 3, doc 02 §Create
+ * flashcards). The column is measured at `lg` and hidden below it, so what is
+ * pinned here is that it is DECORATION — out of the accessibility tree, no
+ * buttons, no text the student needs — and that it is drawn only when the
+ * caller asks for it.
+ */
+describe('the wizard illustration column and the way out', () => {
+  const ART = { icon: 'help-circle', label: 'quiz' } as const;
+
+  it('draws no column and no Exit when the caller supplies neither', async () => {
+    await render(
+      <WizardShell steps={QUIZ_STEPS} index={0} actions={<button type="button">Next</button>}>
+        <p>answer</p>
+      </WizardShell>
+    );
+    expect(container.querySelector('[data-testid="wizard-art"]')).toBeNull();
+    expect(container.textContent).not.toContain('Exit');
+  });
+
+  it('draws the column when art is given, hidden below lg', async () => {
+    await render(
+      <WizardShell
+        steps={QUIZ_STEPS}
+        index={0}
+        art={ART}
+        actions={<button type="button">Next</button>}
+      >
+        <p>answer</p>
+      </WizardShell>
+    );
+    const column = container.querySelector('[data-testid="wizard-art"]');
+    expect(column).not.toBeNull();
+    // The measured width, and absent on a narrow pane rather than squeezing
+    // the question — the one place a class string is the behaviour.
+    expect(column?.className).toContain('w-[205px]');
+    expect(column?.className).toContain('hidden');
+    expect(column?.className).toContain('lg:flex');
+  });
+
+  it('keeps the column out of the accessibility tree and out of the tab order', async () => {
+    await render(
+      <WizardShell
+        steps={QUIZ_STEPS}
+        index={0}
+        art={ART}
+        actions={<button type="button">Next</button>}
+      >
+        <p>answer</p>
+      </WizardShell>
+    );
+    const column = container.querySelector('[data-testid="wizard-art"]');
+    expect(column?.getAttribute('aria-hidden')).toBe('true');
+    expect(column?.querySelectorAll('button')).toHaveLength(0);
+    // Exactly one button on the screen: the caller's own action.
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+  });
+
+  it('offers Exit on every step, not only the first', async () => {
+    const onExit = vi.fn();
+    await render(
+      <WizardShell
+        steps={QUIZ_STEPS}
+        index={3}
+        onExit={onExit}
+        actions={<button type="button">Next</button>}
+      >
+        <p>answer</p>
+      </WizardShell>
+    );
+    const exit = [...container.querySelectorAll('button')].find(
+      (node) => node.textContent?.trim() === 'Exit'
+    );
+    expect(exit).toBeTruthy();
+    expect(exit?.className).toContain('min-h-[44px]');
+    await click(exit);
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ChoiceGroup', () => {
   const OPTIONS = [
     { value: 'intro', label: 'Introductory', promise: 'First principles', icon: 'book-open' },

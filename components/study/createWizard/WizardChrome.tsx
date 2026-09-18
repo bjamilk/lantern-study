@@ -29,7 +29,19 @@ import { wizardTotalKnown, type WizardStep } from './wizardSteps';
  *    are one-of-many.
  *  - Motion is `motion-safe:` only; index.css also flattens every transition
  *    under prefers-reduced-motion.
+ *  - The illustration column is DECORATION and nothing else: `aria-hidden`, no
+ *    text a screen reader needs, and `hidden lg:block` so the wizard is the
+ *    full width of a narrow pane. It must never be the only place a label
+ *    appears — the question above it already says what is being made.
  */
+
+/** The picture beside the question: which tool this run is making. */
+export interface WizardArt {
+  /** The glyph in the tile — the tool's own icon, as the rail draws it. */
+  icon: AppIconName;
+  /** Read by nobody; kept so a reader of the JSX knows which tool it is. */
+  label: string;
+}
 
 export interface WizardShellProps {
   /** Every screen this run will show — `wizardSteps(kind, source)`. */
@@ -42,7 +54,40 @@ export interface WizardShellProps {
   actions: React.ReactNode;
   /** One quiet line under the question, when the promise needs spelling out. */
   hint?: string;
+  /** Omit to draw no column at all (the frame is unchanged without it). */
+  art?: WizardArt;
+  /**
+   * Draws the "Exit" pill top-right. Every screen past the first had no way
+   * out before this: `onCancel` was wired to a Cancel button that only the
+   * source screen rendered.
+   */
+  onExit?: () => void;
 }
+
+/**
+ * The 205px tinted column: a stack of "cards" leaning behind a chevron, with
+ * the tool's icon on a tile. Pure CSS/SVG-free so it costs nothing and themes
+ * itself off the tokens.
+ */
+const WizardArtColumn: React.FC<{ art: WizardArt }> = ({ art }) => (
+  <aside
+    aria-hidden="true"
+    data-testid="wizard-art"
+    className="hidden lg:flex w-[205px] shrink-0 flex-col items-center justify-center gap-4 self-stretch rounded-2xl bg-lantern-background-secondary p-5"
+  >
+    <div className="relative h-[104px] w-[132px]">
+      {/* Three stacked cards, the back two peeking out behind the front. */}
+      <div className="absolute inset-x-4 top-0 h-[84px] rounded-xl border border-lantern-border bg-lantern-surface opacity-40" />
+      <div className="absolute inset-x-2 top-2 h-[84px] rounded-xl border border-lantern-border bg-lantern-surface opacity-70" />
+      <div className="absolute inset-x-0 top-4 flex h-[84px] items-center justify-center rounded-xl border border-lantern-border bg-lantern-surface shadow-lantern">
+        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-lantern-feature-sets-tint">
+          <AppIcon name={art.icon} size={20} aria-hidden="true" />
+        </span>
+      </div>
+    </div>
+    <AppIcon name="chevron-down" size={20} aria-hidden="true" />
+  </aside>
+);
 
 export const WizardShell: React.FC<WizardShellProps> = ({
   steps,
@@ -50,6 +95,8 @@ export const WizardShell: React.FC<WizardShellProps> = ({
   children,
   actions,
   hint,
+  art,
+  onExit,
 }) => {
   const step = steps[index] ?? steps[0];
   const titleRef = useRef<HTMLDivElement | null>(null);
@@ -71,27 +118,39 @@ export const WizardShell: React.FC<WizardShellProps> = ({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
-      <div
-        key={step.id}
-        className="space-y-5 motion-safe:animate-[fadeIn_160ms_ease-out]"
-      >
-        <div>
-          <p className="text-label uppercase text-lantern-text-secondary">
-            {/* No denominator until the path is fixed — see wizardSteps. */}
-            Step {index + 1}
-            {wizardTotalKnown(steps) ? ` of ${steps.length}` : ''}
-          </p>
-          <div ref={titleRef} tabIndex={-1} className="mt-1 focus:outline-none">
-            <Headline as="h2" size="title" accent={step.accent}>
-              {step.question}
-            </Headline>
-          </div>
-          {hint ? (
-            <p className="mt-1 text-caption text-lantern-text-secondary">{hint}</p>
-          ) : null}
+      {onExit ? (
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={onExit}
+            className="inline-flex h-8 min-h-[44px] items-center gap-1 rounded-full border border-lantern-border px-3 py-2 text-body font-medium text-lantern-text-secondary transition-colors hover:bg-lantern-background-secondary hover:text-lantern-text"
+          >
+            <AppIcon name="close" size={16} aria-hidden="true" />
+            Exit
+          </button>
         </div>
-        {children}
-        <div className="flex items-center gap-2 pt-1">{actions}</div>
+      ) : null}
+      <div key={step.id} className="flex items-start gap-6">
+        <div className="min-w-0 flex-1 space-y-5 motion-safe:animate-[fadeIn_160ms_ease-out]">
+          <div>
+            <p className="text-label uppercase text-lantern-text-secondary">
+              {/* No denominator until the path is fixed — see wizardSteps. */}
+              Step {index + 1}
+              {wizardTotalKnown(steps) ? ` of ${steps.length}` : ''}
+            </p>
+            <div ref={titleRef} tabIndex={-1} className="mt-1 focus:outline-none">
+              <Headline as="h2" size="title" accent={step.accent}>
+                {step.question}
+              </Headline>
+            </div>
+            {hint ? (
+              <p className="mt-1 text-caption text-lantern-text-secondary">{hint}</p>
+            ) : null}
+          </div>
+          {children}
+          <div className="flex items-center gap-2 pt-1">{actions}</div>
+        </div>
+        {art ? <WizardArtColumn art={art} /> : null}
       </div>
     </div>
   );

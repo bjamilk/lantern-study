@@ -92,7 +92,7 @@ describe('the quiz path, one question per screen', () => {
     expect(stepLine()).toBe('Step 1');
     expect(question()).toBe('How would you like to create your quiz?');
     // Four source cards, none of them hidden behind More ways.
-    expect(container.querySelectorAll('button').length).toBe(4 + 1 /* Cancel */);
+    expect(container.querySelectorAll('button').length).toBe(4 + 1 /* Exit */);
 
     await click(button('From materialsUse notes already in this set'));
     expect(stepLine()).toBe('Step 2 of 5');
