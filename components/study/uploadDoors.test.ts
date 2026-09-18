@@ -137,4 +137,28 @@ describe('routeUploadFiles', () => {
   it('says so when nothing was chosen', () => {
     expect(routeUploadFiles([]).kind).toBe('unsupported');
   });
+
+  it('reads a .txt or .md in the browser rather than uploading it', () => {
+    expect(routeUploadFiles([file('notes.txt', 'text/plain')]).kind).toBe('text');
+    // Most browsers give a `.md` no mime at all, so the NAME has to decide.
+    expect(routeUploadFiles([file('chapter.md', '')]).kind).toBe('text');
+    expect(routeUploadFiles([file('chapter.markdown', '')]).kind).toBe('text');
+  });
+
+  it('treats an iPhone photo as a photo even when the browser gives it no type', () => {
+    // Chrome hands a .heic over with an EMPTY File.type; a type-only check sent
+    // the commonest photograph on campus to "Lantern cannot read this".
+    const routed = routeUploadFiles([file('IMG_0042.HEIC', '')]);
+    expect(routed.kind).toBe('images');
+    if (routed.kind === 'images') expect(routed.files).toHaveLength(1);
+    expect(routeUploadFiles([file('IMG_0042.heic', 'image/heic')]).kind).toBe('images');
+  });
+});
+
+describe('the accept list', () => {
+  it('is the shared one, so the phone asks for the same set', () => {
+    for (const fragment of ['.txt', '.md', '.heic', '.heif', '.docx', 'image/*']) {
+      expect(UPLOAD_ACCEPT).toContain(fragment);
+    }
+  });
 });

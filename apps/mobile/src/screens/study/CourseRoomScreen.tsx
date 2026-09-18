@@ -1434,6 +1434,22 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             void useTestStore.getState().fetchTests(userId).catch(() => undefined);
           }
         }}
+        // The "where next" fork. The plan card is drawn only when this set
+        // really has stored topics — an empty plan page is the dead door.
+        onViewStudyPlan={
+          studySetId && (plan?.topics?.length ?? 0) > 0
+            ? () => {
+                setImportOpen(false);
+                navigation.navigate('CourseRoom', {
+                  courseId,
+                  studySetId,
+                  courseLabel: label,
+                  segment: 'plan',
+                });
+              }
+            : undefined
+        }
+        onOpenSetHome={studySetId ? () => setImportOpen(false) : undefined}
       />
     </SafeAreaView>
   );

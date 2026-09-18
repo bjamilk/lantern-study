@@ -58,6 +58,15 @@ export const SET_UPLOAD_CHIPS: readonly SetUploadChip[] = [
     hint: 'Pick a Word document (.docx)',
     action: { kind: 'picker', file: 'document' },
   },
+  // Plain text and Markdown. It sits with the document chips because that is
+  // what it is; the file is read on the device rather than uploaded, so it is
+  // also the one document door that costs nothing.
+  {
+    id: 'Text',
+    icon: 'document-text',
+    hint: 'Pick a .txt or .md file',
+    action: { kind: 'picker', file: 'text' },
+  },
   // The replacement for the Audio and Video chips. Recording a class is the
   // one audio path that exists end to end, and it files into this set.
   {

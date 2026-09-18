@@ -29,7 +29,12 @@
  * each door names, and the handlers `routeUploadFiles` picks).
  */
 import type { StudyUploadSource } from '@lantern/shared';
-import { DOCX_MIME } from '@lantern/shared/utils/noteUpload';
+import {
+  DOCX_MIME,
+  NOTE_UPLOAD_ACCEPT,
+  isHeicFileName,
+  isPlainTextFileName,
+} from '@lantern/shared/utils/noteUpload';
 import type { AppIconName } from '../ui/AppIcon';
 
 /** What pressing a door does. */
@@ -131,22 +136,20 @@ export { DOCX_MIME };
  * nothing more, so a file the page accepts is always a file a handler exists
  * for — see `routeUploadFiles`, which is the same list as a decision.
  *
- * `.doc` is NOT here. The pre-2007 binary format is not a ZIP and nothing in
- * the stack can read it; offering it would mean accepting a file only to
- * refuse it after a 25 MB upload.
+ * It now lives in `@lantern/shared/utils/noteUpload` and is re-exported here so
+ * no importer of this module has to move: the phone's doors have to ask for the
+ * same set, and a list that disagrees across platforms is a file a student can
+ * add on their laptop and not on their phone, with nothing anywhere saying why.
+ * See that file for what is deliberately absent (`.doc`, audio, video).
  */
-export const UPLOAD_ACCEPT =
-  '.pdf,application/pdf,' +
-  '.pptx,.ppt,' +
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation,' +
-  'application/vnd.ms-powerpoint,' +
-  `.docx,${DOCX_MIME},` +
-  'image/*';
+export const UPLOAD_ACCEPT = NOTE_UPLOAD_ACCEPT;
 
 export type RoutedUpload =
   | { kind: 'pdf'; file: File }
   | { kind: 'presentation'; file: File }
   | { kind: 'document'; file: File }
+  /** A `.txt` or `.md`: the file IS the note's body, read in the browser. */
+  | { kind: 'text'; file: File }
   | { kind: 'images'; files: File[] }
   | { kind: 'unsupported'; message: string };
 
@@ -166,7 +169,19 @@ const isDocument = (file: File) =>
 
 const isLegacyDoc = (file: File) => /\.doc$/i.test(file.name);
 
-const isImage = (file: File) => file.type.startsWith('image/');
+/**
+ * An image, including an iPhone photograph.
+ *
+ * The name check is not belt and braces: Chrome hands a `.heic` over with an
+ * EMPTY `File.type`, so a type-only test drops the commonest photo on campus
+ * into `unsupported` with a sentence about trying photos — while the student is
+ * looking at a photo.
+ */
+const isImage = (file: File) =>
+  file.type.startsWith('image/') || isHeicFileName(file.name);
+
+/** A plain-text or Markdown file. Read in the browser; nothing is uploaded. */
+const isText = (file: File) => isPlainTextFileName(file.name);
 
 /**
  * Which handler a set of dropped files belongs to.
@@ -189,6 +204,10 @@ export function routeUploadFiles(files: readonly File[]): RoutedUpload {
   if (isPdf(first)) return { kind: 'pdf', file: first };
   if (isPresentation(first)) return { kind: 'presentation', file: first };
   if (isDocument(first)) return { kind: 'document', file: first };
+  // Before the image branch: a `.md` has no mime in most browsers, and a `.txt`
+  // must not fall through to "Lantern cannot read this yet" when reading it is
+  // one `File.text()` call.
+  if (isText(first)) return { kind: 'text', file: first };
   if (isImage(first)) return { kind: 'images', files: images };
   if (isLegacyDoc(first)) {
     return {
@@ -198,7 +217,7 @@ export function routeUploadFiles(files: readonly File[]): RoutedUpload {
   }
   return {
     kind: 'unsupported',
-    message: `Lantern cannot read “${first.name}” yet. Try a PDF, a PowerPoint, a Word document, or photos.`,
+    message: `Lantern cannot read “${first.name}” yet. Try a PDF, a PowerPoint, a Word document, a .txt or .md file, or photos.`,
   };
 }
 

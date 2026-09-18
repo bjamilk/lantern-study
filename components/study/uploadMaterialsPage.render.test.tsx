@@ -24,8 +24,23 @@ import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The job stores are stubbed rather than loaded: both persist to localStorage
+// at import time, and this test is about the page's anatomy. `getJobsForUser`
+// and `getCurrentStageLabel` are here because `creationProgress` calls them —
+// the real mapping has its own unit test (`creationProgress.test.ts`).
 vi.mock('../../stores/aiJobStore', () => ({
   useAiJobStore: (selector: (state: { jobs: unknown[] }) => unknown) => selector({ jobs: [] }),
+  getJobsForUser: () => [],
+  getCurrentStageLabel: () => 'Working…',
+}));
+
+vi.mock('../../stores/noteUploadStore', () => ({
+  useNoteUploadStore: (selector: (state: { jobs: unknown[] }) => unknown) => selector({ jobs: [] }),
+}));
+
+vi.mock('../../stores/authStore', () => ({
+  useAuthStore: (selector: (state: { currentUser: { id: string } }) => unknown) =>
+    selector({ currentUser: { id: 'student-1' } }),
 }));
 
 import { StudySetUpload } from './StudySetUpload';

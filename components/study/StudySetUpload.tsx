@@ -1,6 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import type { StudyUploadSource } from '@lantern/shared';
+import {
+  CREATION_TABS,
+  CREATIONS_EMPTY,
+  filterCreations,
+  type CreationTab,
+} from '@lantern/shared/utils/importStages';
 import { useAiJobStore } from '../../stores/aiJobStore';
+import { useNoteUploadStore } from '../../stores/noteUploadStore';
+import { useAuthStore } from '../../stores/authStore';
+import { toCreationEntries } from './creationProgress';
 import { Card } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { FEATURE_INK_TEXT, FEATURE_TINT_FILL } from '../ui/featureClasses';
@@ -52,8 +61,6 @@ import {
  *  - Every door is live. A door Lantern cannot back is not drawn at all — see
  *    the header of `uploadDoors.ts` for what was dropped and why.
  */
-
-type JobFilter = 'all' | 'processing' | 'done' | 'failed';
 
 interface StudySetUploadProps {
   studySetId: string;
@@ -158,19 +165,24 @@ export const StudySetUpload: React.FC<StudySetUploadProps> = ({
   onCopyLink,
 }) => {
   const jobs = useAiJobStore((s) => s.jobs);
-  const [filter, setFilter] = useState<JobFilter>('all');
+  const uploadJobs = useNoteUploadStore((s) => s.jobs);
+  const userId = useAuthStore((s) => s.currentUser?.id);
+  const [filter, setFilter] = useState<CreationTab>('all');
   const [showMore, setShowMore] = useState(false);
   const [dragging, setDragging] = useState(false);
 
-  const recent = useMemo(() => {
-    const rows = jobs.filter((job) => {
-      if (filter === 'processing') return job.status === 'running';
-      if (filter === 'done') return job.status === 'succeeded';
-      if (filter === 'failed') return job.status === 'failed' || job.status === 'orphaned';
-      return true;
-    });
-    return rows.slice(0, 8);
-  }, [filter, jobs]);
+  /**
+   * FIXED: this list read `jobs` straight off the store, which is NOT
+   * user-scoped — `aiJobStore`'s own header says to go through
+   * `getJobsForUser` or a shared browser shows the previous student's titles.
+   * It now shares the header popover's mapper, which filters by owner, folds in
+   * uploads that have not reached a generation job yet, and applies the same
+   * four-tab rule so the two lists cannot disagree.
+   */
+  const recent = useMemo(
+    () => filterCreations(toCreationEntries(jobs, uploadJobs, userId), filter).slice(0, 8),
+    [filter, jobs, uploadJobs, userId]
+  );
 
   const openDoor = (door: UploadDoor) => {
     const action = door.action;
@@ -244,7 +256,8 @@ export const StudySetUpload: React.FC<StudySetUploadProps> = ({
               </span>
               <span className="mt-1 block text-body text-lantern-text-secondary">
                 <span className="font-semibold text-lantern-text">Click to upload</span> or drag
-                and drop files — max 25 MB each
+                and drop files — PDFs, slides, Word, .txt and .md, photos (iPhone HEIC included) —
+                max 25 MB each
               </span>
               <input
                 id="study-set-upload-input"
@@ -390,7 +403,7 @@ export const StudySetUpload: React.FC<StudySetUploadProps> = ({
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-display text-heading">Recent uploads</h3>
             <div className="flex flex-wrap gap-1">
-              {(['all', 'processing', 'done', 'failed'] as const).map((id) => (
+              {CREATION_TABS.map((id) => (
                 <button
                   key={id}
                   type="button"
@@ -408,14 +421,14 @@ export const StudySetUpload: React.FC<StudySetUploadProps> = ({
             </div>
           </div>
           {recent.length === 0 ? (
-            <p className="text-body text-lantern-text-secondary">Nothing processing yet.</p>
+            <p className="text-body text-lantern-text-secondary">{CREATIONS_EMPTY}</p>
           ) : (
             <div className="space-y-2">
-              {recent.map((job) => (
-                <Card key={job.id} padding="md">
-                  <p className="truncate text-body font-semibold">{job.title}</p>
-                  <p className="text-caption capitalize text-lantern-text-secondary">
-                    {job.status}
+              {recent.map((row) => (
+                <Card key={row.id} padding="md">
+                  <p className="truncate text-body font-semibold">{row.title}</p>
+                  <p className="truncate text-caption text-lantern-text-secondary">
+                    {row.detail || row.status}
                   </p>
                 </Card>
               ))}
