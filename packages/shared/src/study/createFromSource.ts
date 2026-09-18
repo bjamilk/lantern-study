@@ -24,6 +24,7 @@ export type CreateFromSourceKind =
 export type StudyUploadSource =
   | 'pdf'
   | 'ppt'
+  | 'docx'
   | 'audio'
   | 'video'
   | 'youtube'

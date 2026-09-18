@@ -1,16 +1,16 @@
 /**
  * The door table and the drop router.
  *
- * What is pinned here is the rule the page cannot be trusted to keep on its
- * own: EVERY door is either live with an action or disabled with a reason.
- * A door that is `available` with no `action` is a live control that does
- * nothing — the exact pattern the declutter pass removed everywhere else — and
- * a door that is unavailable but still carries an action is one refactor away
- * from being re-enabled by accident.
+ * What is pinned here is the house rule the page cannot be trusted to keep on
+ * its own: EVERY door does a real thing today. There is no longer an
+ * `available` flag to be false — a door Lantern cannot back is not in the
+ * table at all, so "disabled with a reason under it" cannot come back by
+ * accident, and neither can a live control that does nothing.
  */
 import { describe, expect, it } from 'vitest';
 
 import {
+  DOCX_MIME,
   UPLOAD_ACCEPT,
   UPLOAD_DOORS,
   UPLOAD_DOORS_MORE,
@@ -21,49 +21,51 @@ import {
 const file = (name: string, type: string) => new File(['x'], name, { type });
 
 describe('the door table', () => {
-  it('draws the reference grid: six primary doors, five behind More', () => {
+  it('draws a 3×2 grid and three doors behind More', () => {
     expect(UPLOAD_DOORS_PRIMARY).toHaveLength(6);
-    expect(UPLOAD_DOORS_MORE).toHaveLength(5);
+    expect(UPLOAD_DOORS_MORE).toHaveLength(3);
   });
 
-  it('keeps the reference order and names', () => {
+  it('keeps the reference order, with Word in place of the doors that were dropped', () => {
     expect(UPLOAD_DOORS_PRIMARY.map((door) => door.label)).toEqual([
       'Powerpoints',
       'PDF Documents',
-      'Audio Files',
-      'Video Files',
+      'Word Documents',
       'Import Quizlet',
       'YouTube Video',
+      'Photos & Handwriting',
     ]);
     expect(UPLOAD_DOORS_MORE.map((door) => door.label)).toEqual([
       'Create Blank Notes',
       'No Material',
-      'Google Drive',
-      'Handwritten Notes',
       'Paste Notes',
     ]);
   });
 
-  it('gives every live door something to open, and every dead one a reason', () => {
+  it('gives every door something real to open', () => {
     for (const door of UPLOAD_DOORS) {
-      if (door.available) {
-        expect(door.action, `${door.label} is live with no action`).toBeTruthy();
-      } else {
-        expect(door.action, `${door.label} is disabled but still acts`).toBeUndefined();
-        expect(door.reason, `${door.label} is disabled with no reason`).toBeTruthy();
-      }
+      expect(door.action, `${door.label} has no action`).toBeTruthy();
+      expect(['import', 'record', 'noMaterial']).toContain(door.action.kind);
     }
   });
 
-  it('disables exactly the three Lantern has no service for', () => {
-    const dead = UPLOAD_DOORS.filter((door) => !door.available).map((door) => door.label);
-    // Audio and video FILE upload and Drive OAuth do not exist. YouTube,
-    // Quizlet and handwriting DO (createNoteFromYoutube, the Anki/Quizlet
-    // export paste, and the image upload), so they stay live.
-    expect(dead).toEqual(['Audio Files', 'Video Files', 'Google Drive']);
+  it('draws nothing Lantern has no service for', () => {
+    const labels = UPLOAD_DOORS.map((door) => door.label);
+    // Audio and video FILE upload and Drive OAuth do not exist anywhere in
+    // web; the lecture recorder has its own pill on the same page, and an
+    // integration is a first-party feature with a consent screen, not a
+    // button in a grid. See the PR's "Not replicated, and why".
+    for (const dropped of ['Audio Files', 'Video Files', 'Google Drive']) {
+      expect(labels).not.toContain(dropped);
+    }
   });
 
-  it('has unique ids, because they key the React list and the reason element', () => {
+  it('points the Word door at the docx import', () => {
+    const word = UPLOAD_DOORS.find((door) => door.id === 'docx');
+    expect(word?.action).toEqual({ kind: 'import', source: 'docx' });
+  });
+
+  it('has unique ids, because they key the React list', () => {
     expect(new Set(UPLOAD_DOORS.map((door) => door.id)).size).toBe(UPLOAD_DOORS.length);
   });
 });
@@ -72,7 +74,12 @@ describe('what the dropzone accepts', () => {
   it('accepts only the types a handler exists for', () => {
     expect(UPLOAD_ACCEPT).toContain('application/pdf');
     expect(UPLOAD_ACCEPT).toContain('.pptx');
+    expect(UPLOAD_ACCEPT).toContain('.docx');
+    expect(UPLOAD_ACCEPT).toContain(DOCX_MIME);
     expect(UPLOAD_ACCEPT).toContain('image/*');
+    // Legacy binary .doc is not a ZIP and nothing in the stack reads it.
+    // Offering it would mean accepting a 25 MB upload only to refuse it.
+    expect(UPLOAD_ACCEPT).not.toMatch(/(^|,)\.doc(?!x)/);
     // No audio or video: routeUploadFiles has nowhere to send them.
     expect(UPLOAD_ACCEPT).not.toContain('audio/');
     expect(UPLOAD_ACCEPT).not.toContain('video/');
@@ -91,6 +98,17 @@ describe('routeUploadFiles', () => {
     expect(
       routeUploadFiles([file('week1.ppt', 'application/vnd.ms-powerpoint')]).kind
     ).toBe('presentation');
+  });
+
+  it('sends a Word document to the document handler', () => {
+    expect(routeUploadFiles([file('essay.docx', DOCX_MIME)]).kind).toBe('document');
+    expect(routeUploadFiles([file('essay.docx', '')]).kind).toBe('document');
+  });
+
+  it('tells a student to re-save a legacy .doc BEFORE any bytes move', () => {
+    const routed = routeUploadFiles([file('old.doc', 'application/msword')]);
+    expect(routed.kind).toBe('unsupported');
+    if (routed.kind === 'unsupported') expect(routed.message).toMatch(/save as \.docx/i);
   });
 
   it('batches photos, because a photographed handout is one note', () => {
