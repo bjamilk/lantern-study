@@ -2924,6 +2924,28 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             setImportSource(null);
             await handleCreateFromTopic(brief, 'materials');
           }}
+          // The "where next" fork's second card. The plan handler is passed
+          // ONLY when this set really has one — `companionHasPlan` is the same
+          // test the companion uses — so the fork never offers a door to a plan
+          // that does not exist; without it the card is the set's home.
+          onViewStudyPlan={
+            studySetId && companionHasPlan
+              ? () => {
+                  setImportOpen(false);
+                  setImportSource(null);
+                  go('plan');
+                }
+              : undefined
+          }
+          onOpenSetHome={
+            studySetId
+              ? () => {
+                  setImportOpen(false);
+                  setImportSource(null);
+                  go('home');
+                }
+              : undefined
+          }
         />
       )}
     </div>

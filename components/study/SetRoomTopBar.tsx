@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AppIcon } from '../ui/AppIcon';
+import { navigateToPath } from '../../utils/appNavigation';
+import CreationProgressButton from './CreationProgressButton';
 import type { SetRoomHeaderMenuItem } from './SetRoomHeader';
 
 interface SetRoomTopBarProps {
@@ -46,6 +48,12 @@ interface SetRoomTopBarProps {
  *
  * The focus bar (#104) is untouched: a studio has its own chrome and this bar
  * is not drawn there.
+ *
+ * CREATION PROGRESS sits here rather than in the set's own header because the
+ * work it lists is not the set's: an import started in one set is still running
+ * when the student walks into another, and the bar is the only chrome that is
+ * the same on every page of the room. It takes no props — it reads the job
+ * stores itself — so adding it costs the room nothing.
  */
 export const SetRoomTopBar: React.FC<SetRoomTopBarProps> = ({
   setName,
@@ -108,6 +116,9 @@ export const SetRoomTopBar: React.FC<SetRoomTopBarProps> = ({
           <AppIcon name="share-social" size={16} aria-hidden />
           Share
         </button>
+
+        {/* Reads the job stores directly; nothing to plumb through the room. */}
+        <CreationProgressButton onOpen={(path) => navigateToPath(path)} />
 
         {timer}
 
