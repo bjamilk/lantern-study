@@ -79,7 +79,9 @@ type Capability =
   | 'messagePostKind'
   | 'communityMemberMute'
   | 'communityEventFields'
-  | 'communityInvites';
+  | 'communityInvites'
+  // 20260918120000 — practice folders
+  | 'practiceFolders';
 
 /**
  * How long an "absent" answer is trusted before the next caller re-probes.
@@ -99,6 +101,7 @@ const resolved: Record<Capability, CachedAnswer | null> = {
   communityMemberMute: null,
   communityEventFields: null,
   communityInvites: null,
+  practiceFolders: null,
 };
 const inFlight: Record<Capability, Promise<boolean> | null> = {
   groupCommunitySurface: null,
@@ -108,6 +111,7 @@ const inFlight: Record<Capability, Promise<boolean> | null> = {
   communityMemberMute: null,
   communityEventFields: null,
   communityInvites: null,
+  practiceFolders: null,
 };
 
 /** A cached answer is usable while it is `true`, or while a `false` is fresh. */
@@ -133,6 +137,11 @@ const PROBES: Record<Capability, { table: string; column: string }> = {
   communityEventFields: { table: 'communities', column: 'starts_at, ends_at, location' },
   // A missing TABLE, not a missing column — see isMissingRelationError.
   communityInvites: { table: 'community_invites', column: 'code' },
+  // 20260918120000 creates the TABLE and adds the column to test_sessions in
+  // ONE file, so a database has both or neither and one probe answers for
+  // both. It probes the table, not the column, because a missing RELATION is
+  // the shape that arrives first — see isMissingRelationError.
+  practiceFolders: { table: 'practice_folders', column: 'id' },
 };
 
 async function resolveCapability(db: unknown, capability: Capability): Promise<boolean> {
@@ -225,6 +234,21 @@ export function markCommunityInvitesMissing(): void {
   inFlight.communityInvites = null;
 }
 
+/**
+ * Does the `practice_folders` table (and with it `test_sessions.
+ * practice_folder_id`) exist? False means 20260918120000 is unapplied: reads
+ * degrade to "no folders" and writes answer 503.
+ */
+export function hasPracticeFolders(db: unknown): Promise<boolean> {
+  return resolveCapability(db, 'practiceFolders');
+}
+
+/** Call from a query that saw 42P01/42703, then degrade or refuse. */
+export function markPracticeFoldersMissing(): void {
+  resolved.practiceFolders = { value: false, at: Date.now() };
+  inFlight.practiceFolders = null;
+}
+
 /** Is the denormalised `messages.reactions` / `dm_messages.reactions` available? */
 export function hasMessageReactionsColumn(db: unknown): Promise<boolean> {
   return resolveCapability(db, 'messageReactionsColumn');
@@ -276,6 +300,7 @@ export function setSchemaCapabilities(next: {
   communityMemberMute?: boolean | null;
   communityEventFields?: boolean | null;
   communityInvites?: boolean | null;
+  practiceFolders?: boolean | null;
 }): void {
   for (const key of Object.keys(next) as Capability[]) {
     const value = next[key];

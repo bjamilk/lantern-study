@@ -62,6 +62,10 @@ import type {
 } from "../marketplace/studyPacks";
 import type { MarketplaceCourseSummary } from "../marketplace/courseAnchor";
 import type {
+  PracticeFolderListResponse,
+  PracticeFolderWithCount,
+} from "../study/practiceFolders";
+import type {
   AssignableCommunityRole,
   BoardPostKind,
   Community,
@@ -5273,6 +5277,42 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest(`/users/me/study-sets/folders/${encodeURIComponent(folderId)}`, {
         method: "DELETE",
       }),
+
+    /**
+     * This set's practice folders, plus whether the database can hold any.
+     *
+     * `supported: false` means 20260918120000 is unapplied — the clients then
+     * draw the Practice hub exactly as they drew it before folders existed.
+     * It is a FIELD rather than an inference from an empty list because "no
+     * folders yet" must still offer a Create folder card and "no column yet"
+     * must not.
+     */
+    fetchPracticeFolders: (setId: string) =>
+      apiRequest<PracticeFolderListResponse>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders`,
+      ),
+    createPracticeFolder: (setId: string, input: { title: string }) =>
+      apiRequest<PracticeFolderWithCount>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    renamePracticeFolder: (setId: string, folderId: string, input: { title: string }) =>
+      apiRequest<PracticeFolderWithCount>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders/${encodeURIComponent(folderId)}`,
+        { method: "PATCH", body: JSON.stringify(input) },
+      ),
+    /** The folder goes; its quizzes and tests stay, unfiled. */
+    deletePracticeFolder: (setId: string, folderId: string) =>
+      apiRequest<void>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders/${encodeURIComponent(folderId)}`,
+        { method: "DELETE" },
+      ),
+    /** File one quiz or test into a folder, or `null` to move it out. */
+    movePracticeItem: (setId: string, testId: string, practiceFolderId: string | null) =>
+      apiRequest<{ id: string; practiceFolderId: string | null }>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/practice-items/${encodeURIComponent(testId)}`,
+        { method: "PATCH", body: JSON.stringify({ practiceFolderId }) },
+      ),
     fetchStudySetPlan: (setId: string) =>
       apiRequest(`/users/me/study-sets/${encodeURIComponent(setId)}/plan`),
     replaceStudySetPlan: (setId: string, input: unknown) =>

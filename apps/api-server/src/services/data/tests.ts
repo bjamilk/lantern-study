@@ -80,6 +80,7 @@ import {
 } from "../academicCourses";
 import { cacheService } from "../cache";
 import { recordTestSessionAnswers } from "../learningEvents";
+import { hasPracticeFolders } from "../schemaCapabilities";
 
 import {
   resolveCourseIdFromConfigLike,
@@ -226,7 +227,12 @@ export async function getUserTests(
 
   // studySetId is part of the key: without it a filtered page and an
   // unfiltered one would share a cache entry and serve each other's rows.
-  const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:topic:${courseFilterKey(topicFilter)}:set:${studySetId || ""}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
+  // The practice-folder capability is part of the key, not just the query: it
+  // decides whether `practiceFolderId` is on the row at all, and 20260918120000
+  // is hand-applied — so a page cached minutes before the migration landed would
+  // otherwise keep serving folder-less rows to a database that now has folders.
+  const withPracticeFolders = await hasPracticeFolders(supabase);
+  const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:topic:${courseFilterKey(topicFilter)}:set:${studySetId || ""}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}:pf:${withPracticeFolders ? "1" : "0"}`;
 
   return cacheService.cached(
     cacheKey,
@@ -253,6 +259,7 @@ export async function getUserTests(
         updated_at,
         title,
         ${studySetId ? "study_set_id," : ""}
+        ${withPracticeFolders ? "practice_folder_id," : ""}
         ${completedLean ? "" : "questions,"}
         user_answers,
         test_results (

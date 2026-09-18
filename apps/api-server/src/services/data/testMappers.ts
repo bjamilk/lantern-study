@@ -47,6 +47,21 @@ export function topicIdOf(row: any): { topicId?: string | null } {
 }
 
 /**
+ * Same rule, one migration later: `practiceFolderId` rides on a list row only
+ * once `test_sessions.practice_folder_id` exists (20260918120000, applied by
+ * hand). ABSENT means "this database cannot file practice yet"; null means
+ * "not in a folder". The Practice hub branches on exactly that difference —
+ * absent draws the hub as it drew before folders existed, null draws the item
+ * at the top level beside the folder cards. Collapsing the two would empty
+ * every folder card the day before the migration lands.
+ */
+export function practiceFolderIdOf(row: any): { practiceFolderId?: string | null } {
+  return row && typeof row === "object" && "practice_folder_id" in row
+    ? { practiceFolderId: row.practice_folder_id ?? null }
+    : {};
+}
+
+/**
  * A source-note title as clients may print it: a non-empty trimmed string, or
  * null. Anything else (undefined, "", a number a bad write left in config)
  * becomes null so no client ever interpolates it into "From undefined".
@@ -160,6 +175,7 @@ export function mapTestListRow(session: any, lean: boolean): any {
       updatedAt: session.updated_at || session.start_time || new Date().toISOString(),
       pausedAt: session.paused_at ?? null,
       groupId: session.config?.groupId ?? null,
+      ...practiceFolderIdOf(session),
       sourceNoteId: session.config?.sourceNoteId ?? null,
       sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
       provenance: buildTestProvenance(session),
@@ -172,6 +188,7 @@ export function mapTestListRow(session: any, lean: boolean): any {
 
   return {
     id: session.id,
+    ...practiceFolderIdOf(session),
     // --- Flat mirror: the "Available Tests" contract ---------------------
     //
     // The nested `session` below is what web reads. Mobile reads the FLAT row
