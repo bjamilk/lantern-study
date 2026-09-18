@@ -303,8 +303,12 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
         </Card>
       ) : null}
 
-      <section>
-        <div className="mb-2">
+      {/* The measured panel: #F1F0E9 r16 p20 — which is `background-secondary`
+          (#f2f0e8), the palette's second plane, not a new ground. The wall
+          used to sit on the page with nothing behind it, so eight doors read
+          as loose buttons rather than as one offer. */}
+      <section className="rounded-2xl bg-lantern-background-secondary p-5">
+        <div className="mb-3">
           <Headline accent="your own way" feature="sets">
             Or start learning your own way
           </Headline>
