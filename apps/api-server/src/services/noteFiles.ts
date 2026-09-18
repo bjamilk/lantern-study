@@ -8,13 +8,16 @@
  * - Paths and validation: `sanitizeNoteFileName`, `buildNoteStoragePath`,
  *   `assertUserOwnedNoteStoragePath`, `assertFileSize`, `assertPdfSize`,
  *   `assertPresentationSize`, `assertPresentationFileName`,
+ *   `assertDocumentSize`, `assertDocumentFileName`,
  *   `assertValidOfficeZip`, `assertNoteImageUpload`,
- *   `imageContentTypeFromFileName`, `presentationContentType`.
+ *   `imageContentTypeFromFileName`, `presentationContentType`,
+ *   `documentContentType`.
  * - Extraction: `extractPdfTextFromBuffer`, `extractPdfTextDetailsFromBuffer`,
  *   `extractPdfPageTextsFromBuffer`, `extractPresentationTextFromBuffer`,
- *   `extractPresentationTextDetailsFromBuffer`, `buildPdfStudyText`,
- *   `buildPresentationStudyText`, `mergeExtractionTexts`,
- *   `isThinExtractedStudyText`.
+ *   `extractPresentationTextDetailsFromBuffer`,
+ *   `extractDocumentTextFromBuffer`, `buildPdfStudyText`,
+ *   `buildPresentationStudyText`, `buildDocumentStudyText`,
+ *   `mergeExtractionTexts`, `isThinExtractedStudyText`.
  * - Slide rendering: `convertPresentationToPdf`, `warmGotenberg`.
  * - Caps: the MAX_OCR_* limits, the timeouts, `PDF_OCR_SCALE`,
  *   `NOTE_FILES_BUCKET`, `MAX_PDF_BYTES`, `MAX_PRESENTATION_BYTES`.
@@ -512,6 +515,132 @@ export function assertPresentationSize(buffer: Buffer): void {
   assertFileSize(buffer, MAX_PRESENTATION_BYTES, 'Presentation');
 }
 
+// --- Word document text extraction -------------------------------------------
+// A .docx is a ZIP of XML, and officeparser (already a dependency, for PPTX)
+// reads it with the same `parseOffice` call. Unlike a deck, a Word document has
+// NO page model and no preview worth rendering — what a student needs from it
+// is the prose. So this extracts text and nothing else: no bytes are written to
+// `note-files`, no attachment row is created, and the caller turns the text
+// into an ordinary note. That is also why no migration is needed — the
+// `notes.source_type` and `note_attachments.type` CHECK constraints are
+// untouched, so this works on the live database the day it deploys.
+//
+// LEGACY .doc IS NOT SUPPORTED. The pre-2007 binary format is not a ZIP and
+// officeparser cannot read it; `assertDocumentFileName` rejects it by name with
+// a message that tells the student to re-save as .docx rather than failing deep
+// in the parser with "not a valid Office file".
+
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Cap on the text handed back from one document.
+ *
+ * A 25 MB ZIP of XML can expand to far more text than any generator will read
+ * (the quiz and Smart Notes prompts truncate long inputs anyway), and an
+ * unbounded string is the cheap half of a zip-bomb: the bytes are capped, the
+ * expansion is not. 500k characters is roughly 250 pages of prose.
+ */
+export const MAX_DOCUMENT_TEXT_CHARS = Math.max(
+  10_000,
+  parseInt(process.env.NOTE_DOCUMENT_MAX_TEXT_CHARS || '500000', 10) || 500_000
+);
+
+/** Soft timeout for the officeparser read, so one pathological file cannot hold a request open. */
+export const DOCUMENT_PARSE_TIMEOUT_MS = Math.max(
+  5_000,
+  parseInt(process.env.NOTE_DOCUMENT_PARSE_TIMEOUT_MS || '30000', 10) || 30_000
+);
+
+const DOCUMENT_EXT = /\.docx$/i;
+const LEGACY_DOCUMENT_EXT = /\.doc$/i;
+
+export function assertDocumentSize(buffer: Buffer): void {
+  assertFileSize(buffer, MAX_DOCUMENT_BYTES, 'Document');
+}
+
+export function assertDocumentFileName(fileName: string): void {
+  if (DOCUMENT_EXT.test(fileName)) return;
+  if (LEGACY_DOCUMENT_EXT.test(fileName)) {
+    throw new Error(
+      'Legacy .doc files are not supported. Open it in Word and save as .docx, then upload again.'
+    );
+  }
+  throw new Error('Document must be a .docx file.');
+}
+
+export function documentContentType(): string {
+  return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+}
+
+export type DocumentTextExtractionResult = {
+  text: string;
+  /** True when the document held more text than MAX_DOCUMENT_TEXT_CHARS. */
+  truncated: boolean;
+};
+
+/**
+ * Read the text of a .docx. Never throws: an unreadable document comes back as
+ * empty text and the caller reports that honestly rather than creating a note
+ * with a placeholder in it.
+ *
+ * OCR is off. A Word document's images are decoration around prose that is
+ * already machine-readable, and Tesseract on the request path is exactly the
+ * cost the presentation pipeline learned to avoid.
+ */
+export async function extractDocumentTextFromBuffer(
+  buffer: Buffer,
+  fileName: string,
+  options?: { timeoutMs?: number; maxChars?: number }
+): Promise<DocumentTextExtractionResult> {
+  const timeoutMs = options?.timeoutMs ?? DOCUMENT_PARSE_TIMEOUT_MS;
+  const maxChars = options?.maxChars ?? MAX_DOCUMENT_TEXT_CHARS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const { parseOffice } = require('officeparser') as typeof import('officeparser');
+    const parsed = await parseOffice(buffer, {
+      extractAttachments: false,
+      ocr: false,
+      abortSignal: controller.signal,
+    });
+    const text = await astToPlainText(parsed);
+    if (text.length > maxChars) {
+      return { text: text.slice(0, maxChars), truncated: true };
+    }
+    return { text, truncated: false };
+  } catch (err) {
+    logger.warn('Word document text extraction failed', {
+      fileName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { text: '', truncated: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Turn extracted document text into what a note stores, with an honest status.
+ * A document whose text is too thin to study from is reported as such rather
+ * than becoming a note with three words in it.
+ */
+export function buildDocumentStudyText(
+  fileName: string,
+  text: string
+): { studyText: string; extractionStatus: NoteExtractionStatus } {
+  const trimmed = (text || '').trim();
+  if (trimmed && !isThinStudyText(trimmed)) {
+    return { studyText: trimmed, extractionStatus: 'ok' };
+  }
+  if (trimmed) {
+    return { studyText: trimmed, extractionStatus: 'needs_ocr' };
+  }
+  return {
+    studyText: `[Document uploaded: ${fileName}. Text extraction unavailable.]`,
+    extractionStatus: 'empty',
+  };
+}
+
 const PRESENTATION_EXT = /\.(pptx?|ppt)$/i;
 
 export function assertPresentationFileName(fileName: string): void {
@@ -807,9 +936,13 @@ export function assertPdfSize(buffer: Buffer): void {
   assertPdfMagicBytes(buffer);
 }
 
-/** PPTX is ZIP-based; truncated uploads break LibreOffice conversion. Legacy .ppt is not ZIP. */
+/**
+ * PPTX and DOCX are ZIP-based; truncated uploads break LibreOffice conversion
+ * and make officeparser throw deep in the unzip. Legacy .ppt and .doc are not
+ * ZIPs, so they are skipped here and rejected by name instead.
+ */
 export function assertValidOfficeZip(buffer: Buffer, fileName: string): void {
-  if (!/\.pptx$/i.test(fileName)) {
+  if (!/\.(pptx|docx)$/i.test(fileName)) {
     return;
   }
   if (buffer.length < 4) {
@@ -859,4 +992,4 @@ export function assertNoteImageUpload(buffer: Buffer, contentType: string): void
   assertImageMagicBytes(buffer, normalized);
 }
 
-export { NOTE_FILES_BUCKET, MAX_PDF_BYTES, MAX_PRESENTATION_BYTES };
+export { NOTE_FILES_BUCKET, MAX_PDF_BYTES, MAX_PRESENTATION_BYTES, MAX_DOCUMENT_BYTES };

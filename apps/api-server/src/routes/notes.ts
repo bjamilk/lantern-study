@@ -191,6 +191,11 @@ import {
   extractPdfTextDetailsFromBuffer,
   extractPresentationTextDetailsFromBuffer,
   assertPresentationFileName,
+  assertDocumentFileName,
+  assertDocumentSize,
+  buildDocumentStudyText,
+  documentContentType,
+  extractDocumentTextFromBuffer,
   assertUserOwnedNoteStoragePath,
   assertValidOfficeZip,
   presentationContentType,
@@ -1180,6 +1185,91 @@ router.post('/finalize-presentation', uploadBurstRateLimit, asyncHandler(async (
       attachment,
       previewAvailable: false,
       status: 'processing',
+      extractionStatus,
+    },
+  });
+}));
+
+/**
+ * Read the text out of a Word document (.docx) and hand it back. Creates
+ * nothing.
+ *
+ * WHY EXTRACTION AND NOT AN UPLOAD. A PDF and a deck are stored because they
+ * have pages a student reads and a preview the room renders. A Word document
+ * has neither — what it carries is prose, and prose belongs in the note body,
+ * where every generator (Smart Notes, flashcards, quizzes, the plan) already
+ * reads it. So this route parses the bytes, returns the text, and the client
+ * creates an ordinary note through the SAME path the paste door uses. Nothing
+ * lands in `note-files`, no `note_attachments` row is written, and — the reason
+ * it is built this way — neither CHECK constraint on `notes.source_type` nor
+ * on `note_attachments.type` has to gain a value, so no migration stands
+ * between this deploying and a student using it.
+ *
+ * Limits, all of them enforced here rather than trusted from the client:
+ *  - auth required, and `uploadBurstRateLimit` like every other upload route;
+ *  - 25 MB of decoded bytes (`assertDocumentSize`), the same cap as a PDF;
+ *  - `.docx` only (`assertDocumentFileName`) — legacy binary `.doc` is
+ *    rejected by name with an instruction, not a parser stack trace;
+ *  - real ZIP local + end-of-central-directory signatures
+ *    (`assertValidOfficeZip`), which also catches a truncated upload;
+ *  - a declared `contentType`, when one is sent, must be the docx mime;
+ *  - the extracted text is capped at `MAX_DOCUMENT_TEXT_CHARS` and the parse
+ *    is aborted after `DOCUMENT_PARSE_TIMEOUT_MS`, so the expansion side of a
+ *    zip bomb is bounded as well as the byte side.
+ */
+router.post('/extract-document-text', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+
+  const { fileName, base64Data, contentType } = req.body || {};
+  if (!fileName || !base64Data) {
+    res.status(400).json({ error: 'fileName and base64Data are required.' });
+    return;
+  }
+
+  const safeName = String(fileName);
+  let buffer: Buffer;
+  try {
+    assertDocumentFileName(safeName);
+    if (typeof contentType === 'string' && contentType.trim().length > 0) {
+      if (contentType.split(';')[0].trim().toLowerCase() !== documentContentType()) {
+        throw new Error('Document must be a .docx file.');
+      }
+    }
+    buffer = Buffer.from(base64Data, 'base64');
+    assertDocumentSize(buffer);
+    assertValidOfficeZip(buffer, safeName);
+  } catch (err) {
+    res.status(400).json({
+      error: err instanceof Error ? err.message : 'Document file is invalid. Please re-upload.',
+    });
+    return;
+  }
+
+  const extracted = await extractDocumentTextFromBuffer(buffer, safeName);
+  const { studyText, extractionStatus } = buildDocumentStudyText(safeName, extracted.text);
+
+  if (extractionStatus === 'empty') {
+    res.status(422).json({
+      error: `Lantern could not read any text from “${safeName}”. If it is a scan, upload it as photos or a PDF instead.`,
+    });
+    return;
+  }
+
+  logger.info('Word document text extracted', {
+    userId,
+    bytes: buffer.length,
+    chars: studyText.length,
+    truncated: extracted.truncated,
+    extractionStatus,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      title: safeName.replace(/\.docx$/i, '') || 'Imported document',
+      text: studyText,
+      truncated: extracted.truncated,
       extractionStatus,
     },
   });
