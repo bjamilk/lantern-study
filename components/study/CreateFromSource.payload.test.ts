@@ -20,9 +20,9 @@
  * NEW screens' state (a total plus enabled types) as came out of the old
  * four-number screen, for inputs that mean the same thing.
  */
-import fs from 'fs';
-import path from 'path';
 import { describe, expect, it } from 'vitest';
+import { buildCreateOptions } from './createWizard/createOptions';
+import { splitQuestionCounts, type QuizTypeKey } from './createWizard/questionCounts';
 import {
   DEFAULT_QUIZ_TYPE_COUNTS,
   QUIZ_FROM_CARDS_COUNT,
@@ -406,38 +406,113 @@ describe('the payload the create wizard sends, frozen', () => {
     }
   });
 
-  /**
-   * The copy above is only worth anything if it IS the copy. While the wizard
-   * still builds its payload inline, this reads the expression out of the
-   * component and compares it to the reference; when the builder is extracted
-   * into its own module this assertion is replaced by importing it.
-   */
-  it('matches the expression the wizard builds its payload with', () => {
-    const source = fs.readFileSync(
-      path.join(__dirname, 'CreateFromSource.tsx'),
-      'utf8'
-    );
-    const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
-    for (const line of [
-      'questionCount: quizTypeCountTotal(counts) || (quizWizard ? QUIZ_FROM_CARDS_COUNT : undefined)',
-      'title: title.trim() || undefined',
-      'focus: focus.trim() || undefined',
-      'quizTypes: counts',
-      "lessonMode: kind === 'lesson' ? lessonMode : undefined",
-      "recapStyle: kind === 'recap' ? recapStyle : undefined",
-      "recapLength: kind === 'recap' ? recapLength : undefined",
-      "rubricText: kind === 'essay' ? rubricText.trim() || undefined : undefined",
-    ]) {
-      expect(flat(source)).toContain(line);
-    }
-  });
-
   it('only quiz falls back to the from-cards count when every type is zero', () => {
     const empty = draft({
       counts: { multiple_choice: 0, true_false: 0, fill_in_blank: 0, short_answer: 0 },
     });
     expect(referenceOptions('quiz', empty).questionCount).toBe(QUIZ_FROM_CARDS_COUNT);
     expect(referenceOptions('cards', empty).questionCount).toBeUndefined();
+  });
+});
+
+describe('the wizard still sends the frozen payload after the screens were split', () => {
+  it.each(PAYLOAD_TABLE.map((row) => [row.name, row] as const))(
+    'buildCreateOptions matches the frozen answer: %s',
+    (_name, row) => {
+      expect(buildCreateOptions(row.kind, row.draft)).toEqual(row.expected);
+      expect(buildCreateOptions(row.kind, row.draft)).toEqual(
+        referenceOptions(row.kind, row.draft)
+      );
+    }
+  );
+});
+
+/**
+ * The bridge between the two step machines.
+ *
+ * `old` is what the pre-split screen held — four numbers the student typed.
+ * `next` is what the new screens hold — a total chip and a set of type chips.
+ * Rows pair answers that MEAN the same thing; the payloads must be identical.
+ */
+const EQUIVALENCE_TABLE: ReadonlyArray<{
+  name: string;
+  kind: CreateFromSourceKind;
+  old: QuizTypeCounts;
+  next: { total: number; enabled: QuizTypeKey[] };
+}> = [
+  {
+    name: 'the untouched default: 20, multiple choice only',
+    kind: 'quiz',
+    old: { multiple_choice: 20, true_false: 0, fill_in_blank: 0, short_answer: 0 },
+    next: { total: 20, enabled: ['multiple_choice'] },
+  },
+  {
+    name: 'the 5 chip, multiple choice only',
+    kind: 'quiz',
+    old: { multiple_choice: 5, true_false: 0, fill_in_blank: 0, short_answer: 0 },
+    next: { total: 5, enabled: ['multiple_choice'] },
+  },
+  {
+    name: 'the 10 chip across all four types',
+    kind: 'quiz',
+    old: { multiple_choice: 3, true_false: 3, fill_in_blank: 2, short_answer: 2 },
+    next: { total: 10, enabled: ['multiple_choice', 'true_false', 'fill_in_blank', 'short_answer'] },
+  },
+  {
+    name: 'the 20 chip across all four types',
+    kind: 'quiz',
+    old: { multiple_choice: 5, true_false: 5, fill_in_blank: 5, short_answer: 5 },
+    next: { total: 20, enabled: ['multiple_choice', 'true_false', 'fill_in_blank', 'short_answer'] },
+  },
+  {
+    name: 'the 15 chip across two types',
+    kind: 'quiz',
+    old: { multiple_choice: 8, true_false: 7, fill_in_blank: 0, short_answer: 0 },
+    next: { total: 15, enabled: ['multiple_choice', 'true_false'] },
+  },
+  {
+    name: 'a custom total of 12 across three types',
+    kind: 'quiz',
+    old: { multiple_choice: 4, true_false: 4, fill_in_blank: 4, short_answer: 0 },
+    next: { total: 12, enabled: ['multiple_choice', 'true_false', 'fill_in_blank'] },
+  },
+  {
+    name: 'a custom total of 7 on short answer alone',
+    kind: 'quiz',
+    old: { multiple_choice: 0, true_false: 0, fill_in_blank: 0, short_answer: 7 },
+    next: { total: 7, enabled: ['short_answer'] },
+  },
+  {
+    name: 'a card count, which rides in multiple_choice on the cards door',
+    kind: 'cards',
+    old: { multiple_choice: 12, true_false: 0, fill_in_blank: 0, short_answer: 0 },
+    next: { total: 12, enabled: ['multiple_choice'] },
+  },
+];
+
+describe('the old screen and the new screens send the same payload', () => {
+  it.each(EQUIVALENCE_TABLE.map((row) => [row.name, row] as const))('%s', (_name, row) => {
+    const before = referenceOptions(row.kind, draft({ counts: row.old }));
+    const after = buildCreateOptions(
+      row.kind,
+      draft({ counts: splitQuestionCounts(row.next.total, row.next.enabled) })
+    );
+    expect(after).toEqual(before);
+  });
+
+  it('carries the name, focus, mode, style and rubric across untouched', () => {
+    for (const kind of ['quiz', 'lesson', 'recap', 'essay'] as CreateFromSourceKind[]) {
+      const answers = draft({
+        counts: splitQuestionCounts(20, ['multiple_choice']),
+        title: ' Finals ',
+        focus: ' enzymes ',
+        lessonMode: 'drill',
+        recapStyle: 'lecture',
+        recapLength: 'short',
+        rubricText: ' thesis ',
+      });
+      expect(buildCreateOptions(kind, answers)).toEqual(referenceOptions(kind, answers));
+    }
   });
 });
 
