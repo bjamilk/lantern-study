@@ -7,6 +7,9 @@ declare module 'adm-zip' {
   export default class AdmZip {
     constructor(buffer?: Buffer);
     getEntries(): IZipEntry[];
+    /** Write side — used to build Office fixtures (a .docx is a ZIP of XML). */
+    addFile(entryName: string, content: Buffer): void;
+    toBuffer(): Buffer;
   }
 }
 

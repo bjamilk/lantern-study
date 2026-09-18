@@ -31,7 +31,7 @@ import {
 } from '@lantern/shared';
 import { createDeckWithCards } from '../services/apiEndpoints';
 import { parseCardExport } from './study/CreateFromSource';
-import { routeUploadFiles } from './study/uploadDoors';
+import { DOCX_MIME, routeUploadFiles } from './study/uploadDoors';
 
 export type { ImportAndStudyResult } from '../hooks/useStudyGenerators';
 
@@ -311,6 +311,39 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     }
   };
 
+  /**
+   * A Word document (.docx).
+   *
+   * It goes through `processContent`, the SAME path as the paste door, because
+   * the server hands back text rather than a stored file: a Word document has
+   * no page model and no preview, so there is nothing to attach. That also
+   * means chapter splitting, course/set filing and the generator run all come
+   * free from the existing path instead of being re-implemented here.
+   */
+  const handleDocument = async (file: File) => {
+    setStep('processing');
+    setError(null);
+    try {
+      const { title, text, truncated } = await notesApi.extractDocumentTextViaApi(
+        file,
+        setImportProgress
+      );
+      useUIStore.getState().clearImportProgress();
+      // A truncated document is not an error — the note is real, it is just the
+      // first N characters. Saying so IN the note is the only way the student
+      // ever finds out; a toast is gone by the time they read it, and silence
+      // would let them revise from a document that quietly stops halfway.
+      const body = truncated
+        ? `${text}\n\n---\n\n[This document was longer than Lantern reads in one note. Everything above is the start of “${file.name}”; split the rest into a second file to bring it in.]`
+        : text;
+      await processContent(body, title, 'import');
+    } catch (e: unknown) {
+      useUIStore.getState().clearImportProgress();
+      setError(e instanceof Error ? e.message : 'Word document import failed');
+      setStep('input');
+    }
+  };
+
   const handlePhotos = async (files: File[]) => {
     if (files.length === 0) return;
     setStep('processing');
@@ -463,6 +496,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     const routed = routeUploadFiles(files);
     if (routed.kind === 'pdf') void handlePdf(routed.file);
     else if (routed.kind === 'presentation') void handlePresentation(routed.file);
+    else if (routed.kind === 'document') void handleDocument(routed.file);
     else if (routed.kind === 'images') void handlePhotos(routed.files);
     else setError(routed.message);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see the note above.
@@ -531,6 +565,13 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                   <AppIcon name="document-upload" size={24} className="text-lantern-accent" aria-hidden />
                   <span className="text-body font-medium text-lantern-text">PowerPoint</span>
                   <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
+                </label>
+                ) : null}
+                {(!source || source === 'docx') ? (
+                <label className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <AppIcon name="document-attach" size={24} className="text-lantern-primary" aria-hidden />
+                  <span className="text-body font-medium text-lantern-text">Word (.docx)</span>
+                  <input type="file" accept={`.docx,${DOCX_MIME}`} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleDocument(f); e.target.value = ''; }} />
                 </label>
                 ) : null}
                 {(!source || source === 'photo' || source === 'audio' || source === 'video') ? (

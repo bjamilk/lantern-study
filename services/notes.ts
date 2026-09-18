@@ -1368,6 +1368,48 @@ export async function uploadPresentationViaApi(
   });
 }
 
+/** The one mime a .docx may declare, and the one the server will accept. */
+export const DOCX_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/**
+ * Read the text out of a Word document. Creates nothing — the caller makes an
+ * ordinary note from what comes back, exactly as the paste door does.
+ *
+ * This is why a .docx has no `uploadDocumentViaApi` twin of
+ * `uploadNotePdfViaApi`: the bytes are never stored. A Word document has no
+ * page model and no preview to render, so keeping the file would buy a storage
+ * object and a signed URL nobody reads. Legacy binary `.doc` is not supported
+ * and the server says so by name.
+ */
+export async function extractDocumentTextViaApi(
+  file: File,
+  onProgress?: NoteImportProgressCallback
+): Promise<{ title: string; text: string; truncated: boolean }> {
+  assertUploadFileSize(file);
+  onProgress?.({
+    stage: 'encoding',
+    percent: null,
+    label: 'Reading document…',
+    fileName: file.name,
+  });
+
+  const base64Data = await fileToBase64(file);
+  return notesUploadRequest<{ title: string; text: string; truncated: boolean }>(
+    '/extract-document-text',
+    {
+      fileName: file.name,
+      base64Data,
+      // Sent as a cross-check only; the server decides from the name and bytes.
+      contentType: file.type || DOCX_CONTENT_TYPE,
+    },
+    {
+      onProgress,
+      processingLabel: 'Extracting text from the document…',
+    }
+  );
+}
+
 function imageContentTypeFromFileName(fileName: string): string {
   const lower = fileName.toLowerCase();
   if (lower.endsWith('.png')) return 'image/png';
