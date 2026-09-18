@@ -78,7 +78,7 @@
  *
  * Defences to preserve. Every upload path validates magic bytes and
  * cross-checks them against the declared MIME (`assertNoteImageUpload` →
- * `assertImageMagicBytes`, `detectImageMime`, `assertValidOfficeZip`,
+ * `assertImageMagicBytes`, `detectPhotoMime`, `assertValidOfficeZip`,
  * `resolveAudioUploadMeta`) — a declared content type is never trusted on its
  * own, and SVG is accepted nowhere in this file. Storage keys are always built
  * server-side from the authenticated user id (`buildNoteStoragePath`), and any
@@ -206,7 +206,7 @@ import {
   MAX_OCR_PDF_PAGES,
   MAX_OCR_SLIDES,
 } from '../services/noteFiles';
-import { detectImageMime } from '../utils/fileValidation';
+import { detectPhotoMime } from '../utils/fileValidation';
 import {
   aggregatePhotoOcrStatus,
   getNoteStudyContent,
@@ -292,8 +292,8 @@ type ValidatedNoteImage = {
  * The declared content type is never trusted on its own — an
  * `application/octet-stream` is re-sniffed from magic bytes, and
  * `assertNoteImageUpload` then cross-checks the magic bytes against the
- * resolved MIME and the size cap. JPEG, PNG, GIF and WebP only; SVG is not an
- * accepted note image anywhere.
+ * resolved MIME and the size cap. JPEG, PNG, GIF, WebP and HEIC only; SVG is
+ * not an accepted note image anywhere.
  */
 async function validateNoteImageUploads(
   userId: string,
@@ -308,7 +308,7 @@ async function validateNoteImageUploads(
     const downloaded = await dataLayer.notes.downloadNoteFile(storagePath);
     let contentType = downloaded.contentType;
     if (contentType === 'application/octet-stream') {
-      contentType = detectImageMime(downloaded.buffer) || imageContentTypeFromFileName(fileName);
+      contentType = detectPhotoMime(downloaded.buffer) || imageContentTypeFromFileName(fileName);
     }
     assertNoteImageUpload(downloaded.buffer, contentType);
     const fileUrl = await dataLayer.notes.createSignedNoteFileUrl(storagePath);
@@ -415,12 +415,12 @@ async function uploadBase64NoteImages(
           ? item.contentType
           : imageContentTypeFromFileName(rawFileName);
       if (contentType === 'application/octet-stream') {
-        contentType = detectImageMime(buffer) || imageContentTypeFromFileName(rawFileName);
+        contentType = detectPhotoMime(buffer) || imageContentTypeFromFileName(rawFileName);
       }
       assertNoteImageUpload(buffer, contentType);
 
       const { normalized, thumb } = await processImageForUpload(buffer, 'notePhoto', {
-        detectedMime: detectImageMime(buffer) || contentType,
+        detectedMime: detectPhotoMime(buffer) || contentType,
       });
       const baseName = rawFileName.replace(/\.[^/.]+$/, '') || `photo-${i + 1}`;
       const fileName = `${baseName}.${normalized.ext}`;
