@@ -9,10 +9,17 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { filterCreations } from '@lantern/shared/utils/importStages';
+import { filterCreations, type CreationEntry } from '@lantern/shared/utils/importStages';
 import type { AiJob } from '../../stores/aiJobStore';
 import type { NoteUploadJob } from '../../stores/noteUploadStore';
 import { toCreationEntries } from './creationProgress';
+
+/** Index a result list by id, failing loudly rather than returning undefined. */
+const byId = (rows: CreationEntry[], id: string): CreationEntry => {
+  const row = rows.find((r) => r.id === id);
+  if (!row) throw new Error(`no creation row "${id}"`);
+  return row;
+};
 
 const aiJob = (over: Partial<AiJob> = {}): AiJob =>
   ({
@@ -72,20 +79,19 @@ describe('toCreationEntries', () => {
       [],
       'me'
     );
-    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
-    expect(byId.running.status).toBe('processing');
-    expect(byId.ok.status).toBe('done');
-    expect(byId.bad.status).toBe('failed');
-    expect(byId.bad.detail).toBe('AI is offline');
-    expect(byId.lost.status).toBe('failed');
-    expect(byId.lost.detail).toBe('Still running on our servers');
+    expect(byId(rows, 'running').status).toBe('processing');
+    expect(byId(rows, 'ok').status).toBe('done');
+    expect(byId(rows, 'bad').status).toBe('failed');
+    expect(byId(rows, 'bad').detail).toBe('AI is offline');
+    expect(byId(rows, 'lost').status).toBe('failed');
+    expect(byId(rows, 'lost').detail).toBe('Still running on our servers');
   });
 
   it('includes an upload that has no generation job yet', () => {
     const rows = toCreationEntries([], [uploadJob()], 'me');
     expect(rows).toHaveLength(1);
-    expect(rows[0].title).toBe('Slides.pptx');
-    expect(rows[0].status).toBe('processing');
+    expect(rows[0]?.title).toBe('Slides.pptx');
+    expect(rows[0]?.status).toBe('processing');
   });
 
   it('does not list one import twice once its generation job exists', () => {
@@ -95,7 +101,7 @@ describe('toCreationEntries', () => {
       'me'
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe('job');
+    expect(rows[0]?.id).toBe('job');
   });
 
   it('drops dismissed rows from both stores', () => {
@@ -116,9 +122,8 @@ describe('toCreationEntries', () => {
       [],
       'me'
     );
-    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
-    expect(byId.a.route).toBe('/flashcards/deck/d1');
-    expect(byId.b.route).toBeUndefined();
+    expect(byId(rows, 'a').route).toBe('/flashcards/deck/d1');
+    expect(byId(rows, 'b').route).toBeUndefined();
   });
 
   it('feeds the shared tab filter', () => {
