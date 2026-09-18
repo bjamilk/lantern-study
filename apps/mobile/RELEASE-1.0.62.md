@@ -40,8 +40,8 @@ something real.
 - **Folders in Practice.** File quizzes and tests into folders you name, rename
   them, and delete one without losing what is inside it. *Waiting on a database
   change: until it is applied, the Practice page looks exactly as it does today.*
-- **The set room, its plan, materials and companion column rebuilt** to the
-  design the founder asked for: a new type system, a proper study plan page with
+- **The set room, its plan, materials and companion column rebuilt** to a
+  calmer design: a new type system, a proper study plan page with
   a short pre-assessment per unit, a Materials page that stays inside the set
   instead of throwing you out to your whole library, and an AI column whose
   suggestions are about the page you are on.
