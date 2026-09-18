@@ -1839,3 +1839,80 @@ export async function getOwnedTestSession(
     .eq("user_id", userId)
     .maybeSingle();
 }
+
+/**
+ * The newest pre-assessment session for one study-set UNIT, if there is one.
+ *
+ * WHY IT FILTERS ON `config` AND NOT ON `study_set_id`. The `study_set_id`
+ * column arrives with a hand-applied migration (20260911120000) and
+ * `writeWithTopicFallback` drops it from the insert when the column is absent —
+ * so a session created on a database without that migration carries the link
+ * ONLY inside `config`. Filtering on the column would silently find nothing
+ * there and generate (and charge for) a second diagnostic every time the
+ * student pressed Continue. `config.preAssessment` is written unconditionally,
+ * so it is the one place the link is always present.
+ *
+ * THE `userId` PREDICATE IS THE ACCESS CONTROL — the API holds the service-role
+ * client, which bypasses RLS. Without it this reads other students' sessions.
+ *
+ * Newest first by `start_time`, one row: a unit that has been diagnosed twice
+ * is answered by its most recent attempt, which is the one `Retake` produced.
+ */
+export async function findUnitPreAssessment(
+  supabase: DataClient,
+  userId: string,
+  studySetId: string,
+  unitId: string,
+): Promise<any | null> {
+  const { data, error } = await supabase
+    .from("test_sessions")
+    .select("id, questions, user_answers, end_time, status, config, start_time")
+    .eq("user_id", userId)
+    .eq("config->preAssessment->>studySetId", studySetId)
+    .eq("config->preAssessment->>unitId", unitId)
+    .order("start_time", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return (Array.isArray(data) ? data[0] : null) ?? null;
+}
+
+/**
+ * Every unit pre-assessment in one study set, newest first.
+ *
+ * The list half of `findUnitPreAssessment`, and filtered the same way and for
+ * the same reason: on `config`, never on the `study_set_id` COLUMN, which a
+ * hand-applied migration gates. It exists so the plan page can draw the right
+ * verb on every unit's card in ONE round trip — a student who has finished a
+ * check must not be offered `Continue · uses 1 AI credit` for it.
+ *
+ * Returns the id, the unit and whether it is finished, and nothing else: the
+ * questions and answers are not the plan page's business.
+ */
+export async function listSetPreAssessments(
+  supabase: DataClient,
+  userId: string,
+  studySetId: string,
+): Promise<{ unitId: string; testId: string; completedAt: string | null }[]> {
+  const { data, error } = await supabase
+    .from("test_sessions")
+    .select("id, end_time, config, start_time")
+    .eq("user_id", userId)
+    .eq("config->preAssessment->>studySetId", studySetId)
+    .order("start_time", { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  const seen = new Set<string>();
+  const rows: { unitId: string; testId: string; completedAt: string | null }[] = [];
+  for (const row of Array.isArray(data) ? data : []) {
+    const unitId = String((row as any)?.config?.preAssessment?.unitId ?? "");
+    // Newest first, so the first row for a unit is the attempt that counts.
+    if (!unitId || seen.has(unitId)) continue;
+    seen.add(unitId);
+    rows.push({
+      unitId,
+      testId: String((row as any).id),
+      completedAt: (row as any).end_time ?? null,
+    });
+  }
+  return rows;
+}

@@ -2351,6 +2351,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               onModeChange={(mode) => {
                 void updateSet(studySetId, { mode }).catch(() => undefined);
               }}
+              onOpenSettings={() => setSettingsOpen(true)}
               onStart={(kind, noteId) => {
                 if (noteId) void openNote(noteId);
                 // The kind IS the chip. It used to be `read`, a path the room

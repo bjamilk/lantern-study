@@ -61,7 +61,12 @@ import { Router, type Response } from 'express';
 import { SET_TILE_GLYPHS, SET_TILE_HUES } from '@lantern/shared/study/setPresentation';
 import { body, param } from 'express-validator';
 import { asyncHandler } from '../middleware/errorHandler';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requirePermission } from '../middleware/auth';
+import {
+  aiRateLimitForFeature,
+  applyGlobalUsageHeaders,
+  refundFeatureAiCredit,
+} from '../middleware/aiRateLimit';
 import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { PublicError, clientErrorMessage } from '../utils/safeError';
@@ -77,6 +82,7 @@ import {
   SetTileColumnMissingError,
   getStudySetsService,
 } from '../services/studySets';
+import { getStudySetPreAssessmentService } from '../services/studySetPreAssessment';
 import { logger } from '../utils/logger';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 
@@ -504,6 +510,94 @@ router.patch(
         String(req.params.setId),
         String(req.params.topicId),
         req.body?.status
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      if (handlePublicError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+/**
+ * "See what you already know" — the per-unit pre-assessment.
+ *
+ * WHAT IT COSTS AND WHY IT SAYS SO. One `generate_questions` AI credit, the
+ * same as any other generation and against the same daily cap, because that is
+ * exactly what it is: one call to the question generator. It is charged by the
+ * middleware BEFORE this handler runs, so a RESUME — which does no AI work,
+ * and is the common case, since `Continue` on a half-finished diagnostic must
+ * reopen it rather than build a second — refunds the credit before answering.
+ * The pattern is `POST /notes/:noteId/quiz`'s, deliberately: two ways of
+ * refunding a reserved credit is how one of them goes stale.
+ *
+ * Idempotent: an unfinished diagnostic is returned as it stands, and a finished
+ * one is only rebuilt when the client asks for a `retake`, which is the card's
+ * own verb once it is finished.
+ */
+router.post(
+  '/:setId/units/:unitId/pre-assessment',
+  authMiddleware,
+  requirePermission('ai'),
+  aiRateLimitForFeature('generate_questions'),
+  param('setId').isUUID(),
+  param('unitId').isUUID(),
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getStudySetPreAssessmentService(dataLayer).start(
+        userId,
+        String(req.params.setId),
+        String(req.params.unitId),
+        { retake: req.body?.retake === true }
+      );
+      // No AI work happened — give the reserved feature + global credits back.
+      if (data.action === 'resumed') {
+        await refundFeatureAiCredit(userId, 'generate_questions');
+      }
+      await applyGlobalUsageHeaders(res, userId);
+      res.status(data.action === 'created' ? 201 : 200).json({ success: true, data });
+    } catch (err) {
+      // A refusal BEFORE the generator ran (a unit with no topics, a set that
+      // is not the caller's) also did no AI work. Refunding here is what keeps
+      // a student from paying for a 400.
+      if (err instanceof PublicError) {
+        await refundFeatureAiCredit(userId, 'generate_questions').catch(() => undefined);
+      }
+      if (handlePublicError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+/**
+ * Grade a finished pre-assessment onto the plan.
+ *
+ * Deliberately a SECOND call rather than a hook inside the tests submit path:
+ * that path is shared by every test in the product and carries the coin award,
+ * and threading a study-plan concern through it would put plan writes on the
+ * money route. Nothing is charged here. Re-running it writes nothing new — the
+ * mapping never moves a topic backwards, so the same session yields the same
+ * statuses, which are already stored.
+ */
+router.post(
+  '/:setId/units/:unitId/pre-assessment/results',
+  authMiddleware,
+  param('setId').isUUID(),
+  param('unitId').isUUID(),
+  body('testId').isUUID(),
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getStudySetPreAssessmentService(dataLayer).applyResults(
+        userId,
+        String(req.params.setId),
+        String(req.params.unitId),
+        String(req.body?.testId)
       );
       res.json({ success: true, data });
     } catch (err) {

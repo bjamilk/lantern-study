@@ -10,6 +10,10 @@ import {
   planTopicActivityLabel,
   planTopicState,
   guidedNextTopicFromPlan,
+  asPlanSortKey,
+  DEFAULT_PLAN_SORT,
+  PLAN_SORT_OPTIONS,
+  sortPlanTimeline,
 } from './planTimeline';
 
 function unit(id: string, position: number, title = id): StudySetUnit {
@@ -209,5 +213,107 @@ describe('guidedNextTopicFromPlan', () => {
       sourceNoteId: null,
       sourceTitle: null,
     });
+  });
+});
+
+describe('sortPlanTimeline', () => {
+  // Three units in plan order: u1 is finished, u2 is untouched and holds the
+  // recommendation, u3 is half done. That shape separates all three orders.
+  const units = [unit('u1', 10), unit('u2', 20), unit('u3', 30)];
+  const topics = [
+    topic('a', 'u1', 10, 'mastered'),
+    topic('b', 'u2', 10),
+    topic('c', 'u3', 10, 'covered'),
+  ];
+  const built = planTimeline(units, topics, 'b');
+
+  it('offers the three orders with Recommended as the default', () => {
+    expect(PLAN_SORT_OPTIONS.map((option) => option.id)).toEqual([
+      'recommended',
+      'unit',
+      'weakest',
+    ]);
+    expect(DEFAULT_PLAN_SORT).toBe('recommended');
+  });
+
+  it('reads an unknown persisted value as the default', () => {
+    expect(asPlanSortKey('weakest')).toBe('weakest');
+    expect(asPlanSortKey('nonsense')).toBe('recommended');
+    expect(asPlanSortKey(undefined)).toBe('recommended');
+    expect(asPlanSortKey(null)).toBe('recommended');
+  });
+
+  it('unit order is plan order, untouched', () => {
+    expect(sortPlanTimeline(built, 'unit').map((row) => row.unit.id)).toEqual(['u1', 'u2', 'u3']);
+  });
+
+  it('recommended lifts the unit holding Continue and leaves the rest alone', () => {
+    expect(sortPlanTimeline(built, 'recommended').map((row) => row.unit.id)).toEqual([
+      'u2',
+      'u1',
+      'u3',
+    ]);
+  });
+
+  it('recommended is a no-op when the recommendation is already first', () => {
+    const first = planTimeline(units, topics, 'a');
+    expect(sortPlanTimeline(first, 'recommended').map((row) => row.unit.id)).toEqual([
+      'u1',
+      'u2',
+      'u3',
+    ]);
+  });
+
+  it('recommended is a no-op when no row is next', () => {
+    const none = planTimeline(units, topics, null);
+    expect(sortPlanTimeline(none, 'recommended').map((row) => row.unit.id)).toEqual([
+      'u1',
+      'u2',
+      'u3',
+    ]);
+  });
+
+  it('weakest first is ascending by arc', () => {
+    expect(sortPlanTimeline(built, 'weakest').map((row) => row.unit.id)).toEqual([
+      'u2',
+      'u3',
+      'u1',
+    ]);
+  });
+
+  it('weakest first sinks an EMPTY unit below a unit with real work in it', () => {
+    const withEmpty = planTimeline([...units, unit('u4', 40)], topics, null);
+    expect(sortPlanTimeline(withEmpty, 'weakest').map((row) => row.unit.id)).toEqual([
+      'u2',
+      'u3',
+      'u1',
+      'u4',
+    ]);
+  });
+
+  it('breaks an arc tie on plan position, so the order is stable', () => {
+    const tied = planTimeline(
+      [unit('x', 10), unit('y', 20)],
+      [topic('p', 'x', 10), topic('q', 'y', 10)],
+      null
+    );
+    expect(sortPlanTimeline(tied, 'weakest').map((row) => row.unit.id)).toEqual(['x', 'y']);
+  });
+
+  it('never drops or duplicates a unit, whichever key is used', () => {
+    for (const option of PLAN_SORT_OPTIONS) {
+      const ids = sortPlanTimeline(built, option.id).map((row) => row.unit.id);
+      expect([...ids].sort()).toEqual(['u1', 'u2', 'u3']);
+    }
+  });
+
+  it('does not mutate the timeline it was handed', () => {
+    const before = built.map((row) => row.unit.id);
+    sortPlanTimeline(built, 'weakest');
+    expect(built.map((row) => row.unit.id)).toEqual(before);
+  });
+
+  it('is empty-safe', () => {
+    expect(sortPlanTimeline([], 'weakest')).toEqual([]);
   });
 });

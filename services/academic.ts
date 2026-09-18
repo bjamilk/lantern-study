@@ -258,6 +258,42 @@ export const updateStudySetTopicStatus = (setId: string, topicId: string, status
     { method: 'PATCH', body: JSON.stringify({ status }) }
   );
 
+/**
+ * Start — or resume — a unit's pre-assessment.
+ *
+ * COSTS ONE AI CREDIT, but only when it actually generates: the server returns
+ * `action: 'resumed'` and refunds when an unfinished check already exists, so
+ * the caller may press this for `Continue` without counting. `retake: true` is
+ * the only way to build a second one over a finished check.
+ *
+ * The timeout is longer than the default 10s because a generation is a model
+ * round trip, not a table read.
+ */
+export const startUnitPreAssessment = (
+  setId: string,
+  unitId: string,
+  input: { retake?: boolean } = {}
+) =>
+  academicRequest<{
+    testId: string;
+    action: 'created' | 'resumed';
+    questionCount: number;
+    unitTitle: string;
+  }>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/units/${encodeURIComponent(unitId)}/pre-assessment`,
+    { method: 'POST', body: JSON.stringify(input) },
+    60000
+  );
+
+/** Grade a finished pre-assessment onto the plan. Charges nothing. */
+export const applyUnitPreAssessmentResults = (setId: string, unitId: string, testId: string) =>
+  academicRequest<{
+    updates: { topicId: string; status: 'unseen' | 'covered' | 'mastered' }[];
+  }>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/units/${encodeURIComponent(unitId)}/pre-assessment/results`,
+    { method: 'POST', body: JSON.stringify({ testId }) }
+  );
+
 export const deleteStudySet = (setId: string) =>
   academicRequest<void>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {
     method: 'DELETE',

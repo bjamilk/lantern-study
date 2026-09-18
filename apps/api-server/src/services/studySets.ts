@@ -651,10 +651,27 @@ export class StudySetsService {
   // `this.get(userId, setId)` so the parent set's ownership is proven before
   // any child row is read, written or deleted.
 
+  /**
+   * The plan, plus which units already have a pre-assessment.
+   *
+   * `preAssessments` is ADDITIVE and always present (empty when there are
+   * none), so a client that does not read it is unaffected. It rides on this
+   * response rather than a route of its own because the plan page needs it to
+   * draw the right verb on every unit's card in its FIRST paint: a student who
+   * finished a check must not be offered "Continue · uses 1 AI credit" for it
+   * while a second round trip is in flight.
+   *
+   * A failure to read it is not a failure to read the plan — the list degrades
+   * to empty, which draws the offer to start one, which is the honest default.
+   */
   async getPlan(
     userId: string,
     setId: string
-  ): Promise<{ units: StudySetUnitRow[]; topics: StudySetTopicRow[] }> {
+  ): Promise<{
+    units: StudySetUnitRow[];
+    topics: StudySetTopicRow[];
+    preAssessments: { unitId: string; testId: string; completedAt: string | null }[];
+  }> {
     await this.get(userId, setId);
     const unitsRes = await this.db
       .from('study_set_units')
@@ -663,7 +680,7 @@ export class StudySetsService {
       .eq('study_set_id', setId)
       .order('position', { ascending: true });
     if (unitsRes.error && isMissingColumn(unitsRes.error, 'study_set_units')) {
-      return { units: [], topics: [] };
+      return { units: [], topics: [], preAssessments: [] };
     }
     if (unitsRes.error) throw unitsRes.error;
     const topicsRes = await this.db
@@ -673,7 +690,18 @@ export class StudySetsService {
       .eq('study_set_id', setId)
       .order('position', { ascending: true });
     if (topicsRes.error) throw topicsRes.error;
+    // Optional-chained, not assumed. `getStudySetsService` is a process
+    // SINGLETON, so whichever DataLayer constructed it first is the one every
+    // later caller gets — including a test that handed it a partial layer with
+    // no `tests` namespace. A hard read threw there, and the plan (which has
+    // nothing to do with pre-assessments) died with it. The list is a garnish
+    // on this response; it degrades to empty, which draws the offer to start a
+    // check, which is the honest default.
+    const preAssessments = await Promise.resolve()
+      .then(() => this.data?.tests?.listSetPreAssessments?.(userId, setId) ?? [])
+      .catch(() => []);
     return {
+      preAssessments,
       units: (unitsRes.data || []).map((row) => ({
         id: String(row.id),
         studySetId: String(row.study_set_id),
