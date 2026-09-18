@@ -75,10 +75,14 @@ describe('the set room asks one predicate which state it is in', () => {
   });
 });
 
-describe('the app shell hides its breadcrumb strip in focus', () => {
-  it('uses the same predicate, off the same parsed URL', () => {
-    expect(APP).toContain('isSetRoomFocusPath');
-    expect(flat(APP)).toContain('|| isSetRoomFocusPath(studySetPath)');
+describe('the app shell hides its breadcrumb strip inside a set room', () => {
+  it('hides it in EVERY set-room state, off the same parsed URL', () => {
+    // #104 hid it in focus only. Since the 2026-09-17 parity pass the set room
+    // has its own top bar on home too, whose left half is the same
+    // "Study › <set>" trail — so outside focus the shell strip was the same
+    // words twice, 52px apart. The test is now "are we in a set at all".
+    expect(flat(APP)).toContain('|| Boolean(studySetPath)');
+    expect(flat(APP)).not.toContain('|| isSetRoomFocusPath(studySetPath)');
   });
 });
 

@@ -61,6 +61,17 @@ interface RecentMaterialsProps {
    * Both the grid tile and the list row now carry the same trigger.
    */
   renderNoteMenu?: (note: StudyNote) => React.ReactNode;
+  /**
+   * Sort and the grid/list toggle. OFF on set home (2026-09-17 parity: the
+   * reference puts a type filter there and nothing else), on everywhere the
+   * whole archive is the subject.
+   *
+   * Not a deletion — the two controls are what a set with twenty PDFs called
+   * `lecture-notes` actually needs, and they still ship on the Materials /
+   * Library page. On HOME they are two more choices in front of a student who
+   * came here to study, and the grid is already sorted newest-first.
+   */
+  showViewControls?: boolean;
 }
 
 /**
@@ -94,9 +105,13 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
   onOpenDeck,
   onViewAll,
   renderNoteMenu,
+  showViewControls = true,
 }) => {
   const [filter, setFilter] = useState<MaterialFilter>('all');
-  const [view, setView] = useViewMode('setRoomMaterials', 'grid');
+  const [storedView, setView] = useViewMode('setRoomMaterials', 'grid');
+  // A remembered `list` with no toggle to leave it by is a trap, so the
+  // control being absent also means the view is the grid.
+  const view = showViewControls ? storedView : 'grid';
   const [sort, setSort] = useMaterialSort('setRoomMaterials', 'newest');
 
   const available = useMemo(() => {
@@ -144,8 +159,12 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
               </select>
             </label>
           ) : null}
-          <MaterialSortMenu value={sort} onChange={setSort} label="recent materials" />
-          <ViewModeToggle value={view} onChange={setView} label="Recent materials" />
+          {showViewControls ? (
+            <>
+              <MaterialSortMenu value={sort} onChange={setSort} label="recent materials" />
+              <ViewModeToggle value={view} onChange={setView} label="Recent materials" />
+            </>
+          ) : null}
         </div>
       </div>
 

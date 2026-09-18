@@ -2234,13 +2234,17 @@ export const App: React.FC = () => {
                 outright on the path-rendered destinations and on Create group /
                 Admin, and hidden only on narrow screens for an open chat or
                 community channel, where the chat header is the back control.
-                Hidden outright in a set room's FOCUS state too: the focus bar
-                carries the trail (tile, set name, tool), so the strip would be
-                a second copy of it above a studio that wants the height. The
-                same `isSetRoomFocusPath` the room reads, off the same URL. */}
+                Hidden outright in a SET ROOM, in every state. #104 hid it in
+                focus only, because the focus bar carries the trail (tile, set
+                name, tool) and a second copy of it above a studio that wants
+                the height is waste. The 2026-09-17 parity pass gave the set
+                room its own top bar on HOME too, whose left half is the same
+                "Study › <set>" trail — so outside focus the strip was
+                literally the same words twice, 52px apart. One test, off the
+                same parsed URL the room reads: are we inside a set at all. */}
             <div className={`shrink-0 ${
                 onMePath || onTestBuilderPath || Boolean(testDetailId)
-                    || isSetRoomFocusPath(studySetPath)
+                    || Boolean(studySetPath)
                     || appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
                     ? 'hidden'
                     : (appMode === AppMode.CHAT && selectedChat)

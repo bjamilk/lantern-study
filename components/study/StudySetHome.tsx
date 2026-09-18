@@ -87,6 +87,14 @@ interface StudySetHomeProps {
   /** Empty-set starter notes from a topic, subject and skill level. */
   onGenerateFromTopic?: (brief: TopicBrief) => void;
   /**
+   * The set's own header (tile, title, gear, stats), scrolled WITH the home
+   * rather than pinned above it — which is what the reference does and what
+   * Lantern did not. Pinned, it held ~90px of every scrolled view: a set's
+   * name and its topic counts are not something you need in front of you
+   * while you read the eighth material card. Only the 52px top bar stays.
+   */
+  header?: React.ReactNode;
+  /**
    * Exam / syllabus, scrolled with the home rather than pinned under it.
    * Pinning a second card row was what ate the materials grid.
    */
@@ -112,6 +120,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   onOpenLibrary,
   renderNoteMenu,
   onGenerateFromTopic,
+  header,
   footer,
 }) => {
   const hasMaterials = notes.length > 0 || deckCount > 0 || testCount > 0;
@@ -152,6 +161,8 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
 
   return (
     <div ref={homeScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scrollbar-autohide space-y-4 pr-1 pb-2">
+      {header}
+
       {planGenerating ? (
         <Card padding="lg">
           <p className="text-heading">Generating your study plan…</p>
@@ -382,6 +393,10 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
           onOpenDeck={onOpenDeck}
           onViewAll={() => onOpenLibrary?.()}
           renderNoteMenu={renderNoteMenu}
+          // Home gets the type filter and nothing else, as measured. Sort and
+          // the grid/list toggle live on the Materials page, where the whole
+          // archive is the subject.
+          showViewControls={false}
         />
       ) : null}
 

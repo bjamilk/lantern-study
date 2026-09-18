@@ -69,13 +69,20 @@ export const SetRoomFooter: React.FC<SetRoomFooterProps> = ({
     <aside data-testid="set-room-exams" aria-label="Exam dates and syllabus">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-title text-lantern-text">Exam dates</h2>
+        {/* Always `Add` with a plus, as measured — 75×32. It used to read
+            `Edit exam` once a date existed, which is the per-row 28×28 Edit's
+            job now; the header action is how you add ANOTHER date, and a
+            student with a midterm saved could not see that it was still the
+            way to add the final. It opens the same exam-date editor. */}
         <button
           type="button"
           onClick={() => setAdding((value) => !value)}
           aria-expanded={adding}
-          className={PILL}
+          aria-label="Add an exam date"
+          className={`${PILL} gap-1.5`}
         >
-          {examDate ? 'Edit' : 'Add'}
+          <AppIcon name="add" size={16} aria-hidden />
+          Add
         </button>
       </div>
 

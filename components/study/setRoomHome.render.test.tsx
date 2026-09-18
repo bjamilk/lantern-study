@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import fs from 'node:fs';
+import path from 'node:path';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -29,6 +31,8 @@ vi.mock('../../hooks/useResolvedStorageUrl', () => ({
 import { SetRoomHeader } from './SetRoomHeader';
 import { UnitChipRow } from './UnitChipRow';
 import { RecentMaterials } from './RecentMaterials';
+import { RoomRecommendationCard } from './RoomRecommendationCard';
+import { SetRoomFooter } from './SetRoomFooter';
 
 const SET_ID = '8f1b0c2e-2222-4a2b-9c3d-000000000002';
 
@@ -146,5 +150,89 @@ describe('recent materials grid', () => {
     const html = grid();
     expect(html).toContain('All types');
     expect(html).toContain('Filter materials by type');
+  });
+
+  it('offers ONLY the type filter on home — no sort, no grid/list toggle', () => {
+    // The reference puts one control here. Sort and the toggle are not
+    // deleted; they stay on the Materials page, where the whole archive is
+    // the subject. Two fewer choices in front of a student who came to study.
+    const home = renderToStaticMarkup(
+      <RecentMaterials
+        notes={notes}
+        onOpenNote={() => undefined}
+        onViewAll={() => undefined}
+        showViewControls={false}
+      />
+    );
+    expect(home).toContain('All types');
+    expect(home).not.toContain('recent materials');
+    expect(home).not.toContain('Recent materials view');
+    // And the archive keeps both.
+    expect(grid()).toContain('recent materials');
+  });
+});
+
+describe('the set home scrolls its own header', () => {
+  it('takes the header as content, not as chrome above the scroller', () => {
+    // The bug the coordinator saw on 2026-09-17: tile + title + stats stayed
+    // pinned and held ~90px of every scrolled view. In the reference only the
+    // 52px top bar is sticky. The room proves it by passing the header IN.
+    const room = fs.readFileSync(path.join(__dirname, 'CourseWorkspace.tsx'), 'utf8');
+    const flat = room.replace(/\s+/g, ' ');
+    expect(flat).toContain('header={setHeader}');
+    // And the block above the scroller draws it only for a studio.
+    expect(flat).toContain("activity === 'home' ? null : setHeader");
+  });
+});
+
+describe('recommendation card anatomy', () => {
+  const card = () =>
+    renderToStaticMarkup(
+      <RoomRecommendationCard
+        feature="ai"
+        icon="sparkles"
+        eyebrow="Recommended"
+        label="Ask Lantern"
+        about="Opens the companion."
+        onClick={() => undefined}
+      />
+    );
+
+  it('sets the eyebrow in the serif heading step, not as a caption', () => {
+    // Measured (doc 02): Bitter 18/28 weight 500 in the body ink. It shipped
+    // as 14px secondary sans, which read as a caption over a label.
+    expect(card()).toContain('text-heading font-display text-lantern-text');
+  });
+
+  it('puts About in the card’s top-right corner', () => {
+    const html = card();
+    expect(html).toContain('absolute right-2 top-2');
+    expect(html).toContain('aria-label="About Ask Lantern"');
+    // Outside the card button: a <button> inside a <button> is markup the
+    // keyboard cannot reach.
+    expect(html.indexOf('aria-label="About Ask Lantern"')).toBeLessThan(
+      html.indexOf('Recommended')
+    );
+  });
+});
+
+describe('exam aside', () => {
+  it('always offers Add, whether or not a date is already saved', () => {
+    // It used to read `Edit exam` once a date existed, so a student with a
+    // midterm saved could not see this was still the way to add the final.
+    const html = renderToStaticMarkup(
+      <SetRoomFooter
+        studySetId={SET_ID}
+        examDate="2026-12-01"
+        exams={[]}
+        onViewSchedule={() => undefined}
+        onAddSyllabus={() => undefined}
+      />
+    );
+    expect(html).toContain('aria-label="Add an exam date"');
+    expect(html).toContain('Exam dates');
+    expect(html).toContain('View schedule');
+    expect(html).toContain('Add syllabus');
+    expect(html).toContain('aria-label="Edit Exam"');
   });
 });

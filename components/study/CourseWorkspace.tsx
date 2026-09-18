@@ -1470,6 +1470,52 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   // panel. See hooks/useFocusSidebarCollapse.
   useFocusSidebarCollapse(focusMode);
 
+  /**
+   * The set room's header, as an OBJECT rather than as chrome — identity tile,
+   * serif name, gear, and the stats row carrying the plan's counts and its
+   * progress. `ScreenHeader` (for a course room) can only draw a title and a
+   * button row, which is why a set used to read as a page rather than as a
+   * thing the student owns.
+   *
+   * Hoisted to a const because it is rendered in TWO places and must stay one
+   * element: above the scroller for a studio (where it is the compact header),
+   * and INSIDE the scroller on home, so it scrolls away exactly as the
+   * reference's does. Pinned, it ate ~90px of every scrolled view — a set's
+   * name and its topic counts are not something you need in front of you while
+   * you read the eighth material card.
+   */
+  const setHeader = studySetId ? (
+        <SetRoomHeader
+          setId={studySetId}
+          title={label}
+          coverPath={studySet?.coverPath}
+          tileHue={studySet?.tileHue}
+          tileGlyph={studySet?.tileGlyph}
+          progress={activity === 'home' ? roomProgress : null}
+          counts={activity === 'home' ? roomCounts : undefined}
+          visibility={studySet?.visibility}
+          variant={activity === 'home' ? 'home' : 'compact'}
+          mode={studySet?.mode ?? null}
+          // `mode` is already an end-to-end field — the plan's own
+          // `pickRecommendedTopic` reads it and the settings screen writes
+          // it — so Mode needed no migration and no new column: it is the
+          // SAME store action, surfaced where a student stands.
+          onSelectMode={
+            studySet
+              ? (next) => {
+                  void updateSet(studySetId, { mode: next }).catch(() => undefined);
+                }
+              : undefined
+          }
+          onOpenSettings={() => setSettingsOpen(true)}
+          // The timer, Chat and the kebab moved UP into `SetRoomTopBar`:
+          // they are actions on the ROOM, and leaving them here made the
+          // set's own name carry a toolbar. The header is now the set as an
+          // object — tile, title, gear, stats — and nothing else.
+          menu={[]}
+        />
+  ) : null;
+
   const roomMenu: SetRoomHeaderMenuItem[] = studySetId
     ? [
         ...(activity !== 'home'
@@ -1692,40 +1738,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             />
           </div>
         ) : studySetId ? (
-          // The set room's header is the SET AS AN OBJECT — identity tile,
-          // serif name, gear, and a bordered chip strip carrying the plan's
-          // counts and its progress. `ScreenHeader` (below, for a course room)
-          // can only draw a title and a button row, which is why a set used to
-          // read as a page rather than as a thing the student owns.
-          <SetRoomHeader
-            setId={studySetId}
-            title={label}
-            coverPath={studySet?.coverPath}
-            tileHue={studySet?.tileHue}
-            tileGlyph={studySet?.tileGlyph}
-            progress={activity === 'home' ? roomProgress : null}
-            counts={activity === 'home' ? roomCounts : undefined}
-            visibility={studySet?.visibility}
-            variant={activity === 'home' ? 'home' : 'compact'}
-            mode={studySet?.mode ?? null}
-            // `mode` is already an end-to-end field — the plan's own
-            // `pickRecommendedTopic` reads it and the settings screen writes
-            // it — so Mode needed no migration and no new column: it is the
-            // SAME store action, surfaced where a student stands.
-            onSelectMode={
-              studySet
-                ? (next) => {
-                    void updateSet(studySetId, { mode: next }).catch(() => undefined);
-                  }
-                : undefined
-            }
-            onOpenSettings={() => setSettingsOpen(true)}
-            // The timer, Chat and the kebab moved UP into `SetRoomTopBar`:
-            // they are actions on the ROOM, and leaving them here made the
-            // set's own name carry a toolbar. The header is now the set as an
-            // object — tile, title, gear, stats — and nothing else.
-            menu={[]}
-          />
+          // On HOME the header is rendered INSIDE the scroller instead (see
+          // `setHeader` and the `header` prop below): it is the set as an
+          // object, not chrome, and the reference scrolls it away. Only the
+          // 52px top bar is pinned. Here it is the compact header a studio
+          // wears, which does belong above the scroll.
+          activity === 'home' ? null : setHeader
         ) : (
           <ScreenHeader
             title={label}
@@ -2049,6 +2067,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               }}
               onOpenPlan={() => go('plan')}
               onOpenLibrary={onOpenLibrary}
+              header={setHeader}
               onGenerateFromTopic={(brief) => void handleCreateFromTopic(brief, 'materials')}
               footer={
                 <SetRoomFooter
