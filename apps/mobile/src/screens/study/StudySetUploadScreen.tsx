@@ -12,9 +12,15 @@
  * Route: `StudySetUpload` in the Study stack.
  * Main exports: `StudySetUploadScreen` and `jobBelongsToStudySet`, which the set
  * room reuses and which is kept pure so the filing rule is testable.
+ * The chip row is `setUploadDoors.ts`, not a literal in this file: every chip
+ * has to resolve to a picker, the recorder, a panel or the Anki sheet, and that
+ * invariant is asserted by a node test (issue #137 was four chips that resolved
+ * to a sheet with no picker behind them).
+ *
  * Touches: notesStore, flashcardStore, jobsStore, toastStore, authStore;
  * services/notes `createNote`/`createNoteFromYoutube`/`updateNote`; the file and
- * camera pickers live inside ImportAndStudyModal and ImportCardsSheet, not here.
+ * camera pickers live inside ImportAndStudyModal and ImportCardsSheet, not here,
+ * and a file chip opens that sheet with `autoPick` so the picker fires at once.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
@@ -35,25 +41,13 @@ import { useToastStore } from '../../stores/toastStore';
 import { useAuthStore } from '../../stores/authStore';
 import { createNote, createNoteFromYoutube, updateNote } from '../../services/notes';
 import type { TrackedJob } from '../../stores/jobsCore';
+import type { ImportFileKind } from '../../utils/fileImportDoors';
+import { SET_UPLOAD_CHIPS, type SetUploadChip } from './setUploadDoors';
 
 type Props = NativeStackScreenProps<StudyStackParamList, 'StudySetUpload'>;
 
 type Panel = 'youtube' | 'paste' | null;
 type JobFilter = 'all' | 'processing' | 'done' | 'failed';
-
-const CHIPS = [
-  { id: 'PDF', icon: 'document-text', hint: 'Pick a PDF' },
-  { id: 'PPT', icon: 'easel', hint: 'Pick slides' },
-  // Word sits with the other document types, not at the end: it is the class
-  // file students hand in and hand round, and it was the one common one
-  // Lantern could not read. The door itself is inside ImportAndStudyModal.
-  { id: 'Word', icon: 'document', hint: 'Pick a Word document (.docx)' },
-  { id: 'Audio', icon: 'headphones', hint: 'Pick an audio file' },
-  { id: 'Video', icon: 'videocam', hint: 'Pick a video file' },
-  { id: 'YouTube', icon: 'logo-youtube', hint: 'Paste a video link' },
-  { id: 'Paste', icon: 'clipboard', hint: 'Paste text' },
-  { id: 'Anki', icon: 'layers', hint: 'Paste an Anki or Quizlet export' },
-] as const;
 
 /**
  * Does this job belong to this set?
@@ -86,6 +80,7 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
   const jobs = useJobsStore((s) => s.jobs);
 
   const [importOpen, setImportOpen] = useState(false);
+  const [autoPick, setAutoPick] = useState<ImportFileKind | null>(null);
   const [ankiOpen, setAnkiOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -168,17 +163,46 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
     });
   };
 
-  // KNOWN ISSUE (tracked, found during the mobile Word-door lane): the PDF,
-  // PPT, Audio and Video chips all open ImportAndStudyModal, which has no
-  // picker for any of them — it offers photos, Word and pasted text. The PDF
-  // and PowerPoint pickers exist, but in the Notes import sheet, not here. Not
-  // fixed in this lane (it is a separate door each, with its own upload path);
-  // the caption above no longer promises what this sheet cannot do.
-  const openChip = (chip: (typeof CHIPS)[number]['id']) => {
-    if (chip === 'YouTube') setPanel('youtube');
-    else if (chip === 'Paste') setPanel('paste');
-    else if (chip === 'Anki') setAnkiOpen(true);
-    else setImportOpen(true);
+  /**
+   * FIXED (#137): every chip now opens something real.
+   *
+   * A chip that names a file type opens that file browser — the import sheet is
+   * still what carries the upload, the filing and the flashcard/quiz job, so it
+   * opens underneath with the picker already firing, and backing out of the
+   * picker leaves the student on a sheet whose doors are all real. Audio and
+   * Video are gone: no file-transcription path exists on any platform, and the
+   * recorder is the honest door for a lecture.
+   */
+  const openChip = (chip: SetUploadChip) => {
+    switch (chip.action.kind) {
+      case 'panel':
+        setPanel(chip.action.panel);
+        return;
+      case 'anki':
+        setAnkiOpen(true);
+        return;
+      case 'recorder':
+        navigation.navigate('LectureStudio', {
+          courseId: courseId || undefined,
+          courseLabel: courseLabel || undefined,
+          studySetId,
+        });
+        return;
+      case 'picker':
+        setAutoPick(chip.action.file);
+        setImportOpen(true);
+        return;
+    }
+  };
+
+  const openImportSheet = () => {
+    setAutoPick(null);
+    setImportOpen(true);
+  };
+
+  const closeImportSheet = () => {
+    setImportOpen(false);
+    setAutoPick(null);
   };
 
   return (
@@ -190,12 +214,12 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
       >
         <ScreenHeader
           title="Add materials"
-          subtitle="PDF, slides, Word, audio, video, YouTube or pasted text — filed in this set."
+          subtitle="PDF, slides, Word, a recorded lecture, YouTube or pasted text — filed in this set."
           onBack={() => navigation.goBack()}
         />
 
         <Pressable
-          onPress={() => setImportOpen(true)}
+          onPress={openImportSheet}
           accessibilityRole="button"
           accessibilityLabel="Choose a file to import into this set"
           className="rounded-2xl border border-dashed border-lantern-border bg-lantern-surface px-4 py-8 items-center mb-4"
@@ -203,15 +227,15 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
           <AppIcon name="cloud-upload" size={28} />
           <T.Body className="mt-3">Choose files</T.Body>
           <T.Caption tone="secondary" className="mt-1">
-            A Word document, or a photo of your pages
+            A PDF, slides, a Word document, or a photo of your pages
           </T.Caption>
         </Pressable>
 
         <View className="flex-row flex-wrap gap-2 mb-4">
-          {CHIPS.map((chip) => (
+          {SET_UPLOAD_CHIPS.map((chip) => (
             <Pressable
               key={chip.id}
-              onPress={() => openChip(chip.id)}
+              onPress={() => openChip(chip)}
               accessibilityRole="button"
               accessibilityLabel={`${chip.id}. ${chip.hint}`}
               className="px-3 py-2 rounded-full border border-lantern-border flex-row items-center gap-1.5"
@@ -341,9 +365,10 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
         visible={importOpen}
         courseId={courseId || undefined}
         studySetId={studySetId}
-        onClose={() => setImportOpen(false)}
+        autoPick={autoPick}
+        onClose={closeImportSheet}
         onOpenNote={(noteId) => {
-          setImportOpen(false);
+          closeImportSheet();
           navigation.navigate('NotesStudio', {
             courseId,
             courseLabel,
