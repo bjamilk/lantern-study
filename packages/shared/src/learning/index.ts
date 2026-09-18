@@ -24,3 +24,4 @@ export * from './meProgress';
 export * from './meArea';
 export * from './meRows';
 export * from './dueReview';
+export * from './preAssessment';

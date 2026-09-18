@@ -184,6 +184,82 @@ export function planTimeline(
     });
 }
 
+// ---------------------------------------------------------------------------
+// Sort
+// ---------------------------------------------------------------------------
+// The reference's `Sort By` menu. It reorders the UNITS on the page and never
+// the topics inside one: a unit's topics run in the order the course teaches
+// them, and shuffling those would make "Topic 2 of 3" name a different row
+// depending on a menu.
+
+export type PlanSortKey = 'recommended' | 'unit' | 'weakest';
+
+/**
+ * The menu, in menu order, with the default first.
+ *
+ * Three real orders, not one. The plan panel shipped with no sort control at
+ * all and a comment arguing that a menu with a single option is furniture —
+ * that argument was right, and it is answered by giving the menu something to
+ * do rather than by drawing it empty.
+ */
+export const PLAN_SORT_OPTIONS: readonly { id: PlanSortKey; label: string; promise: string }[] = [
+  { id: 'recommended', label: 'Recommended', promise: 'The unit you are in first' },
+  { id: 'unit', label: 'Unit order', promise: 'The order the course teaches them' },
+  { id: 'weakest', label: 'Weakest first', promise: 'Least covered at the top' },
+];
+
+export const DEFAULT_PLAN_SORT: PlanSortKey = 'recommended';
+
+/** Read an unknown (a persisted value, a URL) as a sort key. */
+export function asPlanSortKey(value: unknown): PlanSortKey {
+  return PLAN_SORT_OPTIONS.some((option) => option.id === value)
+    ? (value as PlanSortKey)
+    : DEFAULT_PLAN_SORT;
+}
+
+/**
+ * Reorder the timeline's units for the `Sort By` menu.
+ *
+ * PURE AND TOTAL. Every unit that went in comes out exactly once, whatever the
+ * key — a sort that can drop a unit is a sort that can hide a student's work.
+ * The input array is not mutated.
+ *
+ * - `unit` returns plan order, which is what `planTimeline` already built.
+ * - `recommended` lifts the unit carrying the `Continue` pill to the top and
+ *   leaves everything else in plan order behind it. It does NOT sort by
+ *   progress: the recommendation already encodes the mode's rule about where
+ *   you should be, and re-ranking the rest would argue with it.
+ * - `weakest` is ascending by arc. Ties break on plan position so the order is
+ *   stable frame to frame; EMPTY units (no topics, so 0%) sort last rather than
+ *   first, because "nothing filed here yet" is not the weakest thing you know —
+ *   it is the absence of anything to know.
+ */
+export function sortPlanTimeline(
+  timeline: readonly PlanTimelineUnit[],
+  sort: PlanSortKey
+): PlanTimelineUnit[] {
+  const rows = [...timeline];
+  if (sort === 'unit') return rows;
+  if (sort === 'recommended') {
+    const index = rows.findIndex((entry) => entry.rows.some((row) => row.state === 'next'));
+    if (index <= 0) return rows;
+    const [picked] = rows.splice(index, 1);
+    return picked ? [picked, ...rows] : rows;
+  }
+  return rows
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const aEmpty = a.entry.ring.total === 0 ? 1 : 0;
+      const bEmpty = b.entry.ring.total === 0 ? 1 : 0;
+      if (aEmpty !== bEmpty) return aEmpty - bEmpty;
+      if (a.entry.ring.percent !== b.entry.ring.percent) {
+        return a.entry.ring.percent - b.entry.ring.percent;
+      }
+      return a.index - b.index;
+    })
+    .map((row) => row.entry);
+}
+
 /**
  * Which unit should be open when the page loads.
  *
