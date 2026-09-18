@@ -66,6 +66,10 @@ import type {
   PracticeFolderWithCount,
 } from "../study/practiceFolders";
 import type {
+  StudySetSyllabusResponse,
+  SyllabusUploadResponse,
+} from "../study/syllabusSummary";
+import type {
   AssignableCommunityRole,
   BoardPostKind,
   Community,
@@ -5305,6 +5309,41 @@ export function createApiEndpoints(client: ApiClient) {
     deletePracticeFolder: (setId: string, folderId: string) =>
       apiRequest<void>(
         `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders/${encodeURIComponent(folderId)}`,
+        { method: "DELETE" },
+      ),
+    /**
+     * This set's syllabus, plus whether the database can hold one.
+     *
+     * `supported: false` means 20260918150000 is unapplied — the clients then
+     * hide the "Sync with your class" card entirely rather than offering an
+     * upload that would answer 503. Same `supported`-as-a-FIELD reasoning as
+     * the practice folders above: "no syllabus yet" must still offer the
+     * upload, and "no column yet" must not.
+     */
+    fetchStudySetSyllabus: (setId: string) =>
+      apiRequest<StudySetSyllabusResponse>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/syllabus`,
+      ),
+    /**
+     * Upload a syllabus. Costs ONE AI use.
+     *
+     * base64 in the body, not multipart, matching every other document upload
+     * in this API. The caller has already checked the extension and the size
+     * against `SYLLABUS_ACCEPT` / `MAX_SYLLABUS_BYTES`; the server checks them
+     * again, because a client-side limit is a courtesy and not a rule.
+     */
+    uploadStudySetSyllabus: (
+      setId: string,
+      input: { fileName: string; base64Data: string },
+    ) =>
+      apiRequest<SyllabusUploadResponse>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/syllabus`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    /** Undo: unlink the syllabus and delete the note it created. Free. */
+    deleteStudySetSyllabus: (setId: string) =>
+      apiRequest<void>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/syllabus`,
         { method: "DELETE" },
       ),
     /** File one quiz or test into a folder, or `null` to move it out. */

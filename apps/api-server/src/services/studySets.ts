@@ -65,6 +65,17 @@ import {
   SET_TILE_MIGRATION,
   SET_TILE_UNSUPPORTED_MESSAGE,
 } from '@lantern/shared/study/setTileSave';
+import {
+  STUDY_SET_SYLLABUS_MIGRATION,
+  SYLLABUS_UNSUPPORTED_MESSAGE,
+  readSyllabusSummary,
+  type SyllabusSummary,
+} from '@lantern/shared/study/syllabusSummary';
+import {
+  hasStudySetSyllabus,
+  isMissingSchemaError,
+  markStudySetSyllabusMissing,
+} from './schemaCapabilities';
 
 /**
  * A tile write that reached a database without `tile_hue`/`tile_glyph`.
@@ -86,6 +97,53 @@ export class SetTileColumnMissingError extends Error {
 }
 
 export { SET_TILE_MIGRATION };
+
+/**
+ * A syllabus read or write that reached a database without the 20260918150000
+ * columns.
+ *
+ * Unlike `exam_date` — which the read ladder degrades past, because a set list
+ * must not 500 over an outstanding migration — this is thrown by the READ too,
+ * and the route turns it into a 200 carrying `supported: false` for the read
+ * and a 503 naming the file for the write.
+ *
+ * The 503 matters more here than anywhere else in this file: the syllabus
+ * write is the one path in the app that spends an AI credit BEFORE it stores
+ * anything. Refusing at the top — before the extraction, before the model call
+ * — is what stops a student paying an AI use for a schedule that has nowhere
+ * to go.
+ */
+export class StudySetSyllabusMissingError extends Error {
+  readonly migration = STUDY_SET_SYLLABUS_MIGRATION;
+
+  constructor() {
+    super(SYLLABUS_UNSUPPORTED_MESSAGE);
+    this.name = 'StudySetSyllabusMissingError';
+  }
+}
+
+export { STUDY_SET_SYLLABUS_MIGRATION };
+
+/**
+ * The syllabus columns, read on their own rather than on the set ladder.
+ *
+ * DELIBERATELY NOT added to `SET_COLUMN_LADDER`. That ladder already has eight
+ * rungs enumerating the presence/absence combinations of three hand-applied
+ * columns; a fourth independent migration would take it to sixteen hand-written
+ * projections, which is a maintenance surface far larger than the problem. The
+ * syllabus is instead fetched by its own capability-gated select — the shape
+ * `practiceFolders` already uses — so a set list costs nothing extra and an
+ * unapplied migration is one `supported: false`, not eight new strings.
+ */
+const STUDY_SET_SYLLABUS_COLUMNS = 'id, syllabus_note_id, syllabus_summary';
+
+/** What a set's syllabus looks like to the route. */
+export interface StudySetSyllabus {
+  /** False when 20260918150000 is unapplied — the clients hide the card. */
+  supported: boolean;
+  noteId: string | null;
+  summary: SyllabusSummary | null;
+}
 
 // --- Shapes and caps ---------------------------------------------------------
 
@@ -575,6 +633,101 @@ export class StudySetsService {
     throw updated.error;
   }
 
+  /**
+   * The set's syllabus, or `supported: false` when the migration is out.
+   *
+   * Opens with `this.get`, which proves the set is this caller's before a
+   * single syllabus column is read — the service-role client bypasses RLS, so
+   * that call IS the access control, not a convenience.
+   *
+   * A read never throws for a missing column. `hasStudySetSyllabus` answers
+   * from the shared probe, and the query itself still calls
+   * `markStudySetSyllabusMissing` if it sees 42703 anyway: the probe can race
+   * a hand-applied migration in either direction, and a set room that threw
+   * because a column is absent would be a blank page over a working set.
+   */
+  async getSyllabus(userId: string, setId: string): Promise<StudySetSyllabus> {
+    await this.get(userId, setId);
+    if (!(await hasStudySetSyllabus(this.db))) {
+      return { supported: false, noteId: null, summary: null };
+    }
+    const { data, error } = await this.db
+      .from('study_sets')
+      .select(STUDY_SET_SYLLABUS_COLUMNS)
+      .eq('user_id', userId)
+      .eq('id', setId)
+      .single();
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        markStudySetSyllabusMissing();
+        return { supported: false, noteId: null, summary: null };
+      }
+      throw error;
+    }
+    const row = (data ?? {}) as Record<string, unknown>;
+    return {
+      supported: true,
+      noteId: typeof row.syllabus_note_id === 'string' ? row.syllabus_note_id : null,
+      // Re-normalised, not trusted: the SQL CHECK only guarantees the outer
+      // shape, and a row written before a cap changed is still storable.
+      summary: readSyllabusSummary(row.syllabus_summary),
+    };
+  }
+
+  /**
+   * Store an extracted syllabus on the set.
+   *
+   * `examDate` is applied ONLY when the caller passes one, and the caller's
+   * rule (in the route) is "only if the set has no date yet" — a date the
+   * student typed is never overwritten by a document. This method does not
+   * re-derive that rule; it writes what it is given, so the one place the
+   * decision lives is the route, where the set's current date was read.
+   *
+   * Refuses rather than degrades. This is a WRITE, and the lesson the tile
+   * columns taught is that a write which silently drops a column answers 200
+   * over a row that never changed. Here it is worse than usual: the AI use has
+   * already been spent by the time this is called, so a silent drop would
+   * charge a student for a schedule that vanished.
+   */
+  async setSyllabus(
+    userId: string,
+    setId: string,
+    input: { noteId: string | null; summary: SyllabusSummary | null; examDate?: string | null }
+  ): Promise<StudySetSyllabus & { examDate: string | null }> {
+    await this.get(userId, setId);
+    if (!(await hasStudySetSyllabus(this.db))) throw new StudySetSyllabusMissingError();
+
+    const patch: Record<string, unknown> = {
+      syllabus_note_id: input.noteId,
+      syllabus_summary: input.summary,
+    };
+    // Absent means "leave it alone"; null means "clear it". Same convention as
+    // the generic PATCH, so a caller that read no date does not wipe one.
+    if (input.examDate !== undefined) patch.exam_date = input.examDate;
+
+    const { data, error } = await this.db
+      .from('study_sets')
+      .update(patch)
+      .eq('user_id', userId)
+      .eq('id', setId)
+      .select(`${STUDY_SET_SYLLABUS_COLUMNS}, exam_date`)
+      .single();
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        markStudySetSyllabusMissing();
+        throw new StudySetSyllabusMissingError();
+      }
+      throw error;
+    }
+    const row = (data ?? {}) as Record<string, unknown>;
+    return {
+      supported: true,
+      noteId: typeof row.syllabus_note_id === 'string' ? row.syllabus_note_id : null,
+      summary: readSyllabusSummary(row.syllabus_summary),
+      examDate: typeof row.exam_date === 'string' ? row.exam_date : null,
+    };
+  }
+
   async touchStudied(userId: string, setId: string): Promise<StudySet> {
     await this.get(userId, setId);
     const now = new Date().toISOString();
@@ -950,4 +1103,17 @@ let singleton: StudySetsService | null = null;
 export function getStudySetsService(data: DataLayer): StudySetsService {
   if (!singleton) singleton = new StudySetsService(data);
   return singleton;
+}
+
+/**
+ * Test hook: drop the singleton so a fresh DataLayer is picked up.
+ *
+ * The singleton binds the FIRST DataLayer it is handed and ignores every one
+ * after, which is right in a process with one client and wrong in a test file
+ * that scripts a different database per case — without this, the second test
+ * queries the first test's recorder. The same hook exists on
+ * `studySetPreAssessment` and `studySetSyllabus` for the same reason.
+ */
+export function __resetStudySetsServiceForTests(): void {
+  singleton = null;
 }

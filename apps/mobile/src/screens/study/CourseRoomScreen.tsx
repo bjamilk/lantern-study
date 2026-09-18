@@ -67,6 +67,8 @@ import {
   resolveLectureStudioNote,
   studySetLabel,
   resolveExamDate,
+  examDateSaveOutcome,
+  EXAM_DATE_UNSUPPORTED_COPY,
   testsFiledInCourse,
   testsFiledInStudySet,
   todayDateOnlyLocal,
@@ -102,6 +104,8 @@ import { shareStudySet } from '../../components/study/shareStudySet';
 import { SetRoomSegments } from '../../components/study/SetRoomSegments';
 import { SetRoomTile } from '../../components/study/SetRoomTile';
 import { StudyPlanPanel } from '../../components/study/StudyPlanPanel';
+import { SyncWithClassCard } from '../../components/study/SyncWithClassCard';
+import { useSyncWithClass } from '../../components/study/useSyncWithClass';
 import {
   MaterialSortButton,
   ViewModeToggle,
@@ -170,6 +174,11 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const setTopicStatus = useStudySetStore((s) => s.setTopicStatus);
   const plan = useStudySetStore((s) => (studySetId ? s.plans[studySetId] : undefined));
   const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
+  // "Sync with your class" — the first landing in an empty set. The hook owns
+  // the fetch, the picker, the upload and the per-set dismissal; the empty
+  // branch of `SetHomeRecommended` owns the "is this set empty" half.
+  const syncClass = useSyncWithClass(studySetId);
+
   const [overflowOpen, setOverflowOpen] = useState(false);
   const courseId = studySet?.courseId || courseIdParam || '';
   const tabBarClearance = useTabBarClearance(16);
@@ -188,6 +197,36 @@ export function CourseRoomScreen({ navigation, route }: Props) {
     gutter: doorGutter,
   });
   const showToast = useToastStore((s) => s.showToast);
+  /**
+   * The one sentence shown when the server answered 200 but stored nothing.
+   *
+   * 20260918150000 is hand-applied, and the production API can answer a set
+   * PATCH without persisting `exam_date` — so a green "Exam date saved." over
+   * a row that never changed is exactly the lie this lane exists to end. The
+   * only honest evidence is the returned row echoing the date back, which is
+   * what `examDateSaveOutcome` checks.
+   */
+  const [examDateUnsupported, setExamDateUnsupported] = useState<string | null>(null);
+  const saveSetExamDate = useCallback(
+    async (value: string | null) => {
+      if (!studySetId) return;
+      try {
+        const updated = await updateSet(studySetId, { examDate: value || null });
+        if (examDateSaveOutcome(value || null, updated) === 'unsupported') {
+          setExamDateUnsupported(EXAM_DATE_UNSUPPORTED_COPY);
+          return;
+        }
+        setExamDateUnsupported(null);
+        showToast(value ? 'Exam date saved.' : 'Exam date cleared.', 'success');
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : 'Could not save the exam date.',
+          'error'
+        );
+      }
+    },
+    [studySetId, updateSet, showToast]
+  );
   const startJob = useJobsStore((s) => s.startJob);
   const loadNote = useNotesStore((s) => s.loadNote);
   const notes = useNotesStore((s) => s.notes);
@@ -896,6 +935,25 @@ export function CourseRoomScreen({ navigation, route }: Props) {
               })
             }
             examDate={resolveExamDate(studySet, enrolment)}
+            syncWithClass={
+              syncClass.visible && studySetId ? (
+                <SyncWithClassCard
+                  examDate={studySet?.examDate ?? null}
+                  syllabus={syncClass.syllabus}
+                  uploading={syncClass.uploading}
+                  foundLabel={syncClass.foundLabel}
+                  error={syncClass.error}
+                  onUploadSyllabus={syncClass.pickAndUpload}
+                  onUndoSyllabus={syncClass.undoSyllabus}
+                  onSkipForNow={syncClass.skipForNow}
+                  // The same door the old "Add syllabus" button opened, kept
+                  // as the way past the card for a student with no syllabus.
+                  onSkipToMaterials={() => setImportOpen(true)}
+                  onSaveExamDate={(value) => void saveSetExamDate(value)}
+                  examDateUnsupported={examDateUnsupported}
+                />
+              ) : null
+            }
           />
         ) : null}
 
@@ -1404,6 +1462,7 @@ function SetHomeRecommended({
   onOpenActivity,
   onAddSyllabus,
   onAddExam,
+  syncWithClass,
   onViewSchedule,
   examDate,
 }: {
@@ -1433,6 +1492,8 @@ function SetHomeRecommended({
   onOpenActivity: (id: WorkspaceActivityId) => void;
   onAddSyllabus: () => void;
   onAddExam: () => void;
+  /** "Sync with your class", for an empty set. Null hides it — see below. */
+  syncWithClass?: React.ReactNode;
   /** The Details sheet's `View schedule` — the study calendar for this set. */
   onViewSchedule: () => void;
   /** `YYYY-MM-DD`, resolved off the set then its course. */
@@ -1503,26 +1564,19 @@ function SetHomeRecommended({
           />
         ) : null}
         {showSetup ? (
-        <>
-        <Card>
-          <T.Body>Add your syllabus</T.Body>
-          <T.Caption tone="secondary" className="mt-1">
-            Import a syllabus or notes so this set can build a plan.
-          </T.Caption>
-          <Button size="sm" className="mt-3" onPress={onAddSyllabus}>
-            Add syllabus
-          </Button>
-        </Card>
-        <Card>
-          <T.Body>Exam dates</T.Body>
-          <T.Caption tone="secondary" className="mt-1">
-            Add an exam so the calendar can group what to study.
-          </T.Caption>
-          <Button size="sm" variant="secondary" className="mt-3" onPress={onAddExam}>
-            Add exam
-          </Button>
-        </Card>
-        </>
+          // ONE card, not two. These used to be two cards headed "Add your
+          // syllabus" and "Exam dates", and both were soft dead doors: the
+          // first opened the generic import sheet (nothing knew what a
+          // syllabus WAS) and the second opened the calendar, whose date field
+          // only ever wrote a COURSE enrolment — so a course-less set, which is
+          // most of them, could not keep a date at all. Both headings survive
+          // INSIDE the card below, now with something behind them.
+          //
+          // `syncWithClass` is null when the migration is unapplied, when the
+          // syllabus fetch failed, or when the student skipped this set, and
+          // the two old cards are gone either way: an empty set is not left
+          // with a setup block that cannot do anything.
+          syncWithClass ?? null
         ) : null}
       </View>
     );
