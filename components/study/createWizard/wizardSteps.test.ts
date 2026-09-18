@@ -104,7 +104,7 @@ describe('wizardSteps', () => {
           if (step.accent) expect(step.question).toContain(step.accent);
         }
       }
-      expect(wizardSteps(kind, null)[0].question).toContain(CREATE_FROM_SOURCE_NOUN[kind]);
+      expect(wizardSteps(kind, null)[0]?.question).toContain(CREATE_FROM_SOURCE_NOUN[kind]);
     }
   });
 

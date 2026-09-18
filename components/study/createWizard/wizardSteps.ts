@@ -82,7 +82,9 @@ function stepsAfterSource(
  */
 export function longestSourceForKind(kind: CreateFromSourceKind): CreateFromSourceId {
   const sources = sourcesForKind(kind);
-  let best = sources[0];
+  // `sourcesForKind` never returns an empty list; the fallback is only here so
+  // the type is exact rather than "maybe undefined" all the way down.
+  let best: CreateFromSourceId = sources[0] ?? 'scratch';
   let bestLength = -1;
   for (const source of sources) {
     const length = stepsAfterSource(kind, source).length;
