@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Headline } from '../../ui/Headline';
 import { AppIcon, type AppIconName } from '../../ui/AppIcon';
-import type { WizardStep } from './wizardSteps';
+import { wizardTotalKnown, type WizardStep } from './wizardSteps';
 
 /**
  * The frame every create-wizard screen is drawn in, and the three controls
@@ -20,6 +20,9 @@ import type { WizardStep } from './wizardSteps';
  *    stealing focus as a panel appears moves a screen reader away from
  *    whatever opened it. The heading carries tabIndex -1 for that, which is
  *    why it is not in the tab order.
+ *  - "of M" is drawn only when `wizardTotalKnown` says the path is fixed. On
+ *    the source screen the header is a bare "Step 1": the paths are different
+ *    lengths, and a total that changes when the student answers reads as a bug.
  *  - `ChoiceGroup` is a real radiogroup with roving tabindex: exactly one
  *    option is tabbable and the arrow keys move between them. Do not swap the
  *    radios for buttons with `aria-pressed` — pressed is a toggle, and these
@@ -74,7 +77,9 @@ export const WizardShell: React.FC<WizardShellProps> = ({
       >
         <div>
           <p className="text-label uppercase text-lantern-text-secondary">
-            Step {index + 1} of {steps.length}
+            {/* No denominator until the path is fixed — see wizardSteps. */}
+            Step {index + 1}
+            {wizardTotalKnown(steps) ? ` of ${steps.length}` : ''}
           </p>
           <div ref={titleRef} tabIndex={-1} className="mt-1 focus:outline-none">
             <Headline as="h2" size="title" accent={step.accent}>

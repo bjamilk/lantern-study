@@ -12,7 +12,7 @@ import {
   type CreateFromSourceId,
   type CreateFromSourceKind,
 } from '@lantern/shared';
-import { longestSourceForKind, wizardSteps, wizardStepIndex } from './wizardSteps';
+import { wizardSteps, wizardStepIndex, wizardTotalKnown } from './wizardSteps';
 
 const KINDS: CreateFromSourceKind[] = [
   'quiz',
@@ -76,20 +76,36 @@ describe('wizardSteps', () => {
     expect(ids('quiz', 'scratch')).toEqual(['source']);
   });
 
-  it('numbers step one against the longest path the kind can take', () => {
-    // Quiz: materials is five screens, topic three, flashcards two.
-    expect(longestSourceForKind('quiz')).toBe('materials');
-    expect(wizardSteps('quiz', null)).toHaveLength(5);
-    // Cards: materials stops at the picker, so the topic path is the long one.
-    expect(longestSourceForKind('cards')).toBe('topic');
-    expect(wizardSteps('cards', null)).toHaveLength(3);
+  it('knows only the source screen until the path is chosen', () => {
+    // The paths are different lengths — quiz from materials is five screens,
+    // from a topic three, from decks two — so on step one there is no honest
+    // total to show. Previewing the longest one made "Step 1 of 5" turn into
+    // "Step 2 of 3", which reads as a bug.
+    for (const kind of KINDS) {
+      expect(wizardSteps(kind, null)).toHaveLength(1);
+      expect(ids(kind, null)).toEqual(['source']);
+    }
   });
 
-  it('never lets the preview be shorter than a path the student can pick', () => {
+  it('shows a denominator only once the path is fixed', () => {
     for (const kind of KINDS) {
-      const preview = wizardSteps(kind, null).length;
+      expect(wizardTotalKnown(wizardSteps(kind, null))).toBe(false);
       for (const source of sourcesForKind(kind)) {
-        expect(wizardSteps(kind, source).length).toBeLessThanOrEqual(preview);
+        const steps = wizardSteps(kind, source);
+        // `scratch` leaves the wizard on the click, so its one-screen path is
+        // never rendered; every path that IS rendered can show its total.
+        expect(wizardTotalKnown(steps)).toBe(source !== 'scratch');
+      }
+    }
+  });
+
+  it('keeps the source screen at position one on every path', () => {
+    // Picking a source must extend the list, never renumber what came before
+    // it: the screen the student is looking at cannot become "Step 2".
+    for (const kind of KINDS) {
+      const start = ids(kind, null);
+      for (const source of sourcesForKind(kind)) {
+        expect(ids(kind, source).slice(0, start.length)).toEqual(start);
       }
     }
   });

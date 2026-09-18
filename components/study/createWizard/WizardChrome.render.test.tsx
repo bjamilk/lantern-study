@@ -80,12 +80,27 @@ describe('WizardShell', () => {
     expect(container.querySelector('h2')?.textContent).toBe('How many questions?');
   });
 
+  it('leaves the denominator off until the path is chosen', async () => {
+    await render(
+      <WizardShell
+        steps={wizardSteps('quiz', null)}
+        index={0}
+        actions={<button type="button">Cancel</button>}
+      >
+        <p>four cards</p>
+      </WizardShell>
+    );
+    expect(container.textContent).toContain('Step 1');
+    expect(container.textContent).not.toContain('of');
+  });
+
   it('asks one question, in the display voice, with one accented word', async () => {
     await render(
       <WizardShell steps={QUIZ_STEPS} index={0} actions={<button type="button">Next</button>}>
         <p>answer</p>
       </WizardShell>
     );
+    expect(container.textContent).toContain('Step 1 of 5');
     const heading = container.querySelector('h2');
     expect(heading?.className).toContain('text-title');
     expect(container.querySelectorAll('h2')).toHaveLength(1);

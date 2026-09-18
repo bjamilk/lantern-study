@@ -89,7 +89,7 @@ describe('the quiz path, one question per screen', () => {
     const handlers = props();
     await render(<CreateFromSource kind="quiz" {...handlers} />);
 
-    expect(stepLine()).toBe('Step 1 of 5');
+    expect(stepLine()).toBe('Step 1');
     expect(question()).toBe('How would you like to create your quiz?');
     // Four source cards, none of them hidden behind More ways.
     expect(container.querySelectorAll('button').length).toBe(4 + 1 /* Cancel */);
@@ -178,6 +178,7 @@ describe('the topic path, split in two', () => {
     const handlers = props();
     await render(<CreateFromSource kind="lesson" {...handlers} />);
 
+    expect(stepLine()).toBe('Step 1');
     expect(question()).toBe('How would you like to create your lesson?');
     await click(button('From a topicGenerate from a topic — not from a note you already have'));
     expect(stepLine()).toBe('Step 2 of 3');

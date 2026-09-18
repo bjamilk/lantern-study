@@ -12,10 +12,11 @@
  * Touches: `CreateFromSource` renders `wizardSteps(kind, source)[index]` and
  * shows `index + 1` of `length`. Nothing else consumes it.
  *
- * Gotcha: on step one there is no source yet, so there is no exact length. The
- * preview is the LONGEST path the kind can take (`longestSourceForKind`), i.e.
- * the most screens the student could be in for. Once a source is picked the
- * number is exact, and it only ever shrinks — never grows under them.
+ * Gotcha: on step one there is no source yet, so the total is NOT known — the
+ * paths are different lengths. This returns the source screen alone in that
+ * state and the chrome shows a bare "Step 1"; a denominator is only drawn once
+ * the path is fixed. An earlier cut previewed the longest path instead, and a
+ * "Step 1 of 5" that became "Step 2 of 3" read as a bug on the founder's pass.
  */
 import {
   CREATE_FROM_SOURCE_NOUN,
@@ -75,27 +76,6 @@ function stepsAfterSource(
   }
 }
 
-/**
- * The source whose path has the most screens — what step one counts against.
- * Ties go to the earlier source, so the preview follows the order the cards
- * are drawn in.
- */
-export function longestSourceForKind(kind: CreateFromSourceKind): CreateFromSourceId {
-  const sources = sourcesForKind(kind);
-  // `sourcesForKind` never returns an empty list; the fallback is only here so
-  // the type is exact rather than "maybe undefined" all the way down.
-  let best: CreateFromSourceId = sources[0] ?? 'scratch';
-  let bestLength = -1;
-  for (const source of sources) {
-    const length = stepsAfterSource(kind, source).length;
-    if (length > bestLength) {
-      best = source;
-      bestLength = length;
-    }
-  }
-  return best;
-}
-
 function questionFor(id: WizardStepId, kind: CreateFromSourceKind): { question: string; accent?: string } {
   const noun = CREATE_FROM_SOURCE_NOUN[kind];
   switch (id) {
@@ -125,16 +105,28 @@ function questionFor(id: WizardStepId, kind: CreateFromSourceKind): { question: 
 /**
  * Every screen this run of the wizard will show, in order.
  *
- * `source` null means step one, where the path is not chosen yet: the list is
- * the longest path the kind can take, so the stepper has a number to show.
+ * `source` null means step one, where the path is not chosen yet — so the only
+ * screen that is certain is the source screen itself, and that is all this
+ * returns. A one-screen list is how the chrome knows to leave the denominator
+ * off (`wizardTotalKnown`).
  */
 export function wizardSteps(
   kind: CreateFromSourceKind,
   source: CreateFromSourceId | null
 ): WizardStep[] {
-  const resolved = source ?? longestSourceForKind(kind);
-  const ids: WizardStepId[] = ['source', ...stepsAfterSource(kind, resolved)];
+  const ids: WizardStepId[] = [
+    'source',
+    ...(source ? stepsAfterSource(kind, source) : []),
+  ];
   return ids.map((id) => ({ id, ...questionFor(id, kind) }));
+}
+
+/**
+ * Whether "of M" may be drawn. False while the student is still on the source
+ * screen: the paths are different lengths, so there is no honest M yet.
+ */
+export function wizardTotalKnown(steps: readonly WizardStep[]): boolean {
+  return steps.length > 1;
 }
 
 /** Where `id` sits in this path, or 0 when it is not on it (step one). */
