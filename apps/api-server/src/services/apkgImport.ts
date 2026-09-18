@@ -24,8 +24,27 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-/** Parse Anki .apkg buffer (zip containing collection.anki2 SQLite DB) */
-export async function parseApkgBuffer(buffer: Buffer): Promise<ApkgImportResult> {
+/**
+ * Largest `collection.anki2` we will inflate into memory. The archive is
+ * student-supplied, and a zip's declared uncompressed size is attacker
+ * controlled (GHSA-7q85-xj36-vmfc): a few KB of zip can claim gigabytes. The
+ * whole SQLite file has to sit in memory for sql.js, so the cap is on the
+ * DECLARED size, checked before any inflation happens. Real Anki decks are
+ * tens of MB at most.
+ */
+export const MAX_APKG_DB_BYTES = 128 * 1024 * 1024;
+
+/**
+ * Parse Anki .apkg buffer (zip containing collection.anki2 SQLite DB).
+ *
+ * Nothing is ever extracted to disk — the one entry we need is read straight
+ * into memory — so entry names are never used as paths here.
+ */
+export async function parseApkgBuffer(
+  buffer: Buffer,
+  options: { maxDbBytes?: number } = {}
+): Promise<ApkgImportResult> {
+  const maxDbBytes = options.maxDbBytes ?? MAX_APKG_DB_BYTES;
   const AdmZip = (await import('adm-zip')).default;
   const initSqlJs = (await import('sql.js')).default;
 
@@ -36,6 +55,12 @@ export async function parseApkgBuffer(buffer: Buffer): Promise<ApkgImportResult>
   );
   if (!dbEntry) {
     throw new Error('Invalid APKG: collection.anki2 not found');
+  }
+  const declaredBytes = dbEntry.header?.size;
+  if (typeof declaredBytes === 'number' && declaredBytes > maxDbBytes) {
+    throw new Error(
+      `Invalid APKG: collection.anki2 is ${Math.round(declaredBytes / (1024 * 1024))} MB; the limit is ${Math.round(maxDbBytes / (1024 * 1024))} MB`
+    );
   }
 
   const SQL = await initSqlJs();
