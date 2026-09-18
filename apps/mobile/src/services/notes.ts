@@ -2,7 +2,11 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { API_BASE_URL, getAuthHeaders, getSession, supabase } from './supabase';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
-import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
+import {
+  DOCX_MIME,
+  assertDocumentFileName,
+  assertNoteUploadSize,
+} from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
 import { applyAIUsageFromResponse, applyAIUsageFromErrorBody } from './ai';
 import { awaitJobResult } from './jobWatch';
@@ -949,6 +953,50 @@ export const uploadPresentationViaApi = async (
       body: JSON.stringify({ fileName, base64Data, folderId }),
     }
   );
+};
+
+export interface DocumentTextExtraction {
+  title: string;
+  text: string;
+  truncated: boolean;
+}
+
+/**
+ * Read the text out of a Word document (.docx). Creates nothing.
+ *
+ * This is why there is no `uploadDocumentViaApi` twin of `uploadNotePdfViaApi`:
+ * the bytes are never stored. A PDF and a deck are kept because they have pages
+ * a student reads and a preview the room renders; a Word document has neither,
+ * so what it carries — the prose — goes straight into a note body through the
+ * SAME `createNote` the paste door uses. Nothing lands in `note-files`, no
+ * attachment row is written, and neither CHECK constraint on `notes.source_type`
+ * nor `note_attachments.type` has to gain a value, so no migration stands
+ * between this and a student using it.
+ *
+ * The name is checked here as well as on the server: refusing a legacy `.doc`
+ * before 25 MB of base64 leaves the phone is the difference between an instant
+ * answer and a minute on campus wifi for a file that was never going to work.
+ */
+export const extractDocumentTextViaApi = async (
+  fileUri: string,
+  fileName: string
+): Promise<DocumentTextExtraction> => {
+  const session = await getSession();
+  if (!session?.user?.id) {
+    throw new Error('Must be signed in to import documents.');
+  }
+  assertDocumentFileName(fileName);
+
+  const { base64Data } = await readLocalFileAsBase64(fileUri, fileName);
+  return notesRequest<DocumentTextExtraction>('/extract-document-text', {
+    method: 'POST',
+    body: JSON.stringify({
+      fileName,
+      base64Data,
+      // A cross-check only; the server decides from the name and the bytes.
+      contentType: DOCX_MIME,
+    }),
+  });
 };
 
 function imageContentTypeFromFileName(fileName: string): string {

@@ -1,6 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { AppIcon } from './ui/AppIcon';
-import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
+import {
+  buildImportedDocumentBody,
+  formatMaxNoteUploadLabel,
+} from '@lantern/shared/utils/noteUpload';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { HANDWRITING_OCR_OFF_MESSAGE } from '@lantern/shared/utils/handwritingOcr';
 import { Button } from './ui';
@@ -332,10 +335,9 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       // A truncated document is not an error — the note is real, it is just the
       // first N characters. Saying so IN the note is the only way the student
       // ever finds out; a toast is gone by the time they read it, and silence
-      // would let them revise from a document that quietly stops halfway.
-      const body = truncated
-        ? `${text}\n\n---\n\n[This document was longer than Lantern reads in one note. Everything above is the start of “${file.name}”; split the rest into a second file to bring it in.]`
-        : text;
+      // would let them revise from a document that quietly stops halfway. The
+      // sentence is shared with the phone's Word door so both say the same.
+      const body = buildImportedDocumentBody(text, file.name, truncated);
       await processContent(body, title, 'import');
     } catch (e: unknown) {
       useUIStore.getState().clearImportProgress();

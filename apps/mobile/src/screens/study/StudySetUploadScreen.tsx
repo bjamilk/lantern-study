@@ -44,6 +44,10 @@ type JobFilter = 'all' | 'processing' | 'done' | 'failed';
 const CHIPS = [
   { id: 'PDF', icon: 'document-text', hint: 'Pick a PDF' },
   { id: 'PPT', icon: 'easel', hint: 'Pick slides' },
+  // Word sits with the other document types, not at the end: it is the class
+  // file students hand in and hand round, and it was the one common one
+  // Lantern could not read. The door itself is inside ImportAndStudyModal.
+  { id: 'Word', icon: 'document', hint: 'Pick a Word document (.docx)' },
   { id: 'Audio', icon: 'headphones', hint: 'Pick an audio file' },
   { id: 'Video', icon: 'videocam', hint: 'Pick a video file' },
   { id: 'YouTube', icon: 'logo-youtube', hint: 'Paste a video link' },
@@ -164,6 +168,12 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
     });
   };
 
+  // KNOWN ISSUE (tracked, found during the mobile Word-door lane): the PDF,
+  // PPT, Audio and Video chips all open ImportAndStudyModal, which has no
+  // picker for any of them — it offers photos, Word and pasted text. The PDF
+  // and PowerPoint pickers exist, but in the Notes import sheet, not here. Not
+  // fixed in this lane (it is a separate door each, with its own upload path);
+  // the caption above no longer promises what this sheet cannot do.
   const openChip = (chip: (typeof CHIPS)[number]['id']) => {
     if (chip === 'YouTube') setPanel('youtube');
     else if (chip === 'Paste') setPanel('paste');
@@ -180,7 +190,7 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
       >
         <ScreenHeader
           title="Add materials"
-          subtitle="PDF, slides, audio, video, YouTube or pasted text — filed in this set."
+          subtitle="PDF, slides, Word, audio, video, YouTube or pasted text — filed in this set."
           onBack={() => navigation.goBack()}
         />
 
@@ -193,7 +203,7 @@ export function StudySetUploadScreen({ navigation, route }: Props) {
           <AppIcon name="cloud-upload" size={28} />
           <T.Body className="mt-3">Choose files</T.Body>
           <T.Caption tone="secondary" className="mt-1">
-            PDF, slides, audio or a photo of your pages
+            A Word document, or a photo of your pages
           </T.Caption>
         </Pressable>
 

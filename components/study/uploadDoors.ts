@@ -29,6 +29,7 @@
  * each door names, and the handlers `routeUploadFiles` picks).
  */
 import type { StudyUploadSource } from '@lantern/shared';
+import { DOCX_MIME } from '@lantern/shared/utils/noteUpload';
 import type { AppIconName } from '../ui/AppIcon';
 
 /** What pressing a door does. */
@@ -116,9 +117,14 @@ export const UPLOAD_DOORS: readonly UploadDoor[] = [
   ...UPLOAD_DOORS_MORE,
 ];
 
-/** The docx mime, spelled once. Legacy binary `.doc` is deliberately absent. */
-export const DOCX_MIME =
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+/**
+ * The docx mime, spelled once — in `@lantern/shared/utils/noteUpload`, because
+ * the phone's Word door asks its document picker for the same string and a mime
+ * that drifts is a picker that shows no files at all. Re-exported here so every
+ * existing importer of this module keeps working. Legacy binary `.doc` is
+ * deliberately absent.
+ */
+export { DOCX_MIME };
 
 /**
  * The dropzone's `accept`. It is the UNION of the modal's own file inputs and
