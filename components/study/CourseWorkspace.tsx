@@ -119,7 +119,7 @@ import { StudySetSettingsModal } from './StudySetSettingsModal';
 import { StudySetTimer } from './StudySetTimer';
 import { StudySetUpload } from './StudySetUpload';
 import { SetMaterialsPage } from './SetMaterialsPage';
-import { PracticeHub, type PracticeTab } from './PracticeHub';
+import { PracticeHub, practiceTabForActivity, practiceTabLabel } from './PracticeHub';
 import { CreateFromSource } from './CreateFromSource';
 import { NoteRoomRow } from './NoteRoomRow';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
@@ -825,6 +825,28 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     focusMode && activity !== 'home' && activity !== 'add' && activity !== 'materials'
       ? activity
       : null;
+
+  /**
+   * What the focus bar calls the pane when the Practice hub is what is open.
+   *
+   * The hub is three tabs over the `quiz` pane, so `focusActivity` is `quiz`
+   * on all three and the bar would read "Quiz ▾" over a list of tests, or over
+   * All. Only the WORD is overridden — the icon and the tool menu still come
+   * from the activity, because the tool really is the quiz studio.
+   *
+   * Null on every other route, and null once a quiz is actually open: the
+   * conditions mirror the hub's own render arm exactly, so the bar cannot say
+   * "Practice" over a running quiz.
+   */
+  const practiceHubOpen = Boolean(
+    studySetId &&
+      !routePath?.createNew &&
+      ((activity === 'quiz' && !routePath?.quizId && !quizSeed && !quizLive) ||
+        (activity === 'test' && !routePath?.testId))
+  );
+  const practiceHubTabLabel = practiceHubOpen
+    ? practiceTabLabel(practiceTabForActivity(routePath?.activity))
+    : null;
 
   /**
    * How much room the AI companion gets, measured off the row below rather than
@@ -1642,12 +1664,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
    * never off local state, so Back moves between tabs and a tab can be shared.
    */
   const renderPracticeHub = () => {
-    const tab: PracticeTab =
-      routePath?.activity === 'practice'
-        ? 'all'
-        : routePath?.activity === 'test'
-          ? 'tests'
-          : 'quiz';
+    const tab = practiceTabForActivity(routePath?.activity);
     return (
       <PracticeHub
         setLabel={label}
@@ -1683,13 +1700,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             return;
           }
           go(kind, { createNew: true });
-        }}
-        // Unchanged from the quiz library: these are SET folders, and opening
-        // one leaves the room for the set picker. Not a Practice concept.
-        folders={folders.map((folder) => ({ id: folder.id, title: folder.title }))}
-        onOpenFolder={() => {
-          openPicker();
-          navigateTo(AppMode.STUDY_HUB);
         }}
       />
     );
@@ -1830,6 +1840,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               tileHue={studySet?.tileHue}
               tileGlyph={studySet?.tileGlyph}
               activity={focusActivity}
+              // The Practice hub is three tabs over the `quiz` pane, so the
+              // bar would say "Quiz" on all three. Only the WORD is overridden:
+              // the icon and the tool menu still come from the activity.
+              {...(practiceHubTabLabel ? { label: practiceHubTabLabel } : {})}
               onBack={() => go('home')}
               onActivity={handleActivity}
               onOpenSettings={() => setSettingsOpen(true)}

@@ -68,6 +68,15 @@ export interface SetRoomFocusBarProps {
   tileGlyph?: string | null;
   /** The studio that is open. Its row is the menu's label. */
   activity: WorkspaceActivityId;
+  /**
+   * What the trigger SAYS, when the pane is not simply one studio.
+   *
+   * The Practice hub is three tabs over the `quiz` pane, so `activity` is
+   * `quiz` on all of them and the bar would read "Quiz" while the student is
+   * looking at Tests, or at All. The icon and the menu still come from
+   * `activity` — only the word changes, because only the word is wrong.
+   */
+  label?: string;
   /** Back to the set home. */
   onBack: () => void;
   /** Switch studios — the room's own `handleActivity`, ready tools only. */
@@ -92,6 +101,7 @@ export const SetRoomFocusBar: React.FC<SetRoomFocusBarProps> = ({
   tileHue,
   tileGlyph,
   activity,
+  label,
   onBack,
   onActivity,
   timer,
@@ -100,6 +110,8 @@ export const SetRoomFocusBar: React.FC<SetRoomFocusBarProps> = ({
   menu,
 }) => {
   const current = activityById(activity);
+  // The word may be overridden; the icon and the menu never are.
+  const toolLabel = label ?? current?.label ?? 'Tool';
   const kebab: SetRoomHeaderMenuItem[] = [
     { id: 'settings', label: 'Set settings', onSelect: onOpenSettings },
     ...menu,
@@ -155,7 +167,7 @@ export const SetRoomFocusBar: React.FC<SetRoomFocusBarProps> = ({
             is a direct flex child and this class is the whole contract. */}
         <Menu>
           <MenuTrigger
-            aria-label={`${current?.label ?? 'Tool'} — switch tool`}
+            aria-label={`${toolLabel} — switch tool`}
             className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-2.5 text-body font-medium text-lantern-text hover:bg-lantern-background-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
           >
             {current ? (
@@ -165,7 +177,7 @@ export const SetRoomFocusBar: React.FC<SetRoomFocusBarProps> = ({
                 className={`shrink-0 ${FEATURE_INK_TEXT[current.feature]}`}
               />
             ) : null}
-            <span>{current?.label ?? 'Tool'}</span>
+            <span>{toolLabel}</span>
             <AppIcon
               name="chevron-down"
               size={14}

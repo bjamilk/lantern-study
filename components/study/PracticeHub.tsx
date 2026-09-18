@@ -32,11 +32,16 @@ import { ViewModeToggle, useViewMode } from './ViewModeToggle';
  *  - The tabs are a real `role="tablist"` with arrow-key movement and roving
  *    tabindex. They are also LINKS in effect — each one navigates — so they
  *    must not be `aria-pressed` toggles.
- *  - There is NO "Create folder" card, although the reference has one: nothing
- *    in Lantern files a quiz or a test into a folder, so the card would be a
- *    live control that does nothing. The set folders the quiz library already
- *    passes through are a different object (they group SETS) and are left
- *    exactly as they were.
+ *  - There is NO folder card here, and no "Create folder" — although the
+ *    reference has both. Nothing in Lantern files a quiz or a test into a
+ *    folder: there is no `folderId` on a test row anywhere, and the only
+ *    "folders" in reach are `useStudySetStore.folders`, which come from
+ *    `/users/me/study-sets/folders` and group SETS. The old quiz library
+ *    passed those through, so a set folder was drawn beside the quizzes
+ *    reading "<name> · Folder" and clicking it LEFT the room for the set
+ *    picker. A founder read that as a quiz folder on the 2026-09-17 pass,
+ *    which is exactly the misreading it invites, so the hub does not draw it.
+ *    A real Practice folder needs a column on the tests table first.
  */
 
 export type PracticeTab = 'all' | 'tests' | 'quiz';
@@ -46,6 +51,31 @@ export const PRACTICE_TABS: readonly { id: PracticeTab; label: string }[] = [
   { id: 'tests', label: 'Tests' },
   { id: 'quiz', label: 'Quiz' },
 ];
+
+/**
+ * Which tab a set-room path activity opens the hub on.
+ *
+ * ONE function, because the answer is consumed twice — by the hub's body and
+ * by the focus bar's label — and two copies of a rule this small drift within
+ * a release, which is how the bar ends up saying "Quiz" over a list of tests.
+ */
+export function practiceTabForActivity(activity?: string | null): PracticeTab {
+  if (activity === 'practice') return 'all';
+  if (activity === 'test') return 'tests';
+  return 'quiz';
+}
+
+/**
+ * What the focus bar says over each tab.
+ *
+ * The All tab is "Practice", not "All": the bar answers "which tool am I in",
+ * and "All" answers nothing on its own. The other two take their tab's word.
+ */
+export function practiceTabLabel(tab: PracticeTab): string {
+  if (tab === 'all') return 'Practice';
+  if (tab === 'tests') return 'Tests';
+  return 'Quiz';
+}
 
 /** What the Create menu offers, in the reference's order. */
 export type PracticeCreateKind = 'quiz' | 'test' | 'cards';
@@ -64,9 +94,6 @@ interface PracticeHubProps {
   tests: readonly ArtifactCard[];
   onOpen: (tab: Exclude<PracticeTab, 'all'>, id: string) => void;
   onCreate: (kind: PracticeCreateKind) => void;
-  /** Passed straight through to the quiz tab, unchanged from before the hub. */
-  folders?: Array<{ id: string; title: string }>;
-  onOpenFolder?: (id: string) => void;
   renderItemMenu?: (item: ArtifactCard) => React.ReactNode;
 }
 
@@ -78,8 +105,6 @@ export const PracticeHub: React.FC<PracticeHubProps> = ({
   tests,
   onOpen,
   onCreate,
-  folders = [],
-  onOpenFolder,
   renderItemMenu,
 }) => {
   const [query, setQuery] = useState('');
@@ -229,7 +254,6 @@ export const PracticeHub: React.FC<PracticeHubProps> = ({
             }}
             onCreate={tab === 'tests' ? () => onCreate('test') : () => onCreate('quiz')}
             createLabel={tab === 'tests' ? 'New test' : 'New quiz'}
-            {...(tab === 'tests' ? {} : { folders, ...(onOpenFolder ? { onOpenFolder } : {}) })}
             {...(renderItemMenu ? { renderItemMenu } : {})}
           />
         ) : body.length === 0 ? (

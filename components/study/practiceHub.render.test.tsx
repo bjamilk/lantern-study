@@ -12,7 +12,12 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
-import { PracticeHub, PRACTICE_TABS, type PracticeTab } from './PracticeHub';
+import {
+  PracticeHub,
+  PRACTICE_TABS,
+  practiceTabForActivity,
+  practiceTabLabel,
+} from './PracticeHub';
 import type { ArtifactCard } from './StudySetArtifactLibrary';
 import { workspaceActivityFromPath, type StudySetPathActivity } from '@lantern/shared';
 
@@ -99,9 +104,7 @@ describe('what each tab shows', () => {
 });
 
 describe('the deep links', () => {
-  /** The rule the hub reads, spelled out here so a route change breaks it. */
-  const tabFor = (activity: StudySetPathActivity): PracticeTab =>
-    activity === 'practice' ? 'all' : activity === 'test' ? 'tests' : 'quiz';
+  const tabFor = (activity: StudySetPathActivity) => practiceTabForActivity(activity);
 
   it('keeps /quiz and /test meaning what they meant', () => {
     expect(tabFor('quiz')).toBe('quiz');
@@ -115,11 +118,57 @@ describe('the deep links', () => {
   });
 });
 
+describe('what the focus bar calls the pane', () => {
+  /**
+   * The bar takes its word from here, not from the activity, because all three
+   * tabs ARE the `quiz` activity. Before this it read "Quiz ▾" over a list of
+   * tests — found on the founder's 2026-09-17 visual pass of #130.
+   */
+  it('says Practice on the All tab, never "All"', () => {
+    expect(practiceTabLabel('all')).toBe('Practice');
+  });
+
+  it('says Tests and Quiz on the other two', () => {
+    expect(practiceTabLabel('tests')).toBe('Tests');
+    expect(practiceTabLabel('quiz')).toBe('Quiz');
+  });
+
+  it('follows the path, so a deep link names itself correctly', () => {
+    expect(practiceTabLabel(practiceTabForActivity('practice'))).toBe('Practice');
+    expect(practiceTabLabel(practiceTabForActivity('test'))).toBe('Tests');
+    expect(practiceTabLabel(practiceTabForActivity('quiz'))).toBe('Quiz');
+  });
+});
+
 describe('the deliberate omission', () => {
-  it('draws NO "Create folder" card — nothing files a quiz into a folder', () => {
-    // The reference has one. Lantern has no quiz-folder model, so the card
-    // would be a live control that does nothing — the pattern the declutter
-    // pass removed everywhere else.
-    expect(hub().toLowerCase()).not.toContain('create folder');
+  /**
+   * The founder's pass saw "SF6 pass folder · Folder" beside the quizzes and
+   * read it as a quiz folder. It was not one: the old quiz library passed
+   * `useStudySetStore.folders` through, which come from
+   * `/users/me/study-sets/folders` and group SETS — clicking one LEFT the room
+   * for the set picker. No test row carries a `folderId` anywhere. So the hub
+   * draws neither the folder nor a Create folder that could only make the
+   * wrong kind.
+   */
+  it('draws no folder card and no "Create folder"', () => {
+    const html = hub().toLowerCase();
+    expect(html).not.toContain('create folder');
+    expect(html).not.toContain('· folder');
+  });
+
+  it('takes no folder props at all, so none can be passed back in by accident', () => {
+    expect(Object.keys(hub())).not.toContain('folders');
+    // The real guard: the prop type has no `folders`, so this file would not
+    // compile if one were reintroduced without a decision.
+    const props: React.ComponentProps<typeof PracticeHub> = {
+      setLabel: 'BIO 201',
+      tab: 'all',
+      onTabChange: () => {},
+      quizzes: [],
+      tests: [],
+      onOpen: () => {},
+      onCreate: () => {},
+    };
+    expect('folders' in props).toBe(false);
   });
 });
