@@ -313,16 +313,14 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
    */
   useEffect(() => {
     if (status !== 'idle' || !activeNote?.id) return;
-    hydrateFromNote(activeNote.id, activeNote.attachments as Array<Record<string, unknown>>);
+    hydrateFromNote(activeNote.id, activeNote.attachments);
   }, [status, activeNote?.id, activeNote?.attachments, hydrateFromNote]);
 
   /** An interrupted take: offer to carry on, or just to finish transcribing. */
   const recovery = useMemo(() => {
     if (status !== 'idle' || !activeNote) return null;
     const decision = resolveLectureResume({
-      rows: lectureSegmentRows(
-        (activeNote.attachments ?? []) as Parameters<typeof lectureSegmentRows>[0]
-      ),
+      rows: lectureSegmentRows(activeNote.attachments ?? []),
     });
     return decision.action === 'recover' ? decision : null;
   }, [status, activeNote?.id, activeNote?.attachments]);

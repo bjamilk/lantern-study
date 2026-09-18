@@ -52,6 +52,7 @@ import {
   newLectureSessionId,
   resolveLectureResume,
   shouldRotateLectureSegment,
+  type LectureSegmentAttachmentLike,
   type LectureSegmentRow,
 } from '@lantern/shared/utils/lectureSegments';
 import { create } from 'zustand';
@@ -160,7 +161,7 @@ interface LectureRecordingState {
   /** Read the note's own segment rows so a reload can offer to carry on. */
   hydrateFromNote: (
     noteId: string,
-    attachments: Array<Record<string, unknown>> | null | undefined
+    attachments: readonly LectureSegmentAttachmentLike[] | null | undefined
   ) => void;
   /** Provide latest editor body for the active note (optional). */
   setCurrentBodyProvider: (provider: (() => string) | null) => void;
@@ -811,9 +812,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
      */
     hydrateFromNote: (noteId, attachments) => {
       if (get().status !== 'idle') return;
-      const rows: LectureSegmentRow[] = lectureSegmentRows(
-        (attachments ?? []) as Parameters<typeof lectureSegmentRows>[0]
-      );
+      const rows: LectureSegmentRow[] = lectureSegmentRows(attachments ?? []);
       const decision = resolveLectureResume({ rows });
       if (decision.action === 'none' && rows.length === 0) {
         set({ segments: [], sessionId: null });

@@ -63,6 +63,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
 import { LectureLanguagePicker } from '../../components/lecture/LectureLanguagePicker';
 import { LectureTabs } from '../../components/lecture/LectureTabs';
+import { LectureTranscriptSegments } from '../../components/lecture/LectureSegmentList';
 import { lectureStudioView } from './lectureStudioView';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
@@ -104,6 +105,10 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   const resumeRecording = useLectureRecordingStore((s) => s.resumeRecording);
   const discardRecording = useLectureRecordingStore((s) => s.discard);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
+  const segments = useLectureRecordingStore((s) => s.segments);
+  const segmentsNoteId = useLectureRecordingStore((s) => s.transcriptNoteId);
+  const retrySegment = useLectureRecordingStore((s) => s.retrySegment);
+  const hydrateFromNote = useLectureRecordingStore((s) => s.hydrateFromNote);
 
   const courseNotes = useMemo(
     () => studioMaterials(notes, { studySetId, courseId }),
@@ -232,6 +237,19 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   }, [recording]);
   const busy = status === 'uploading' || status === 'transcribing' || status === 'naming';
   const paused = recording && Boolean(pausedAt);
+
+  /**
+   * Read the note's own segment rows whenever a lecture is opened and nothing
+   * is running. This is the recovery path: the rows were written BEFORE their
+   * audio was transcribed, so an app Android reaped mid-lecture left a trail
+   * here that the cache file could never have left.
+   */
+  useEffect(() => {
+    if (status !== 'idle' || !activeNote?.id) return;
+    hydrateFromNote(activeNote.id, activeNote.attachments);
+  }, [status, activeNote?.id, activeNote?.attachments, hydrateFromNote]);
+
+  const segmentsForNote = segmentsNoteId === activeNote?.id ? segments : [];
 
   const tabSource = {
     body: activeNote?.body ?? '',
@@ -521,18 +539,21 @@ export function LectureStudioScreen({ navigation, route }: Props) {
               className="rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-heading text-lantern-text"
             />
 
+            {/*
+              The transcript during class. The Transcript TAB is locked while a
+              take runs — nothing may pull a typing student off My Notes — so
+              the growing list lives here, above the tabs.
+            */}
             {recording || busy ? (
               <View>
                 <T.Label>Live transcript</T.Label>
                 <View className="mt-2 min-h-[120px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
-                  {liveTranscript ? (
-                    <T.Body>{liveTranscript}</T.Body>
-                  ) : (
-                    <T.Body tone="tertiary">
-                      Listening… captions appear here when this phone can transcribe live. The full
-                      transcript still lands after you stop.
-                    </T.Body>
-                  )}
+                  <LectureTranscriptSegments
+                    segments={segmentsForNote}
+                    liveCaptions={liveTranscript}
+                    recording={recording}
+                    onRetry={(seq) => void retrySegment(seq)}
+                  />
                 </View>
               </View>
             ) : null}
@@ -540,6 +561,8 @@ export function LectureStudioScreen({ navigation, route }: Props) {
             {/* The lecture surface, shared with the Library door. */}
             <LectureTabs
               noteId={activeNote?.id}
+              segments={segmentsForNote}
+              onRetrySegment={(seq) => void retrySegment(seq)}
               source={tabSource}
               noteTitle={title || activeNote?.title}
               recording={recording}

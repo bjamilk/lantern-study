@@ -279,7 +279,14 @@ export function lectureSegmentFileName(
   return `lecture-${noteId}-${seq}.${ext}`;
 }
 
-type AttachmentLike = {
+/**
+ * The attachment fields a segment is read out of.
+ *
+ * Structural and all-optional on purpose: the web's `StudyNote.attachments`,
+ * the phone's `NoteAttachment` and a raw API row are three different types for
+ * the same table, and none of them should have to be cast to be read here.
+ */
+export type LectureSegmentAttachmentLike = {
   id?: string;
   type?: string | null;
   fileName?: string | null;
@@ -297,7 +304,7 @@ type AttachmentLike = {
  * audio attachment — the old single-take recording is exactly that, and it must
  * keep playing in the Audio tab rather than being shown as "segment NaN".
  */
-export function lectureSegmentMeta(row: AttachmentLike | null | undefined): LectureSegmentMeta | null {
+export function lectureSegmentMeta(row: LectureSegmentAttachmentLike | null | undefined): LectureSegmentMeta | null {
   if (!row || (row.type ?? '') !== 'audio') return null;
   const raw = row.metadata?.['lectureSegment'];
   if (!raw || typeof raw !== 'object') return null;
@@ -330,7 +337,7 @@ export interface LectureSegmentRow extends LectureSegmentMeta {
 
 /** Every segment on a note, oldest first, across all takes. */
 export function lectureSegmentRows(
-  attachments: AttachmentLike[] | null | undefined
+  attachments: readonly LectureSegmentAttachmentLike[] | null | undefined
 ): LectureSegmentRow[] {
   const rows: LectureSegmentRow[] = [];
   for (const row of attachments ?? []) {

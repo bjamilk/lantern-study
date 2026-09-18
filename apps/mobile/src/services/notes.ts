@@ -328,6 +328,118 @@ export async function uploadLectureAudioViaSignedUrl(
   };
 }
 
+/* --------------------------------------------- segmented lecture audio ----
+ * The phone's half of segmented recording. The web twin is services/notes.ts
+ * at the repo root; the wire shape is identical on purpose, because the server
+ * prices and de-duplicates both from the same `lectureSegment` block.
+ *
+ * `prepare` registers the segment on the note BEFORE the file leaves the
+ * phone, so a lecture survives the app being killed — which on Android is a
+ * routine event, not an edge case. `FileSystem.uploadAsync` streams the cache
+ * file straight to storage rather than reading a five-minute clip into a
+ * base64 string, which on a mid-range phone is the difference between an
+ * upload and an out-of-memory crash.
+ */
+
+export interface LectureSegmentUploadTicket {
+  storagePath: string;
+  signedUrl: string;
+  token: string;
+  bucket: string;
+  mimeType: string;
+  fileName: string;
+  attachmentId: string | null;
+  /** The server already has this segment's words. Skip the upload entirely. */
+  alreadyTranscribed: boolean;
+}
+
+export const prepareLectureSegmentUpload = (input: {
+  noteId: string;
+  sessionId: string;
+  seq: number;
+  startOffsetMs: number;
+  durationMs: number;
+  mimeType: string;
+  byteLength: number;
+  signal?: AbortSignal;
+}) =>
+  notesLongTimedRequest<LectureSegmentUploadTicket>(
+    '/lecture-segments/prepare',
+    {
+      noteId: input.noteId,
+      mimeType: input.mimeType,
+      byteLength: input.byteLength,
+      lectureSegment: {
+        sessionId: input.sessionId,
+        seq: input.seq,
+        startOffsetMs: input.startOffsetMs,
+        durationMs: input.durationMs,
+      },
+    },
+    { signal: input.signal, timeoutMs: 60_000 }
+  );
+
+/** Stream one segment's cache file to the signed URL. */
+export async function uploadLectureSegment(
+  localFileUri: string,
+  ticket: LectureSegmentUploadTicket
+): Promise<void> {
+  const contentType = ticket.mimeType || 'audio/mp4';
+  const result = await FileSystem.uploadAsync(ticket.signedUrl, localFileUri, {
+    httpMethod: 'PUT',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: { 'Content-Type': contentType, 'x-upsert': 'true' },
+  });
+  if (result.status >= 200 && result.status < 300) return;
+  throw new Error(
+    `Could not upload this part of the lecture (${result.status}). It is still on your phone.`
+  );
+}
+
+export interface LectureSegmentTranscribeResult {
+  transcript: string;
+  /** The whole ordered transcript region of the note after this write. */
+  transcriptText?: string;
+  segment?: { seq: number; startOffsetMs: number; replayed: boolean };
+  note?: StudyNote;
+  persistWarning?: string;
+}
+
+export const transcribeLectureSegment = (input: {
+  noteId: string;
+  sessionId: string;
+  seq: number;
+  startOffsetMs: number;
+  durationMs: number;
+  storagePath: string;
+  mimeType: string;
+  fileName: string;
+  byteLength: number;
+  language?: string;
+  translateTo?: string;
+  signal?: AbortSignal;
+}) =>
+  notesLongTimedRequest<LectureSegmentTranscribeResult>(
+    '/transcribe-audio',
+    {
+      storagePath: input.storagePath,
+      mimeType: input.mimeType,
+      noteId: input.noteId,
+      fileName: input.fileName,
+      durationMs: input.durationMs,
+      clientByteLength: input.byteLength,
+      language: input.language,
+      translateTo: input.translateTo,
+      lectureSegment: {
+        sessionId: input.sessionId,
+        seq: input.seq,
+        startOffsetMs: input.startOffsetMs,
+        durationMs: input.durationMs,
+      },
+    },
+    { signal: input.signal, timeoutMs: 120_000 }
+  );
+
 export const transcribeAudioForNote = async (
   audioBase64: string,
   options?: {

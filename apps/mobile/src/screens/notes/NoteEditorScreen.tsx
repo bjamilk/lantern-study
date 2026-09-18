@@ -228,6 +228,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const discardLectureRecording = useLectureRecordingStore((s) => s.discard);
   const cancelLectureTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
+  const lectureSegments = useLectureRecordingStore((s) => s.segments);
+  const lectureSegmentsNoteId = useLectureRecordingStore((s) => s.transcriptNoteId);
+  const retryLectureSegment = useLectureRecordingStore((s) => s.retrySegment);
+  const hydrateLectureSegments = useLectureRecordingStore((s) => s.hydrateFromNote);
   const committedTranscript = useLectureRecordingStore((s) => s.committedTranscript);
   const interimTranscript = useLectureRecordingStore((s) => s.interimTranscript);
   const whisperTranscript = useLectureRecordingStore((s) => s.whisperTranscript);
@@ -284,6 +288,16 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [aiUsage, setAiUsage] = useState(getLatestAIUsage());
 
   useEffect(() => subscribeToAIUsage(setAiUsage), []);
+
+  /**
+   * Read this note's own segment rows when nothing is recording, so a lecture
+   * opened from Library shows the same stamped cards and the same per-segment
+   * players as the studio — including a take that was interrupted.
+   */
+  useEffect(() => {
+    if (lectureStatus !== 'idle' || !noteId) return;
+    hydrateLectureSegments(noteId, selectedNote?.attachments);
+  }, [lectureStatus, noteId, selectedNote?.attachments, hydrateLectureSegments]);
 
   useEffect(() => {
     setStudyIntent({
@@ -1681,6 +1695,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 noteId={noteId}
                 source={lectureTabSource}
                 noteTitle={title || selectedNote?.title}
+                /*
+                  The Library door onto the same lecture. A recording made in
+                  the studio — or on the laptop — shows here as the same stamped
+                  cards and the same per-segment players, because both doors
+                  read the note's own rows.
+                */
+                segments={lectureSegmentsNoteId === noteId ? lectureSegments : []}
+                onRetrySegment={(seq) => void retryLectureSegment(seq)}
                 recording={false}
                 tab={requestedTab}
                 onTabChange={setRequestedTab}
