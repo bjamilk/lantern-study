@@ -13,7 +13,9 @@ import {
 import { T } from '../ui';
 import { NoteBody } from '../NoteBody';
 import { LectureAudioPlayer } from './LectureAudioPlayer';
+import { LectureAudioSegments, LectureTranscriptSegments } from './LectureSegmentList';
 import { isLectureTabLocked } from './lectureTabLock';
+import type { LectureSegmentUi } from '../../stores/lectureRecordingStore';
 
 /**
  * The lecture surface — My Notes / Enhanced Notes / Materials / Transcript / Audio.
@@ -53,6 +55,16 @@ export interface LectureTabsProps {
   renderEnhanced?: (parts: { enhanced: string }) => React.ReactNode;
   /** Uploaded document / YouTube / photos. */
   renderMaterials?: () => React.ReactNode;
+  /**
+   * The lecture's segments, when it has any.
+   *
+   * Present, they replace the flat transcript and the single audio player with
+   * per-segment cards and per-segment players. Absent, both tabs render exactly
+   * as they did — a lecture recorded before this existed is one whole take and
+   * must keep working.
+   */
+  segments?: LectureSegmentUi[];
+  onRetrySegment?: (seq: number) => void;
   /** Controlled selection. Omit to let this component keep its own. */
   tab?: LectureTabId | null;
   onTabChange?: (tab: LectureTabId) => void;
@@ -66,6 +78,8 @@ export function LectureTabs({
   renderNotes,
   renderEnhanced,
   renderMaterials,
+  segments,
+  onRetrySegment,
   tab: controlledTab,
   onTabChange,
 }: LectureTabsProps) {
@@ -141,7 +155,9 @@ export function LectureTabs({
         <View>
           <T.Label>Transcript</T.Label>
           <View className="mt-2 min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
-            {transcriptLines.length ? (
+            {segments && segments.length ? (
+              <LectureTranscriptSegments segments={segments} onRetry={onRetrySegment} />
+            ) : transcriptLines.length ? (
               <View style={{ gap: 8 }}>
                 {transcriptLines.map((line, index) => (
                   <View key={`${line.time ?? ''}-${index}`} className="flex-row" style={{ gap: 12 }}>
@@ -168,7 +184,15 @@ export function LectureTabs({
         <View>
           <T.Label>Audio</T.Label>
           <View className="mt-2">
-            {noteId && audioRow ? (
+            {noteId && segments && segments.length ? (
+              <LectureAudioSegments
+                noteId={noteId}
+                segments={segments}
+                noteTitle={noteTitle}
+                attachments={source.attachments}
+              />
+            ) : noteId && audioRow ? (
+              /* A lecture recorded before segments existed: one whole take. */
               <LectureAudioPlayer noteId={noteId} attachment={audioRow} noteTitle={noteTitle} />
             ) : (
               <T.Body tone="tertiary">No recording is saved on this lecture yet.</T.Body>
