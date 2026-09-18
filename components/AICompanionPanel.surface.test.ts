@@ -76,3 +76,56 @@ describe('the greeting', () => {
     expect(flat("firstName={context?.userName || currentUser?.firstName || ''}")).toBe(true);
   });
 });
+
+describe('the composer', () => {
+  const COMPOSER = PANEL.slice(PANEL.indexOf('{/* THE COMPOSER'), PANEL.indexOf('<AIDisclaimer'));
+
+  it('puts the field and send on one row and the modifiers underneath', () => {
+    // The order in the source IS the order on screen: textarea, send, then the
+    // tool bar. Before wave 4 three icon buttons sat to the LEFT of the field,
+    // which at 400px left the field about half the row.
+    const field = COMPOSER.indexOf('<textarea');
+    const send = COMPOSER.indexOf('aria-label="Send message"');
+    const tools = COMPOSER.indexOf('The tool bar');
+    expect(field).toBeGreaterThan(-1);
+    expect(send).toBeGreaterThan(field);
+    expect(tools).toBeGreaterThan(send);
+  });
+
+  it('keeps the placeholder in Lantern’s own voice', () => {
+    // The reference says "Ask your AI tutor anything…"; the tutor has a name
+    // here, and it is the one the panel introduces itself with.
+    expect(COMPOSER).toContain("'Ask Lantern anything…'");
+  });
+
+  it('draws send at the measured 32×32', () => {
+    expect(COMPOSER).toContain('h-8 w-8 items-center justify-center rounded-full');
+  });
+
+  it('keeps every tool-bar control on a 44px target', () => {
+    const toolbar = COMPOSER.slice(COMPOSER.indexOf('The tool bar'));
+    const buttons = toolbar.match(/<button\b/g)?.length ?? 0;
+    expect(buttons).toBe(4); // image, attach, Guided, mic
+    expect(toolbar.match(/min-h-\[44px\]/g)?.length).toBe(buttons);
+  });
+
+  it('keeps the Guided toggle, with its icon and its pressed state', () => {
+    expect(COMPOSER).toContain('aria-pressed={guided}');
+    expect(COMPOSER).toContain("<AppIcon name=\"school\" size={14} />");
+  });
+
+  it('keeps the mic, because the app really does transcribe', () => {
+    // `startDictation` records with MediaRecorder and transcribes server-side;
+    // this is the one reference voice control Lantern can honestly draw.
+    expect(COMPOSER).toContain('startDictation()');
+    expect(COMPOSER).toContain("name=\"mic\"");
+  });
+
+  it('draws no Call button, because there is no realtime voice model', () => {
+    expect(PANEL).not.toMatch(/aria-label="(Start a )?[Cc]all/);
+  });
+
+  it('keeps the honesty line under the composer', () => {
+    expect(PANEL).toContain('<AIDisclaimer compact />');
+  });
+});

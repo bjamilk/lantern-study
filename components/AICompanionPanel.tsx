@@ -1604,102 +1604,19 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               />
             </div>
           )}
-          {/* The Guided pill sits in the composer row, where the mode it
-              changes is — not in a settings menu. It is a toggle, so it carries
-              its state in `aria-pressed` rather than only in its fill, and it
-              stays live mid-lesson so normal chat is one tap away. */}
-          <div className="mb-1.5 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                setGuided((v) => {
-                  // Turning Guided ON is a fresh intent to pick a goal, so the
-                  // card above the composer comes back even if it was shut
-                  // earlier in this thread.
-                  setGuidedPickerDismissed(false);
-                  // Leaving Guided ends the lesson. Without this, turning the
-                  // pill back on later would resume a topic from a
-                  // conversation the student had moved on from.
-                  if (v) clearGuided();
-                  return !v;
-                })
-              }
-              aria-pressed={guided}
-              aria-label={
-                guided
-                  ? 'Guided mode on. Turn off to go back to normal chat.'
-                  : 'Guided mode off. Turn on to be taught one step at a time.'
-              }
-              title={guided ? 'Back to normal chat' : GUIDED_MODE_PROMISE}
-              className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-full border px-3 text-label font-medium transition-colors
-                ${guided
-                  ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary/20'
-                  : theme === 'dark'
-                    ? 'border-lantern-border text-lantern-text-tertiary hover:text-lantern-primary'
-                    : 'border-lantern-border text-lantern-text-secondary hover:text-lantern-primary'
-                }`}
-            >
-              <AppIcon name="school" size={14} />
-              Guided
-            </button>
-          </div>
-          <div className={`flex items-end gap-2 rounded-xl border px-3 py-2
+          {/* THE COMPOSER, to the reference's anatomy (wave 4): the text field
+              with the send button on its right, and a TOOL BAR underneath
+              holding everything that changes how the message is sent — attach,
+              Guided, dictate. They used to be three icons wedged to the left of
+              the textarea with the Guided pill floating on a line of its own
+              above, which at 400px squeezed the field to about half the row.
+              What is NOT here, and deliberately: the reference's "Call" pill.
+              A voice call with the tutor needs a realtime speech model and a
+              WebRTC leg; a button that opens nothing is worse than no button
+              (see the PR body). */}
+          <div className={`rounded-xl border px-3 py-2
             ${theme === 'dark' ? 'bg-lantern-surface-secondary border-lantern-border' : 'bg-lantern-surface border-lantern-border'}`}>
-            <button
-              type="button"
-              onClick={() => imageInputRef.current?.click()}
-              disabled={isBusy || isUploadingImage || pendingImages.length >= MAX_IMAGE_ATTACHMENTS}
-              // The price is in the tooltip because it is spent on the pick,
-              // before anything is typed or sent.
-              title={`Add image — ${IMAGE_ATTACH_COST_LABEL}`}
-              aria-label={`Add image (${IMAGE_ATTACH_COST_LABEL})`}
-              className={`flex-shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40
-                ${pendingImages.length
-                  ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary/20'
-                  : theme === 'dark'
-                    ? 'text-lantern-text-tertiary hover:bg-lantern-surface hover:text-lantern-primary'
-                    : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
-                }`}
-            >
-              <AppIcon name={isUploadingImage ? 'time' : 'image'} size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowNotePicker((v) => !v)}
-              disabled={isBusy}
-              title="Attach a note as context"
-              aria-label="Attach a note as context"
-              aria-expanded={showNotePicker}
-              className={`flex-shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40
-                ${showNotePicker || activeNoteContext
-                  ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary/20'
-                  : theme === 'dark'
-                    ? 'text-lantern-text-tertiary hover:bg-lantern-surface hover:text-lantern-primary'
-                    : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
-                }`}
-            >
-              <AppIcon name="add" size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (isRecording) stopDictation();
-                else void startDictation();
-              }}
-              disabled={isBusy || isTranscribing}
-              title={isRecording ? 'Stop dictation' : 'Dictate with microphone'}
-              aria-label={isRecording ? 'Stop dictation' : 'Dictate with microphone'}
-              aria-pressed={isRecording}
-              className={`flex-shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40
-                ${isRecording
-                  ? 'bg-red-500 text-white hover:bg-red-600'
-                  : theme === 'dark'
-                    ? 'text-lantern-text-tertiary hover:bg-lantern-surface hover:text-lantern-primary'
-                    : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
-                }`}
-            >
-              {isRecording ? <AppIcon name="stop" size={16} /> : <AppIcon name="mic" size={16} />}
-            </button>
+          <div className="flex items-end gap-2">
             {/* Auto-growing textarea, capped at 96px (`max-h-24`). The height is
                 set imperatively on input — reset to `auto` first, or scrollHeight
                 only ever grows and the box can never shrink back. `handleSend`
@@ -1722,7 +1639,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               }
               rows={1}
               disabled={dictationBusy}
-              className={`flex-1 resize-none bg-transparent text-sm outline-none max-h-24 leading-relaxed
+              className={`flex-1 resize-none bg-transparent text-body outline-none max-h-24 leading-relaxed
                 placeholder:text-lantern-text-tertiary disabled:opacity-70 ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}
               style={{ height: 'auto' }}
               onInput={e => {
@@ -1731,6 +1648,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
                 t.style.height = Math.min(t.scrollHeight, 96) + 'px';
               }}
             />
+            {/* Send: 32×32 and round, which is the measured size and the size
+                it already was. It stays in Lantern's primary fill rather than
+                the reference's near-black: the fill is the app's one "this is
+                the action" colour, it is in the contrast gate, and an ink disc
+                here would be the only dark-filled control in the panel. */}
             <button
               onClick={() => handleSend()}
               disabled={!input.trim() || isBusy || dictationBusy}
@@ -1741,8 +1663,112 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               <AppIcon name="arrow-up" size={16} />
             </button>
           </div>
+          {/* The tool bar: what the message carries and how it is taught.
+              Everything here is a modifier on the field above it, which is why
+              it sits under the field rather than inside it. */}
+          <div className="mt-1 flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={isBusy || isUploadingImage || pendingImages.length >= MAX_IMAGE_ATTACHMENTS}
+              // The price is in the tooltip because it is spent on the pick,
+              // before anything is typed or sent.
+              title={`Add image — ${IMAGE_ATTACH_COST_LABEL}`}
+              aria-label={`Add image (${IMAGE_ATTACH_COST_LABEL})`}
+              className={`flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40
+                ${pendingImages.length
+                  ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary/20'
+                  : theme === 'dark'
+                    ? 'text-lantern-text-tertiary hover:bg-lantern-surface hover:text-lantern-primary'
+                    : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
+                }`}
+            >
+              <AppIcon name={isUploadingImage ? 'time' : 'image'} size={16} />
+            </button>
+            {/* The reference's "+": attach something for the tutor to read. */}
+            <button
+              type="button"
+              onClick={() => setShowNotePicker((v) => !v)}
+              disabled={isBusy}
+              title="Attach a note as context"
+              aria-label="Attach a note as context"
+              aria-expanded={showNotePicker}
+              className={`flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40
+                ${showNotePicker || activeNoteContext
+                  ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary/20'
+                  : theme === 'dark'
+                    ? 'text-lantern-text-tertiary hover:bg-lantern-surface hover:text-lantern-primary'
+                    : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
+                }`}
+            >
+              <AppIcon name="add" size={16} />
+            </button>
+            {/* The Guided pill sits in the composer, where the mode it changes
+                is — not in a settings menu. It is a toggle, so it carries its
+                state in `aria-pressed` rather than only in its fill, and it
+                stays live mid-lesson so normal chat is one tap away. */}
+            <button
+              type="button"
+              onClick={() =>
+                setGuided((v) => {
+                  // Turning Guided ON is a fresh intent to pick a goal, so the
+                  // card above the composer comes back even if it was shut
+                  // earlier in this thread.
+                  setGuidedPickerDismissed(false);
+                  // Leaving Guided ends the lesson. Without this, turning the
+                  // pill back on later would resume a topic from a
+                  // conversation the student had moved on from.
+                  if (v) clearGuided();
+                  return !v;
+                })
+              }
+              aria-pressed={guided}
+              aria-label={
+                guided
+                  ? 'Guided mode on. Turn off to go back to normal chat.'
+                  : 'Guided mode off. Turn on to be taught one step at a time.'
+              }
+              title={guided ? 'Back to normal chat' : GUIDED_MODE_PROMISE}
+              className={`ml-0.5 inline-flex min-h-[44px] items-center gap-1.5 rounded-full border px-3 text-label font-medium transition-colors
+                ${guided
+                  ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary/20'
+                  : theme === 'dark'
+                    ? 'border-lantern-border text-lantern-text-tertiary hover:text-lantern-primary'
+                    : 'border-lantern-border text-lantern-text-secondary hover:text-lantern-primary'
+                }`}
+            >
+              <AppIcon name="school" size={14} />
+              Guided
+            </button>
+            <div className="flex-1" />
+            {/* Dictation, which the app already has: `startDictation` records
+                with MediaRecorder and transcribes server-side. It is the mic
+                the reference draws; the "Call" pill beside it is the one thing
+                in this row that would need a model we do not have. */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isRecording) stopDictation();
+                else void startDictation();
+              }}
+              disabled={isBusy || isTranscribing}
+              title={isRecording ? 'Stop dictation' : 'Dictate with microphone'}
+              aria-label={isRecording ? 'Stop dictation' : 'Dictate with microphone'}
+              aria-pressed={isRecording}
+              className={`flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40
+                ${isRecording
+                  ? 'bg-red-500 text-white hover:bg-red-600'
+                  : theme === 'dark'
+                    ? 'text-lantern-text-tertiary hover:bg-lantern-surface hover:text-lantern-primary'
+                    : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
+                }`}
+            >
+              {isRecording ? <AppIcon name="stop" size={16} /> : <AppIcon name="mic" size={16} />}
+            </button>
+          </div>
+          </div>
           {(isRecording || isTranscribing) && (
-            <p className={`mt-1.5 text-xs text-center ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+            <p className={`mt-1.5 text-caption text-center ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
               {isRecording
                 ? `Listening… ${recordingSeconds}s — tap stop when done`
                 : 'Converting speech to text…'}
