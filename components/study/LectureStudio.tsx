@@ -28,6 +28,8 @@ import {
   type TurnIntoTargetId,
 } from '@lantern/shared';
 import {
+  SMART_NOTES_SKILL_HINT_EXAMPLES,
+  SMART_NOTES_SKILL_HINT_MAX_CHARS,
   upsertSmartNotesSection,
   type SmartNotesDepth,
   type SmartNotesRequestOptions,
@@ -38,7 +40,7 @@ import {
   getSmartNotesCreditCost,
 } from '@lantern/shared/utils/aiCredits';
 import type { StudyNote } from '../../types';
-import { Button } from '../ui';
+import { Button, Select } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
 import { Tab, TabList, TabPanel, Tabs } from '../ui/Tabs';
@@ -52,6 +54,15 @@ import {
   getSessionElapsedMs,
   useLectureRecordingStore,
 } from '../../stores/lectureRecordingStore';
+import { useAuthStore } from '../../stores/authStore';
+import { useLecturePreCheck } from '../../hooks/useLecturePreCheck';
+import {
+  currentLectureLanguages,
+  setLectureLanguages,
+} from '../../utils/lectureRecorderPrefs';
+import { LectureLevelMeter } from './LectureLevelMeter';
+import { LecturePreCheckPanel } from './LecturePreCheckPanel';
+import { LectureRecorderSettings } from './LectureRecorderSettings';
 
 interface LectureStudioProps {
   courseId: string;
@@ -140,6 +151,12 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   /** null = follow the default rule; a value = the student picked that tab. */
   const [requestedTab, setRequestedTab] = useState<LectureTabId | null>(null);
   const [starting, setStarting] = useState(false);
+  /** The ⚙ popover: mic + the two language choices. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** One line about the reader, appended to the enhance prompt as a hint. */
+  const [skillHint, setSkillHint] = useState('');
+  /** A material from this set to read alongside the transcript. '' = none. */
+  const [contextNoteId, setContextNoteId] = useState('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef(title);
   const notesRef = useRef(notesBody);
@@ -255,6 +272,29 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   void tick;
   const recording = status === 'recording';
 
+  /**
+   * The pre-check holds its OWN short-lived microphone stream: the take is
+   * still one `MediaRecorder` in the store, on a stream of its own. It stays
+   * open while recording so the meter beside the clock keeps moving, and is
+   * released the moment the recorder is neither armed nor running.
+   */
+  const preCheckActive = status === 'idle' || recording;
+  const preCheck = useLecturePreCheck(preCheckActive);
+  const userSettings = useAuthStore((s) => s.currentUser?.settings);
+  const languages = useMemo(() => currentLectureLanguages(userSettings), [userSettings]);
+  const allNotes = useNotesStore((s) => s.notes);
+  /**
+   * The materials the "Attach a material" picker may offer: this set's notes,
+   * minus the lecture being enhanced. The server checks owner and set again —
+   * this list is a convenience, never the authorization.
+   */
+  const attachableNotes = useMemo(() => {
+    if (!studySetId) return [];
+    return (allNotes ?? []).filter(
+      (row) => row.studySetId === studySetId && row.id !== activeNote?.id
+    );
+  }, [allNotes, studySetId, activeNote?.id]);
+
   useEffect(() => {
     if (recording) setEditingNotes(true);
   }, [recording]);
@@ -314,6 +354,9 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
       if (!target) throw new Error('Could not open a lecture note.');
       await startRecording(target.id, titleRef.current || target.title || newLectureNoteTitle(), {
         currentBody: notesRef.current,
+        language: languages.spokenLanguage,
+        translateTo: languages.transcribeTo,
+        deviceId: preCheck.selectedDeviceId,
       });
       if (useLectureRecordingStore.getState().status !== 'recording') {
         await cleanupDoorNote();
@@ -376,7 +419,11 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
         body: composeBody(snapshot.body, persistableTranscript),
       };
       await saveNote(activeNote.id, full);
-      await onSmartNote(full, { depth });
+      await onSmartNote(full, {
+        depth,
+        skillLevelHint: skillHint.trim() || undefined,
+        contextNoteId: contextNoteId || undefined,
+      });
       showToast('Enhanced notes saved on this lecture.', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not enhance notes.', 'error');
@@ -446,6 +493,58 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
       <Button size="sm" onClick={() => void enhanceNotes()} loading={writing} disabled={writing || busy}>
         Enhance notes · {writeCost}
       </Button>
+      {/*
+        Two optional steers, both free. The price line above does not move for
+        either of them: a hint is a sentence in the prompt, not a second call.
+      */}
+      <div className="w-full space-y-2">
+        <label htmlFor="lecture-skill-hint" className="block text-caption text-lantern-text-secondary">
+          How much do you already know? (optional)
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            id="lecture-skill-hint"
+            value={skillHint}
+            maxLength={SMART_NOTES_SKILL_HINT_MAX_CHARS}
+            onChange={(event) => setSkillHint(event.target.value)}
+            placeholder="e.g. I know the basics but not the maths"
+            className="min-h-[44px] min-w-0 flex-1 rounded-xl border border-lantern-border bg-lantern-background px-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
+          />
+          {SMART_NOTES_SKILL_HINT_EXAMPLES.map((example) => (
+            <button
+              key={example.id}
+              type="button"
+              onClick={() => setSkillHint(example.text)}
+              className="min-h-[44px] rounded-full border border-lantern-border bg-lantern-surface px-3 text-body text-lantern-text hover:border-lantern-text-tertiary"
+            >
+              {example.label}
+            </button>
+          ))}
+        </div>
+        {attachableNotes.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <label
+              htmlFor="lecture-context-note"
+              className="text-caption text-lantern-text-secondary"
+            >
+              Attach a material
+            </label>
+            <Select
+              id="lecture-context-note"
+              value={contextNoteId}
+              onChange={(event) => setContextNoteId(event.target.value)}
+              className="min-h-[44px] min-w-0 flex-1"
+            >
+              <option value="">None</option>
+              {attachableNotes.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.title || 'Untitled note'}
+                </option>
+              ))}
+            </Select>
+          </div>
+        ) : null}
+      </div>
     </div>
   ) : null;
 
@@ -472,19 +571,45 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
         </div>
         {showConsent ? null : recording ? (
           <>
+            {/* The same analyser as the pre-check, small, beside the clock. */}
+            <LectureLevelMeter levelDb={preCheck.levelDb} size="sm" label="Input level" />
             {paused ? (
-              <Button size="sm" variant="secondary" onClick={() => resumeRecording()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => resumeRecording()}
+                title="Resume recording"
+                aria-label="Resume recording"
+              >
                 Resume
               </Button>
             ) : (
-              <Button size="sm" variant="secondary" onClick={() => pauseRecording()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => pauseRecording()}
+                title="Pause recording"
+                aria-label="Pause recording"
+              >
                 Pause
               </Button>
             )}
-            <Button size="sm" variant="danger" onClick={() => stopRecording({ currentBody: notesRef.current })}>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => stopRecording({ currentBody: notesRef.current })}
+              title="Stop recording"
+              aria-label="Stop recording"
+            >
               Stop
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => void handleDiscard()}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void handleDiscard()}
+              title="Discard this recording"
+              aria-label="Discard this recording"
+            >
               Discard
             </Button>
           </>
@@ -493,9 +618,28 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
             Cancel
           </Button>
         ) : (
-          <Button size="sm" onClick={() => void handleStart()} loading={starting} disabled={starting || !consented}>
-            {activeNote ? 'Record' : 'Start'}
-          </Button>
+          <>
+            <Button
+              size="sm"
+              onClick={() => void handleStart()}
+              loading={starting}
+              disabled={starting || !consented}
+              title="Start recording"
+              aria-label="Start recording"
+            >
+              {activeNote ? 'Record' : 'Start'}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen((was) => !was)}
+              aria-label="Recorder settings"
+              aria-expanded={settingsOpen}
+              title="Recorder settings"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-lantern-border text-lantern-text hover:border-lantern-text-tertiary"
+            >
+              <AppIcon name="settings" size={20} />
+            </button>
+          </>
         )}
       </div>
 
@@ -513,18 +657,39 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
               We will create “{decision.title}” only after you start.
             </p>
           )}
-          <label className="flex items-start gap-2 text-body">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(event) => setAgreed(event.target.checked)}
-              className="mt-1"
+          {/*
+            The pre-check replaces the bare Start button. The consent tick and
+            the cost copy above it are unchanged — they are the two things a
+            student must read, and a meter is not a reason to move them.
+          */}
+          <LecturePreCheckPanel
+            preCheck={preCheck}
+            canStart={agreed}
+            starting={starting}
+            onOpenSettings={() => setSettingsOpen((was) => !was)}
+            onStart={() => void handleStart()}
+            consent={
+              <label className="flex items-start gap-2 text-body">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(event) => setAgreed(event.target.checked)}
+                  className="mt-1"
+                />
+                <span>I can record this lecture.</span>
+              </label>
+            }
+          />
+          {settingsOpen ? (
+            <LectureRecorderSettings
+              languages={languages}
+              onChangeLanguages={(patch) => setLectureLanguages(patch)}
+              devices={preCheck.devices}
+              selectedDeviceId={preCheck.selectedDeviceId}
+              onSelectDevice={preCheck.selectDevice}
+              onClose={() => setSettingsOpen(false)}
             />
-            <span>I can record this lecture.</span>
-          </label>
-          <Button onClick={() => void handleStart()} disabled={!agreed} loading={starting}>
-            Start recording
-          </Button>
+          ) : null}
         </div>
       ) : (
         <>
@@ -559,6 +724,19 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
                 <span>I can record this lecture.</span>
               </label>
               <span className="text-caption text-lantern-text-secondary">{LECTURE_CONSENT_LINE}</span>
+            </div>
+          ) : null}
+
+          {settingsOpen && status === 'idle' ? (
+            <div className="shrink-0 border-b border-lantern-border p-3">
+              <LectureRecorderSettings
+                languages={languages}
+                onChangeLanguages={(patch) => setLectureLanguages(patch)}
+                devices={preCheck.devices}
+                selectedDeviceId={preCheck.selectedDeviceId}
+                onSelectDevice={preCheck.selectDevice}
+                onClose={() => setSettingsOpen(false)}
+              />
             </div>
           ) : null}
 

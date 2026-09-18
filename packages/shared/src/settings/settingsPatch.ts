@@ -10,6 +10,7 @@ import {
   type AppearanceSettings,
   type FeatureTipsSettings,
   type FlashcardGenerationSettings,
+  type LectureSettings,
   type MarketplaceSettings,
   type NotificationSettings,
   type OnboardingVisitedSettings,
@@ -18,6 +19,7 @@ import {
   type SyncSettings,
   type UserSettings,
   mergeOnboardingVisited,
+  normalizeLectureSettings,
   normalizeUserSettings,
 } from './userSettings';
 
@@ -31,7 +33,8 @@ export type SettingsCategoryKey =
   | 'marketplace'
   | 'featureTips'
   | 'onboardingVisited'
-  | 'flashcardGeneration';
+  | 'flashcardGeneration'
+  | 'lecture';
 
 /** Partial nested settings blob (one or more categories). */
 export type UserSettingsPatch = {
@@ -45,6 +48,7 @@ export type UserSettingsPatch = {
   featureTips?: Partial<FeatureTipsSettings>;
   onboardingVisited?: Partial<OnboardingVisitedSettings>;
   flashcardGeneration?: Partial<FlashcardGenerationSettings>;
+  lecture?: Partial<LectureSettings>;
   /**
    * Not a category — a scalar, so it is patched by VALUE and is deliberately
    * absent from `SettingsCategoryKey` and from the category loops below (both
@@ -285,6 +289,21 @@ function sanitizeFlashcardGeneration(
 }
 
 /**
+ * Both ids run through the shared allowlists, so a patch from a newer build —
+ * or from a crafted request — narrows to a value Whisper actually accepts
+ * instead of being stored and replayed on every later recording.
+ */
+function sanitizeLecture(
+  partial: Partial<LectureSettings>,
+  base: LectureSettings
+): LectureSettings {
+  return normalizeLectureSettings({
+    spokenLanguage: partial.spokenLanguage ?? base.spokenLanguage,
+    transcribeTo: partial.transcribeTo ?? base.transcribeTo,
+  });
+}
+
+/**
  * Apply a partial nested patch onto current settings with deep category merge + validation.
  * Privileged top-level keys are not accepted here (server strips them separately).
  */
@@ -332,6 +351,9 @@ export function applySettingsPatch(
           base.flashcardGeneration ?? DEFAULT_USER_SETTINGS.flashcardGeneration!
         )
       : base.flashcardGeneration,
+    lecture: p.lecture
+      ? sanitizeLecture(p.lecture, base.lecture ?? DEFAULT_USER_SETTINGS.lecture!)
+      : base.lecture,
     // Scalar, allowlisted on the way in: an id from a newer build, a typo or a
     // smuggled object all resolve to `default` rather than reaching the prompt.
     tutorStyle:
@@ -359,6 +381,7 @@ export function diffSettingsPatch(
     'featureTips',
     'onboardingVisited',
     'flashcardGeneration',
+    'lecture',
   ];
   for (const key of categories) {
     const prevCat = previous[key];

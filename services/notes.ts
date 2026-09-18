@@ -912,6 +912,13 @@ export async function transcribeAudioForNote(
     audioBlob?: Blob;
     /** Prefer storage upload then path-based Whisper (default true when noteId is set). */
     useStoragePath?: boolean;
+    /**
+     * What the student said they are speaking, and where the transcript should
+     * land. Both are narrowed by the server against the shared allowlists —
+     * these are a request, not a promise.
+     */
+    language?: string;
+    translateTo?: string;
     onProgress?: NoteImportProgressCallback;
   }
 ): Promise<{ transcript: string; note?: StudyNote; persistWarning?: string }> {
@@ -1000,6 +1007,8 @@ export async function transcribeAudioForNote(
         currentBody: compactCurrentBody,
         durationMs: options?.durationMs,
         clientByteLength,
+        language: options?.language,
+        translateTo: options?.translateTo,
       }
     : {
         audioBase64,
@@ -1009,6 +1018,8 @@ export async function transcribeAudioForNote(
         currentBody: compactCurrentBody,
         durationMs: options?.durationMs,
         clientByteLength,
+        language: options?.language,
+        translateTo: options?.translateTo,
       };
 
   if (!storagePath && !audioBase64) {

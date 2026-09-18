@@ -44,7 +44,19 @@ interface LectureRecordingState {
   /** Note the caption/whisper fields belong to, kept after idle. */
   transcriptNoteId: string | null;
 
-  start: (noteId: string, noteTitle: string, options?: { currentBody?: string }) => Promise<void>;
+  start: (
+    noteId: string,
+    noteTitle: string,
+    options?: {
+      currentBody?: string;
+      /** ISO-639-1 or 'auto'; narrowed again on the server. */
+      language?: string;
+      /** 'same' | 'en'; narrowed again on the server. */
+      translateTo?: string;
+      /** The microphone the pre-check panel is on, when the student picked one. */
+      deviceId?: string | null;
+    }
+  ) => Promise<void>;
   stopAndTranscribe: (options?: { currentBody?: string }) => void;
   pauseRecording: () => void;
   resumeRecording: () => void;
@@ -85,6 +97,13 @@ type SessionRefs = {
   recognition: SpeechRecognitionLike | null;
   captionWanted: boolean;
   recordedMs: number;
+  /**
+   * The language choices this take was started with. Captured at START rather
+   * than read at stop, so changing the setting mid-lecture cannot relabel a
+   * recording that is already half spoken.
+   */
+  language?: string;
+  translateTo?: string;
 };
 
 const session: SessionRefs = {
@@ -99,6 +118,8 @@ const session: SessionRefs = {
   recognition: null,
   captionWanted: false,
   recordedMs: 0,
+  language: undefined,
+  translateTo: undefined,
 };
 
 function stopMediaStream() {
@@ -241,6 +262,8 @@ function resetSessionState(
   session.discard = false;
   session.recordingMime = 'audio/webm';
   session.recordedMs = 0;
+  session.language = undefined;
+  session.translateTo = undefined;
   set({
     status: 'idle',
     noteId: null,
@@ -311,6 +334,8 @@ async function runTranscription(
         clientByteLength: audioBlob.size,
         audioBlob,
         useStoragePath: true,
+        language: session.language,
+        translateTo: session.translateTo,
         onProgress: (progress) => {
           if (get().noteId !== noteId) return;
           if (progress.stage === 'uploading') set({ status: 'uploading' });
@@ -441,8 +466,16 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
     try {
       session.discard = false;
       session.chunks = [];
+      session.language = options?.language;
+      session.translateTo = options?.translateTo;
+      const deviceId = options?.deviceId;
       const stream = await getUserMediaWithTimeout({
         audio: {
+          // The pre-check panel's picker. `ideal` rather than `exact`: a
+          // microphone unplugged between the pre-check and Start must fall
+          // back to the default, not throw OverconstrainedError at a student
+          // standing in a lecture.
+          ...(deviceId ? { deviceId: { ideal: deviceId } } : {}),
           echoCancellation: true,
           noiseSuppression: true,
           channelCount: LECTURE_AUDIO_CHANNELS,

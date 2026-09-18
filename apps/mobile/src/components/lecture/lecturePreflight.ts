@@ -13,8 +13,12 @@ import {
   formatLectureTranscriptionEstimate,
 } from '@lantern/shared/utils/aiCredits';
 import {
+  LECTURE_LEVEL_BAR_FLOOR_DB,
+  LECTURE_LEVEL_THRESHOLDS_DB,
   lectureAudioFillFraction,
   lectureCapacityLine,
+  lectureLevelBarFraction,
+  lectureLevelWord,
   maxLectureRecordingMinutes,
 } from '@lantern/shared/utils/lectureAudio';
 import { newLectureNoteTitle } from '../../screens/study/recorderDoor';
@@ -84,38 +88,17 @@ export function micPermissionRow(state: MicPermissionState): PreflightRow {
 
 export type LevelWord = 'Silent' | 'Quiet' | 'Good' | 'Loud';
 
-/** The words are thresholds on dBFS, where 0 dB is the loudest the mic can go. */
-export const LEVEL_THRESHOLDS_DB = {
-  /** At or below this we are hearing room noise, not a voice. */
-  silentMax: -45,
-  /** Above `silentMax` and at or below this: audible but thin. */
-  quietMax: -30,
-  /** Above `quietMax` and below this: what a transcript wants. */
-  loudMin: -8,
-} as const;
-
-/** The dB span the bar draws; anything quieter than this pins the bar at empty. */
-export const LEVEL_BAR_FLOOR_DB = -60;
-
 /**
- * `null` in means `null` out — "no reading yet" is a state of its own and is
- * never rounded up into "Silent", which would be a claim about the room.
+ * The thresholds, the word and the bar now live in
+ * `@lantern/shared/utils/lectureAudio` so the browser's pre-check panel and
+ * this card grade the same room the same way. They are re-exported under
+ * their original names because this module's callers (and its tests) predate
+ * the move; the numbers are unchanged.
  */
-export function levelStateWord(db: number | null | undefined): LevelWord | null {
-  if (db === null || db === undefined || !Number.isFinite(db)) return null;
-  if (db <= LEVEL_THRESHOLDS_DB.silentMax) return 'Silent';
-  if (db <= LEVEL_THRESHOLDS_DB.quietMax) return 'Quiet';
-  if (db < LEVEL_THRESHOLDS_DB.loudMin) return 'Good';
-  return 'Loud';
-}
-
-/** 0..1 for the meter bar. No reading draws an empty bar, not a guessed one. */
-export function levelBarFraction(db: number | null | undefined): number {
-  if (db === null || db === undefined || !Number.isFinite(db)) return 0;
-  const span = 0 - LEVEL_BAR_FLOOR_DB;
-  const raw = (db - LEVEL_BAR_FLOOR_DB) / span;
-  return Math.max(0, Math.min(1, raw));
-}
+export const LEVEL_THRESHOLDS_DB = LECTURE_LEVEL_THRESHOLDS_DB;
+export const LEVEL_BAR_FLOOR_DB = LECTURE_LEVEL_BAR_FLOOR_DB;
+export const levelStateWord = lectureLevelWord;
+export const levelBarFraction = lectureLevelBarFraction;
 
 export function levelRow(db: number | null | undefined): PreflightRow {
   const word = levelStateWord(db);
