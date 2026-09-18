@@ -687,9 +687,44 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   };
   
   // Mode-specific theming
-  const headerText = mode === 'test'
+  const genericHeaderText = mode === 'test'
     ? (session.isOffline ? 'Offline Test' : 'Test in Progress')
     : (session.isOffline ? 'Offline Study' : 'Study Session');
+  /**
+   * The BREADCRUMB-TITLE the StudyFetch reference puts here (2026-09-17
+   * measurement, §Pre-assessment): the name of the thing being taken, not the
+   * name of the activity. "Pre-assessment · Cell biology" tells a student which
+   * of their three open checks this is; "Test in Progress" told them only that
+   * they were, in fact, taking a test.
+   *
+   * The session's own title wins when it has one, and the generic string stays
+   * as the fallback — a session built on the fly (a group test, a quick study
+   * run) genuinely has no better name, and "Untitled" would be worse than
+   * saying what kind of screen this is. The mode/offline distinction is not
+   * lost: it moves to the subtitle line below, which already carries the rules.
+   */
+  const sessionTitle = (session.title || '').trim();
+  const headerText = sessionTitle || genericHeaderText;
+
+  /**
+   * How far through, as the reference's percentage.
+   *
+   * ANSWERED, not "questions I have scrolled past": `Q 3/10` already says where
+   * the cursor is, and repeating that as a percentage would be the same fact
+   * twice. What a student cannot see from the counter is how much of the paper
+   * is actually done, which is the number that tells them whether they can
+   * submit. Same predicate as the review screen's `answeredCount`, so the bar
+   * and the review cannot disagree about what counts as answered.
+   */
+  const answeredSoFar = Object.values(session.userAnswers).filter((ans: UserAnswerRecord) => (
+    (ans.selectedOptionIds && ans.selectedOptionIds.length > 0) ||
+    (ans.fillText && ans.fillText.trim() !== '') ||
+    (ans.matchingAnswers && ans.matchingAnswers.length > 0) ||
+    (ans.diagramAnswers && ans.diagramAnswers.length > 0)
+  )).length;
+  const answeredPercent = totalQuestions === 0
+    ? 0
+    : Math.round((answeredSoFar / totalQuestions) * 100);
 
   const isCurrentBookmarked = userAnswer?.isBookmarked || false;
 
@@ -901,6 +936,12 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 <span className="text-[11px] sm:text-xs text-lantern-text-secondary whitespace-nowrap tabular-nums">
                   Q {session.currentQuestionIndex + 1}/{totalQuestions}
                 </span>
+                <span
+                  className="text-[11px] sm:text-xs text-lantern-text-secondary whitespace-nowrap tabular-nums"
+                  aria-label={`${answeredPercent} percent answered`}
+                >
+                  {answeredPercent}% done
+                </span>
                 {lockMode && (
                   <span
                     className="inline-flex items-center gap-1 text-label tracking-normal sm:text-caption font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full whitespace-nowrap"
@@ -912,6 +953,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 )}
               </div>
               <p className={`hidden sm:block text-[11px] leading-tight truncate ${modeTheme.infoBannerSubtext}`}>
+                {/* When the title took the heading, the activity name moves
+                    here so "which screen am I on" is still answered. */}
+                {sessionTitle ? `${genericHeaderText} · ` : ''}
                 {mode === 'study'
                   ? timeLeftDisplay
                     ? 'Timed · Instant feedback · Not recorded'
