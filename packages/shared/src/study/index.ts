@@ -7,3 +7,4 @@ export * from './createFromSource';
 export * from './unitSources';
 export * from './weakTopics';
 export * from './practiceFolders';
+export * from './syllabusSummary';

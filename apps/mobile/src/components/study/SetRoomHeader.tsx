@@ -17,6 +17,7 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { AppIcon, T } from '../ui';
+import CreationProgressButton from './CreationProgressButton';
 import { SetCoverSquare } from './SetCoverSquare';
 import { SetTileArt } from './StudySetCard';
 
@@ -128,6 +129,11 @@ export function SetRoomHeader({
           </Pressable>
         ) : null}
         <View className="flex-1" />
+        {/* What is still being made, from any room. It takes no props — it
+            reads the jobs store itself — and the work it lists is not this
+            set's: an import started in one set is still running when the
+            student walks into another. */}
+        <CreationProgressButton />
         {onShare ? (
           <Pressable
             onPress={onShare}

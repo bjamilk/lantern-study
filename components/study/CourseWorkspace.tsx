@@ -113,6 +113,8 @@ import { StudyCalendar } from './StudyCalendar';
 import { EssayStudio } from './EssayStudio';
 import { PlayStudio } from './PlayStudio';
 import { SetRoomFooter } from './SetRoomFooter';
+import { SyncWithClassCard } from './SyncWithClassCard';
+import { useSyncWithClass } from './useSyncWithClass';
 import { StudySetHome } from './StudySetHome';
 import CreateStudySetModal from './CreateStudySetModal';
 import { StudySetSettingsModal } from './StudySetSettingsModal';
@@ -222,6 +224,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const setsLoaded = useStudySetStore((s) => s.loaded);
   const setsLoadError = useStudySetStore((s) => s.loadError);
   const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
+  // "Sync with your class" — the first landing in an empty set. The hook owns
+  // the fetch, the upload and the per-set dismissal; `StudySetHome` owns the
+  // "is this set empty" half of the gate.
+  const syncClass = useSyncWithClass(studySetId);
   const courseId = studySet?.courseId || courseIdProp || '';
   type RoomActivity = WorkspaceActivityId | 'home' | 'add' | 'materials';
 
@@ -1589,6 +1595,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           tileGlyph={studySet?.tileGlyph}
           progress={activity === 'home' ? roomProgress : null}
           counts={activity === 'home' ? roomCounts : undefined}
+          examDate={activity === 'home' ? studySet?.examDate ?? null : null}
           visibility={studySet?.visibility}
           variant={activity === 'home' ? 'home' : 'compact'}
           mode={studySet?.mode ?? null}
@@ -2285,6 +2292,31 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               onOpenPlan={() => go('plan')}
               onOpenLibrary={studySetId ? () => go('materials') : onOpenLibrary}
               header={setHeader}
+              syncWithClass={
+                syncClass.visible && studySetId ? (
+                  <SyncWithClassCard
+                    studySetId={studySetId}
+                    examDate={studySet?.examDate ?? null}
+                    syllabus={syncClass.syllabus}
+                    uploading={syncClass.uploading}
+                    foundLabel={syncClass.foundLabel}
+                    error={syncClass.error}
+                    onUploadSyllabus={syncClass.uploadSyllabus}
+                    onUndoSyllabus={syncClass.undoSyllabus}
+                    onSkipForNow={syncClass.skipForNow}
+                    // The same door `Skip and Upload Documents` opens in the
+                    // reference: the upload page, not a dead end.
+                    onSkipToMaterials={() => {
+                      go('add');
+                      setImportSource(null);
+                      setImportOpen(true);
+                    }}
+                    onExamDateSaved={() => {
+                      void loadSets({ force: true }).catch(() => undefined);
+                    }}
+                  />
+                ) : null
+              }
               onGenerateFromTopic={(brief) => void handleCreateFromTopic(brief, 'materials')}
               footer={
                 <SetRoomFooter
@@ -2924,6 +2956,28 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             setImportSource(null);
             await handleCreateFromTopic(brief, 'materials');
           }}
+          // The "where next" fork's second card. The plan handler is passed
+          // ONLY when this set really has one — `companionHasPlan` is the same
+          // test the companion uses — so the fork never offers a door to a plan
+          // that does not exist; without it the card is the set's home.
+          onViewStudyPlan={
+            studySetId && companionHasPlan
+              ? () => {
+                  setImportOpen(false);
+                  setImportSource(null);
+                  go('plan');
+                }
+              : undefined
+          }
+          onOpenSetHome={
+            studySetId
+              ? () => {
+                  setImportOpen(false);
+                  setImportSource(null);
+                  go('home');
+                }
+              : undefined
+          }
         />
       )}
     </div>

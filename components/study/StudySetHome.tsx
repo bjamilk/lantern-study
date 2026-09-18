@@ -95,6 +95,15 @@ interface StudySetHomeProps {
    */
   header?: React.ReactNode;
   /**
+   * "Sync with your class", above everything, for a set with no materials.
+   *
+   * Passed in rather than built here because it owns network state (the
+   * upload, the extraction result, the Undo) and this component is otherwise
+   * presentational. The GATE is here — an empty set — because `hasMaterials`
+   * is already computed here and nothing else knows it as cheaply.
+   */
+  syncWithClass?: React.ReactNode;
+  /**
    * Exam / syllabus, scrolled with the home rather than pinned under it.
    * Pinning a second card row was what ate the materials grid.
    */
@@ -121,6 +130,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   renderNoteMenu,
   onGenerateFromTopic,
   header,
+  syncWithClass,
   footer,
 }) => {
   const hasMaterials = notes.length > 0 || deckCount > 0 || testCount > 0;
@@ -162,6 +172,12 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   return (
     <div ref={homeScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scrollbar-autohide space-y-4 pr-1 pb-2">
       {header}
+
+      {/* The first landing in an empty set, ABOVE the own-way grid — the two
+          facts that sharpen everything under it. A set with any material has
+          moved past this question, and the parent stops rendering it once the
+          student skips. Never a wall: everything below is still on the page. */}
+      {!hasMaterials && syncWithClass ? syncWithClass : null}
 
       {planGenerating ? (
         <Card padding="lg">

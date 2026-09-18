@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { AppIcon } from './ui/AppIcon';
 import {
   buildImportedDocumentBody,
@@ -35,6 +35,22 @@ import {
 import { createDeckWithCards } from '../services/apiEndpoints';
 import { parseCardExport } from './study/CreateFromSource';
 import { DOCX_MIME, routeUploadFiles } from './study/uploadDoors';
+import {
+  assertImportedTextBody,
+  buildImportedTextTitle,
+  MARKDOWN_MIME,
+  PLAIN_TEXT_MIME,
+} from '@lantern/shared/utils/noteUpload';
+import {
+  emptyImportRunState,
+  type ImportGeneratedArtifact,
+  type ImportKind,
+  type ImportRunState,
+  uploadStageOf,
+  type ImportStageId,
+} from '@lantern/shared/utils/importStages';
+import { ImportStages, WhereNextFork } from './study/ImportProgress';
+import type { NoteImportProgress } from '../services/notes';
 
 export type { ImportAndStudyResult } from '../hooks/useStudyGenerators';
 
@@ -54,6 +70,15 @@ interface ImportAndStudyModalProps {
   onRecordLecture?: () => void;
   /** Empty-set starter notes from a topic, subject and level. */
   onGenerateFromTopic?: (brief: TopicBrief) => Promise<void> | void;
+  /**
+   * The second card of the "where next" fork. Passed ONLY when this set really
+   * has a study plan — a disabled "View study plan" at the one moment the
+   * student is being asked to choose would be the dead door this wave removed
+   * from the upload page, made worse.
+   */
+  onViewStudyPlan?: () => void;
+  /** The fork's fallback second card, for a set with no plan yet. */
+  onOpenSetHome?: () => void;
   /**
    * Files the student already chose before this opened — the Upload Materials
    * page's dropzone. They go straight into the SAME handlers the modal's own
@@ -80,6 +105,8 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   source = null,
   onRecordLecture,
   onGenerateFromTopic,
+  onViewStudyPlan,
+  onOpenSetHome,
   initialFiles = null,
   onInitialFilesConsumed,
 }) => {
@@ -100,6 +127,17 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   const [topicLevel, setTopicLevel] = useState<TopicSkillLevel>('intermediate');
   const [topicBusy, setTopicBusy] = useState(false);
   const setImportProgress = useUIStore((s) => s.setImportProgress);
+  /**
+   * The staged progress the modal draws instead of one spinner.
+   *
+   * It is a description of what the pipeline has REPORTED, never a timer: the
+   * upload percentage comes from the XHR, the generator index from the job
+   * runner, and the middle stage carries no number because the server does not
+   * send one while it reads a file. See `@lantern/shared/utils/importStages`.
+   */
+  const [run, setRun] = useState<ImportRunState | null>(null);
+  /** What the failed card's Retry button re-runs. Set by whoever started it. */
+  const retryRef = useRef<(() => void) | null>(null);
   const loadNote = useNotesStore((s) => s.loadNote);
   const aiUserId = useAiJobUserId();
   /**
@@ -120,6 +158,8 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
   const reset = () => {
     setStep('input');
+    setRun(null);
+    retryRef.current = null;
     setTextContent('');
     setError(null);
     setResult(null);
@@ -134,6 +174,56 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     reset();
     onClose();
   };
+
+  const generates = useMemo<ImportGeneratedArtifact[]>(() => {
+    const list: ImportGeneratedArtifact[] = [];
+    if (generateCards) list.push('flashcards');
+    if (generateQuiz) list.push('quiz');
+    return list;
+  }, [generateCards, generateQuiz]);
+
+  /**
+   * Start a tracked run. `retry` is stored rather than derived, because the
+   * only thing that can repeat an import is the closure that has the File — a
+   * File cannot be reconstructed from state after the input has been cleared.
+   */
+  const beginRun = useCallback(
+    (kind: ImportKind, hasUpload: boolean, retry: () => void) => {
+      retryRef.current = retry;
+      setRun(emptyImportRunState(kind, generates, hasUpload));
+      setStep('processing');
+      setError(null);
+    },
+    [generates]
+  );
+
+  const patchRun = useCallback((patch: Partial<ImportRunState>) => {
+    setRun((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  /**
+   * Land a failure ON the stage that produced it.
+   *
+   * The message is the server's or the network's own, unchanged: "Upload failed
+   * — check your connection" and "No text could be read out of this PDF" are
+   * different problems with different fixes, and collapsing both into "Import
+   * failed" is what sent students to support.
+   */
+  const failRun = useCallback((stage: ImportStageId, message: string) => {
+    setError(message);
+    setRun((prev) => (prev ? { ...prev, failure: { stage, message } } : prev));
+  }, []);
+
+  /** XHR upload progress → the first card, and the global import banner. */
+  const trackUpload = useCallback(
+    (progress: NoteImportProgress) => {
+      setImportProgress(progress);
+      setRun((prev) =>
+        prev ? { ...prev, upload: { phase: progress.stage, percent: progress.percent } } : prev
+      );
+    },
+    [setImportProgress]
+  );
 
   const { runStudyGenerators: runGenerators } = useStudyGenerators({ generateCards, generateQuiz });
 
@@ -154,6 +244,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
           depth: noteDepth,
           extractImages,
         });
+        setRun((prev) => (prev ? { ...prev, generationDone: true } : prev));
         setResult(res);
         setStep('done');
         onComplete(res);
@@ -194,7 +285,14 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             note,
             (stage) => {
               const index = stageNames.indexOf(stage);
-              if (index >= 0) report(index);
+              if (index >= 0) {
+                report(index);
+                // The same index the job panel gets, so the third card and the
+                // background panel can never disagree about where the run is.
+                setRun((prev) =>
+                  prev ? { ...prev, generation: { index, count: stageNames.length } } : prev
+                );
+              }
             },
             // The job id is the deck save's idempotency key, so a retried save
             // replays the first write instead of making a second deck.
@@ -203,6 +301,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
           )
       );
 
+      setRun((prev) => (prev ? { ...prev, generationDone: true } : prev));
       if (!backgroundedRef.current) {
         setResult(res);
         setStep('done');
@@ -240,6 +339,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       setStep('processing');
       setError(null);
       try {
+        patchRun({ upload: null, materialReady: false });
         const parts = chapterSplit ? splitNoteBodyByChapters(title, body) : [{ title, body }];
         let first: StudyNote | null = null;
         for (const part of parts) {
@@ -254,45 +354,50 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
           if (!first) first = filed;
         }
         if (!first) throw new Error('Import failed');
+        patchRun({ materialReady: true });
         await runStudyGenerators(first);
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : 'Import failed');
-        setStep('input');
+        const message = e instanceof Error ? e.message : 'Import failed';
+        // The note either exists or it does not: that is what decides whether
+        // the middle card broke or the generator run did, and the student
+        // reads a different fix from each.
+        failRun(
+          useNotesStore.getState().notes.some((n) => n.title === title) ? 'generating' : 'processing',
+          message
+        );
       }
     },
-    [runStudyGenerators, fileImportedNote, courseId, studySetId, chapterSplit]
+    [runStudyGenerators, fileImportedNote, courseId, studySetId, chapterSplit, patchRun, failRun]
   );
 
   const handlePdf = async (file: File) => {
-    setStep('processing');
-    setError(null);
+    beginRun('pdf', true, () => void handlePdf(file));
     try {
       const { note, attachment } = await notesApi.uploadNotePdfViaApi(
         file,
         undefined,
-        setImportProgress
+        trackUpload
       );
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
       const filed = await fileImportedNote(note);
       await loadNote(filed.id);
       useUIStore.getState().clearImportProgress();
+      patchRun({ materialReady: true });
       await runStudyGenerators({ ...filed, attachments: [attachment] });
     } catch (e: unknown) {
       useUIStore.getState().clearImportProgress();
-      setError(e instanceof Error ? e.message : 'PDF import failed');
-      setStep('input');
+      failRun(uploadStageOf(e), e instanceof Error ? e.message : 'PDF import failed');
     }
   };
 
   const handlePresentation = async (file: File) => {
-    setStep('processing');
-    setError(null);
+    beginRun('presentation', true, () => void handlePresentation(file));
     try {
       const { note, attachment } = await notesApi.uploadPresentationViaApi(
         file,
         undefined,
-        setImportProgress
+        trackUpload
       );
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
@@ -303,14 +408,14 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         notesState.setSelectedNote({ ...loaded, attachments: [attachment] });
       }
       useUIStore.getState().clearImportProgress();
+      patchRun({ materialReady: true });
       await runStudyGenerators({
         ...useNotesStore.getState().selectedNote!,
         attachments: useNotesStore.getState().selectedNote?.attachments ?? [attachment],
       });
     } catch (e: unknown) {
       useUIStore.getState().clearImportProgress();
-      setError(e instanceof Error ? e.message : 'PowerPoint import failed');
-      setStep('input');
+      failRun(uploadStageOf(e), e instanceof Error ? e.message : 'PowerPoint import failed');
     }
   };
 
@@ -324,12 +429,11 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
    * free from the existing path instead of being re-implemented here.
    */
   const handleDocument = async (file: File) => {
-    setStep('processing');
-    setError(null);
+    beginRun('document', true, () => void handleDocument(file));
     try {
       const { title, text, truncated } = await notesApi.extractDocumentTextViaApi(
         file,
-        setImportProgress
+        trackUpload
       );
       useUIStore.getState().clearImportProgress();
       // A truncated document is not an error — the note is real, it is just the
@@ -341,20 +445,40 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       await processContent(body, title, 'import');
     } catch (e: unknown) {
       useUIStore.getState().clearImportProgress();
-      setError(e instanceof Error ? e.message : 'Word document import failed');
-      setStep('input');
+      failRun(uploadStageOf(e), e instanceof Error ? e.message : 'Word document import failed');
+    }
+  };
+
+  /**
+   * A `.txt` or `.md`.
+   *
+   * The cheapest door there is: the file IS the note's body, so it is decoded
+   * here and handed to `processContent` — the same path the paste box uses.
+   * Nothing is uploaded, no server route is involved and no credit is spent
+   * reading it, which is why the accept list could grow these two extensions
+   * without an API change to go with them.
+   */
+  const handleTextFile = async (file: File) => {
+    beginRun('text', false, () => void handleTextFile(file));
+    try {
+      const text = await file.text();
+      // An empty file would otherwise create a blank note and then spend a
+      // credit generating flashcards from nothing.
+      assertImportedTextBody(text, file.name);
+      await processContent(text, buildImportedTextTitle(file.name), 'import');
+    } catch (e: unknown) {
+      failRun('processing', e instanceof Error ? e.message : 'Could not read that text file');
     }
   };
 
   const handlePhotos = async (files: File[]) => {
     if (files.length === 0) return;
-    setStep('processing');
-    setError(null);
+    beginRun('photos', true, () => void handlePhotos(files));
     try {
       const { note, attachments } = await notesApi.uploadNoteImagesViaApi(
         files,
         undefined,
-        setImportProgress,
+        trackUpload,
         defaultPhotoNoteTitle()
       );
       const notesState = useNotesStore.getState();
@@ -366,40 +490,47 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         notesState.setSelectedNote({ ...loaded, attachments });
       }
       useUIStore.getState().clearImportProgress();
+      patchRun({ materialReady: true });
       await runStudyGenerators({
         ...useNotesStore.getState().selectedNote!,
         attachments: useNotesStore.getState().selectedNote?.attachments ?? attachments,
       });
     } catch (e: unknown) {
       useUIStore.getState().clearImportProgress();
-      setError(e instanceof Error ? e.message : 'Photo import failed');
-      setStep('input');
+      failRun(uploadStageOf(e), e instanceof Error ? e.message : 'Photo import failed');
     }
   };
 
   const handleTextSubmit = () => {
     if (!textContent.trim()) return;
-    void processContent(textContent.trim(), 'Imported Notes', 'typed');
+    const body = textContent.trim();
+    beginRun('text', false, () => void processContent(body, 'Imported Notes', 'typed'));
+    void processContent(body, 'Imported Notes', 'typed');
   };
 
   const handleYoutube = async () => {
     if (!youtubeUrl.trim()) return;
-    setStep('processing');
-    setError(null);
+    // No bytes leave the browser for a link, so the first card is about the
+    // video being ACCEPTED, not uploaded — `hasUpload: false` is what makes it
+    // read "Video linked".
+    beginRun('youtube', false, () => void handleYoutube());
     try {
       const created = await notesApi.createNoteFromYoutube(youtubeUrl.trim());
       const note = created.note;
       if (!note?.id) throw new Error('Could not file that video.');
       const filed = await fileImportedNote(note);
       await loadNote(filed.id);
+      patchRun({ materialReady: true });
       await runStudyGenerators(filed);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'YouTube import failed');
-      setStep('input');
+      failRun('processing', e instanceof Error ? e.message : 'YouTube import failed');
     }
   };
 
   const handleBlank = async () => {
+    // A blank note is one write with nothing to stage — it opens immediately,
+    // so it keeps the plain busy state rather than drawing three cards two of
+    // which would never run.
     setStep('processing');
     setError(null);
     try {
@@ -425,9 +556,9 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       setError('Paste Anki or Quizlet text: one card per line, front and back separated by a tab.');
       return;
     }
-    setStep('processing');
-    setError(null);
+    beginRun('cards', false, () => void handleAnki());
     try {
+      patchRun({ materialReady: true });
       await createDeckWithCards({
         name: 'Imported cards',
         studySetId: studySetId || undefined,
@@ -441,12 +572,12 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         quizQuestionCount: 0,
         deckName: 'Imported cards',
       };
+      setRun((prev) => (prev ? { ...prev, generationDone: true } : prev));
       setResult(res);
       setStep('done');
       onComplete(res);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Card import failed');
-      setStep('input');
+      failRun('generating', e instanceof Error ? e.message : 'Card import failed');
     }
   };
 
@@ -499,6 +630,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     if (routed.kind === 'pdf') void handlePdf(routed.file);
     else if (routed.kind === 'presentation') void handlePresentation(routed.file);
     else if (routed.kind === 'document') void handleDocument(routed.file);
+    else if (routed.kind === 'text') void handleTextFile(routed.file);
     else if (routed.kind === 'images') void handlePhotos(routed.files);
     else setError(routed.message);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see the note above.
@@ -506,7 +638,11 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isBusy = step === 'processing';
+  // A failed run is NOT busy: the dialog must be closable, or a student whose
+  // upload broke is trapped in it.
+  const isBusy = step === 'processing' && !run?.failure;
+  /** Is there anywhere for the completion fork to send them? */
+  const canFork = Boolean(onOpenSetHome || onViewStudyPlan);
 
   return (
     <Modal
@@ -751,11 +887,26 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             </>
           )}
 
-          {step === 'processing' && (
+          {step === 'processing' && run ? (
+            <ImportStages
+              state={run}
+              onRetry={
+                retryRef.current
+                  ? () => {
+                      const again = retryRef.current;
+                      if (again) again();
+                    }
+                  : undefined
+              }
+              onBackground={handleClose}
+            />
+          ) : null}
+
+          {/* The blank-note door and the topic wizard have nothing to stage. */}
+          {step === 'processing' && !run ? (
             <div className="py-8 text-center">
               <div className="animate-spin w-10 h-10 border-4 border-lantern-primary border-t-transparent rounded-full mx-auto mb-4" aria-hidden />
               <p className="font-medium text-lantern-text">Creating your study materials...</p>
-              <p className="text-body text-lantern-text-muted mt-1">Summary + flashcards + quiz</p>
               <button
                 type="button"
                 onClick={handleClose}
@@ -764,10 +915,40 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 Continue in background
               </button>
             </div>
-          )}
+          ) : null}
 
           {step === 'done' && result && (
             <div className="py-4 text-center space-y-4">
+              {/* The fork comes FIRST, above the receipt: at this point the
+                  student has read "ready" and is looking for the way out, and
+                  the reference puts the choice at the top for the same reason.
+                  The receipt below it is Lantern's own — it says what was
+                  actually made, including when the answer is "less than you
+                  asked for". */}
+              {canFork ? (
+              <WhereNextFork
+                onViewMaterial={
+                  result.noteId
+                    ? () => {
+                        onOpenNote(result.noteId);
+                        handleClose();
+                      }
+                    : undefined
+                }
+                onViewPlan={
+                  onViewStudyPlan
+                    ? () => {
+                        onViewStudyPlan();
+                        handleClose();
+                      }
+                    : undefined
+                }
+                onOpenSetHome={() => {
+                  onOpenSetHome?.();
+                  handleClose();
+                }}
+              />
+              ) : null}
               <div className="text-4xl" aria-hidden>{result.warnings?.length ? '!' : '✓'}</div>
               <p className="font-semibold text-lantern-text">
                 {result.warnings?.length ? `${result.noteTitle} imported` : `${result.noteTitle} ready!`}
@@ -794,7 +975,11 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                   ))}
                 </div>
               ) : null}
-              {result.noteId ? (
+              {/* Without a set there is nowhere to fork TO — the dashboard's
+                  Import door has no plan and no set home — so that case keeps
+                  the single button rather than drawing a card that goes
+                  nowhere. */}
+              {canFork ? null : result.noteId ? (
                 <Button onClick={() => { onOpenNote(result.noteId); handleClose(); }} className="w-full">
                   Open note
                 </Button>

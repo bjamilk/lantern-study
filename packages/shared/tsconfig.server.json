@@ -27,6 +27,11 @@
     "src/utils/displayNames.ts",
     "src/utils/xp.ts",
     "src/utils/noteStudyContent.ts",
+    // The API prices and orders lecture segments from this module. It is named
+    // here rather than pulled in transitively: nothing under `learning/`
+    // imports it, so without this line `dist/utils/lectureSegments` does not
+    // exist and the API fails to resolve it at build time only.
+    "src/utils/lectureSegments.ts",
     "src/utils/smartNotes.ts",
     "src/utils/youtube.ts",
     "src/utils/photoNoteTitle.ts",

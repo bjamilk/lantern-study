@@ -17,7 +17,11 @@
  * Touches: `@lantern/shared/utils/noteUpload` (the 25 MB cap and the Word name
  * check), `utils/wordImport` (the Word door, which owns its own mime).
  */
-import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
+import {
+  TEXT_PICKER_MIMES,
+  assertNoteUploadSize,
+  isPlainTextFileName,
+} from '@lantern/shared/utils/noteUpload';
 import {
   pickWordDocument,
   wordPickerOptions,
@@ -25,8 +29,14 @@ import {
   type WordPickerOptions,
 } from './wordImport';
 
-/** The three file doors, named as `NotesScreen`'s `pendingImport.mode` names them. */
-export type ImportFileKind = 'pdf' | 'presentation' | 'document';
+/**
+ * The file doors, named as `NotesScreen`'s `pendingImport.mode` names them.
+ *
+ * `text` is the cheapest of them: a `.txt` or `.md` IS the note's body, so the
+ * phone reads the file and creates an ordinary note — no upload, no server
+ * route, no credit spent reading it.
+ */
+export type ImportFileKind = 'pdf' | 'presentation' | 'document' | 'text';
 
 export const PDF_MIME = 'application/pdf';
 
@@ -43,7 +53,20 @@ export const PRESENTATION_MIMES = [
 export function defaultImportFileName(kind: ImportFileKind): string {
   if (kind === 'pdf') return 'document.pdf';
   if (kind === 'presentation') return 'slides.pptx';
+  if (kind === 'text') return 'notes.txt';
   return 'document.docx';
+}
+
+/**
+ * Refuse a file the text door cannot read, by name, before it is opened.
+ *
+ * Android's picker honours a mime filter loosely and will hand back whatever
+ * the student long-pressed; without this, a `.pdf` chosen at the text door
+ * would be read as UTF-8 and become a note full of mojibake.
+ */
+export function assertTextFileName(fileName: string): void {
+  if (isPlainTextFileName(fileName)) return;
+  throw new Error(`“${fileName}” is not a .txt or .md file.`);
 }
 
 // A fresh object each call: `expo-document-picker` types `type` as a mutable
@@ -52,7 +75,12 @@ export function defaultImportFileName(kind: ImportFileKind): string {
 export function importFilePickerOptions(kind: ImportFileKind): WordPickerOptions {
   if (kind === 'document') return wordPickerOptions();
   return {
-    type: kind === 'pdf' ? [PDF_MIME] : [...PRESENTATION_MIMES],
+    type:
+      kind === 'pdf'
+        ? [PDF_MIME]
+        : kind === 'text'
+          ? [...TEXT_PICKER_MIMES]
+          : [...PRESENTATION_MIMES],
     copyToCacheDirectory: true,
     multiple: false,
   };
@@ -84,6 +112,7 @@ export async function pickImportFile(
 
   const name = asset.name || defaultImportFileName(kind);
   const size = asset.size ?? 0;
+  if (kind === 'text') assertTextFileName(name);
   assertNoteUploadSize(size, name);
   return { uri: asset.uri, name, size };
 }

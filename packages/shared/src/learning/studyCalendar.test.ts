@@ -13,6 +13,8 @@ import {
   calendarMonthTitle,
   calendarWeekDates,
   calendarWeekStart,
+  daysUntilExam,
+  examHeaderCountdown,
   shiftCalendarWeek,
   calendarSessionFeature,
   calendarSessionLabel,
@@ -190,6 +192,32 @@ describe('resolveExamDate', () => {
     expect(resolveExamDate(null, null)).toBeNull();
     expect(resolveExamDate({ examDate: null }, { examDate: null })).toBeNull();
     expect(resolveExamDate(undefined, undefined)).toBeNull();
+  });
+});
+
+describe('daysUntilExam / examHeaderCountdown', () => {
+  it('counts whole calendar days forward and backward', () => {
+    expect(daysUntilExam('2026-10-11', '2026-09-18')).toBe(23);
+    expect(daysUntilExam('2026-09-18', '2026-09-18')).toBe(0);
+    expect(daysUntilExam('2026-09-17', '2026-09-18')).toBe(-1);
+  });
+
+  it('is null for anything that is not a calendar day on either side', () => {
+    expect(daysUntilExam(null, '2026-09-18')).toBeNull();
+    expect(daysUntilExam('', '2026-09-18')).toBeNull();
+    expect(daysUntilExam('soon', '2026-09-18')).toBeNull();
+    expect(daysUntilExam('2026-10-11', 'today')).toBeNull();
+  });
+
+  it('is the header phrase, with today and tomorrow spelt out', () => {
+    expect(examHeaderCountdown('2026-10-11', '2026-09-18')).toBe('Exam in 23 days');
+    expect(examHeaderCountdown('2026-09-19', '2026-09-18')).toBe('Exam tomorrow');
+    expect(examHeaderCountdown('2026-09-18', '2026-09-18')).toBe('Exam today');
+  });
+
+  it('shows nothing for a past exam rather than a negative countdown', () => {
+    expect(examHeaderCountdown('2026-09-17', '2026-09-18')).toBeNull();
+    expect(examHeaderCountdown(null, '2026-09-18')).toBeNull();
   });
 });
 

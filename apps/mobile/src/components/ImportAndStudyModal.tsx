@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -13,6 +13,16 @@ import * as ImagePicker from 'expo-image-picker';
 import { getNoteStudyContent } from '@lantern/shared';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
+import {
+  emptyImportRunState,
+  type ImportGeneratedArtifact,
+  type ImportKind,
+  type ImportRunState,
+  uploadStageOf,
+  type ImportStageId,
+} from '@lantern/shared/utils/importStages';
+import { ImportStages, WhereNextFork } from './study/ImportProgress';
+import { readTextFile } from '../utils/textImport';
 import { HANDWRITING_OCR_OFF_MESSAGE } from '@lantern/shared/utils/handwritingOcr';
 import * as notesApi from '../services/notes';
 import { fetchAiHealth } from '../services/api';
@@ -57,6 +67,14 @@ interface ImportAndStudyModalProps {
   courseId?: string | null;
   studySetId?: string | null;
   /**
+   * The second card of the "where next" fork. Passed ONLY when this set really
+   * has a study plan — a card that opens nothing, at the one moment the student
+   * is being asked to choose, is worse than no card.
+   */
+  onViewStudyPlan?: () => void;
+  /** The fork's fallback second card, for a set with no plan yet. */
+  onOpenSetHome?: () => void;
+  /**
    * Fire one file picker the moment the sheet opens.
    *
    * The set room's PDF / PPT / Word chips set this. A chip names a file type,
@@ -78,6 +96,8 @@ export default function ImportAndStudyModal({
   onTurnIntoStudyProduct,
   courseId,
   studySetId,
+  onViewStudyPlan,
+  onOpenSetHome,
   autoPick,
 }: ImportAndStudyModalProps) {
   const { colors } = useTheme();
@@ -90,6 +110,45 @@ export default function ImportAndStudyModal({
   const [handwritingOcrOff, setHandwritingOcrOff] = useState(false);
   const { isOnline } = useSyncStatus();
   const wordDoor = wordDoorState(isOnline);
+  /**
+   * The staged progress the sheet draws instead of one spinner. A description
+   * of what the pipeline has REPORTED, never a timer — see
+   * `@lantern/shared/utils/importStages`.
+   */
+  const [run, setRun] = useState<ImportRunState | null>(null);
+  /** What the failed card's Retry re-runs: only a closure still has the file. */
+  const retryRef = useRef<(() => void) | null>(null);
+
+  const generates = useMemo<ImportGeneratedArtifact[]>(() => {
+    const list: ImportGeneratedArtifact[] = [];
+    if (generateCards) list.push('flashcards');
+    if (generateQuiz) list.push('quiz');
+    return list;
+  }, [generateCards, generateQuiz]);
+
+  const beginRun = useCallback(
+    (kind: ImportKind, hasUpload: boolean, retry: () => void) => {
+      retryRef.current = retry;
+      setRun(emptyImportRunState(kind, generates, hasUpload));
+      setStep('processing');
+      setError(null);
+    },
+    [generates]
+  );
+
+  const patchRun = useCallback((patch: Partial<ImportRunState>) => {
+    setRun((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  /**
+   * Land a failure ON the stage that produced it, keeping the message the
+   * server or the network gave: "check your connection" and "no text could be
+   * read out of this PDF" are different problems with different fixes.
+   */
+  const failRun = useCallback((stage: ImportStageId, message: string) => {
+    setError(message);
+    setRun((prev) => (prev ? { ...prev, failure: { stage, message } } : prev));
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
@@ -103,6 +162,8 @@ export default function ImportAndStudyModal({
     setTextContent('');
     setError(null);
     setResult(null);
+    setRun(null);
+    retryRef.current = null;
   };
 
   const handleClose = () => {
@@ -140,6 +201,13 @@ export default function ImportAndStudyModal({
         noteTitle: note.title,
         generating: wanted,
       };
+      // The note exists, so the middle card is done. The third card stays
+      // ACTIVE while the generation job runs in the background — on the phone
+      // the student is deliberately let go at this point, and the "where next"
+      // fork below says so rather than holding them on a spinner.
+      setRun((prev) =>
+        prev ? { ...prev, materialReady: true, generationDone: !wanted } : prev
+      );
       setResult(res);
       setStep('done');
       onComplete?.(res);
@@ -224,8 +292,7 @@ export default function ImportAndStudyModal({
 
   const processText = async () => {
     if (!textContent.trim()) return;
-    setStep('processing');
-    setError(null);
+    beginRun('text', false, () => void processText());
     try {
       const note = await useNotesStore.getState().createNote({
         title: 'Imported Notes',
@@ -236,13 +303,12 @@ export default function ImportAndStudyModal({
       });
       enrichNote(note);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Import failed');
-      setStep('input');
+      failRun('processing', e instanceof Error ? e.message : 'Import failed');
     }
   };
 
   /**
-   * The three file doors: PDF, PowerPoint and Word (.docx).
+   * The file doors: PDF, PowerPoint, Word (.docx) and plain text.
    *
    * Word goes through `createNote` — the SAME path the paste box below uses —
    * because the server hands back text rather than a stored file: a Word
@@ -266,9 +332,24 @@ export default function ImportAndStudyModal({
     }
     if (!picked) return;
 
-    setStep('processing');
-    setError(null);
+    const kindForStages: ImportKind =
+      kind === 'pdf' ? 'pdf' : kind === 'presentation' ? 'presentation' : kind === 'text' ? 'text' : 'document';
+    // A `.txt` is read on the device; the other three send bytes.
+    beginRun(kindForStages, kind !== 'text', () => void handlePickFile(kind));
     try {
+      if (kind === 'text') {
+        const { title, body } = await readTextFile(picked.uri, picked.name);
+        const note = await useNotesStore.getState().createNote({
+          title,
+          body,
+          sourceType: 'import',
+          ...(courseId ? { courseId } : {}),
+          ...(studySetId ? { studySetId } : {}),
+        });
+        enrichNote(note);
+        return;
+      }
+
       if (kind === 'document') {
         const note = await importWordDocument({
           file: picked,
@@ -290,11 +371,13 @@ export default function ImportAndStudyModal({
           : await notesApi.uploadPresentationViaApi(picked.uri, picked.name);
       const attachments = uploaded.attachment ? [uploaded.attachment] : [];
       useNotesStore.getState().upsertNote({ ...uploaded.note, attachments });
+      // The bytes are in: the sheet's own upload card can only be told this
+      // much, because the phone's upload helpers take no progress callback.
+      patchRun({ upload: { phase: 'complete', percent: 100 } });
       enrichNote({ ...uploaded.note, attachments });
       await fileNote(uploaded.note.id);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Import failed');
-      setStep('input');
+      failRun(uploadStageOf(e), e instanceof Error ? e.message : 'Import failed');
     }
   };
 
@@ -321,8 +404,7 @@ export default function ImportAndStudyModal({
 
   const importPhotos = async (assets: ImagePicker.ImagePickerAsset[]) => {
     if (!assets.length) return;
-    setStep('processing');
-    setError(null);
+    beginRun('photos', true, () => void importPhotos(assets));
     try {
       const uploaded = await notesApi.uploadNoteImagesViaApi(
         assets.map((asset, index) => ({
@@ -338,14 +420,14 @@ export default function ImportAndStudyModal({
         ...uploaded.note,
         attachments: uploaded.attachments,
       });
+      patchRun({ upload: { phase: 'complete', percent: 100 } });
       enrichNote({
         ...uploaded.note,
         attachments: uploaded.attachments,
       });
       await fileNote(uploaded.note.id);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Photo import failed');
-      setStep('input');
+      failRun(uploadStageOf(e), e instanceof Error ? e.message : 'Photo import failed');
     }
   };
 
@@ -383,6 +465,9 @@ export default function ImportAndStudyModal({
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
+
+  /** Is there anywhere for the completion fork to send them? */
+  const canFork = Boolean(onOpenSetHome || onViewStudyPlan);
 
   return (
     // The shared sheet shell (components/ui/SheetShell.tsx). This panel was a
@@ -516,6 +601,23 @@ export default function ImportAndStudyModal({
                   </View>
                 </Pressable>
 
+                {/* Plain text and Markdown. The cheapest door there is: the
+                    file IS the note's body, read on the device, so nothing is
+                    uploaded and no credit is spent reading it. */}
+                <Pressable
+                  onPress={() => void handlePickFile('text')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Import a text file"
+                  accessibilityHint="A .txt or .md file becomes a note"
+                  className="flex-row items-center gap-3 border-2 border-dashed border-lantern-border rounded-xl px-3 py-3 mb-3"
+                >
+                  <AppIcon name="document-text" size={22} color={brand.text} />
+                  <View className="flex-1">
+                    <T.Body className="font-semibold">Text file (.txt, .md)</T.Body>
+                    <T.Caption tone="secondary">Read on your phone — nothing is uploaded</T.Caption>
+                  </View>
+                </Pressable>
+
                 <TextInput
                   value={textContent}
                   onChangeText={setTextContent}
@@ -541,7 +643,17 @@ export default function ImportAndStudyModal({
               </>
             ) : null}
 
-            {step === 'processing' ? (
+            {step === 'processing' && run ? (
+              <ImportStages
+                state={run}
+                onRetry={() => {
+                  const again = retryRef.current;
+                  if (again) again();
+                }}
+              />
+            ) : null}
+
+            {step === 'processing' && !run ? (
               <View className="items-center py-8">
                 <ActivityIndicator size="large" color={brand.text} />
                 <Text className="font-medium text-lantern-text mt-4">
@@ -560,15 +672,42 @@ export default function ImportAndStudyModal({
                     they're ready, and they'll show up on Home.
                   </Text>
                 ) : null}
-                <Button
-                  fullWidth
-                  onPress={() => {
-                    onOpenNote(result.noteId);
-                    handleClose();
-                  }}
-                >
-                  Open note
-                </Button>
+                {/* The fork, when there is somewhere to fork TO. The Notes
+                    screen's own Import door has no set, and a card that opened
+                    nothing would be the dead door #135 removed from the upload
+                    page — so that case keeps the single button. */}
+                {canFork ? (
+                  <View className="w-full">
+                    <WhereNextFork
+                      onViewMaterial={() => {
+                        onOpenNote(result.noteId);
+                        handleClose();
+                      }}
+                      onViewPlan={
+                        onViewStudyPlan
+                          ? () => {
+                              onViewStudyPlan();
+                              handleClose();
+                            }
+                          : undefined
+                      }
+                      onOpenSetHome={() => {
+                        onOpenSetHome?.();
+                        handleClose();
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <Button
+                    fullWidth
+                    onPress={() => {
+                      onOpenNote(result.noteId);
+                      handleClose();
+                    }}
+                  >
+                    Open note
+                  </Button>
+                )}
                 {onTurnIntoStudyProduct ? (
                   <Button
                     fullWidth

@@ -46,6 +46,8 @@ import {
   type LectureTabId,
 } from '@lantern/shared';
 import {
+  SMART_NOTES_SKILL_HINT_EXAMPLES,
+  SMART_NOTES_SKILL_HINT_MAX_CHARS,
   upsertSmartNotesSection,
   type SmartNotesDepth,
 } from '@lantern/shared/utils/smartNotes';
@@ -59,7 +61,9 @@ import { Button, ScreenHeader, T } from '../../components/ui';
 import { NoteBody } from '../../components/NoteBody';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
+import { LectureLanguagePicker } from '../../components/lecture/LectureLanguagePicker';
 import { LectureTabs } from '../../components/lecture/LectureTabs';
+import { LectureTranscriptSegments } from '../../components/lecture/LectureSegmentList';
 import { lectureStudioView } from './lectureStudioView';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
@@ -101,6 +105,10 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   const resumeRecording = useLectureRecordingStore((s) => s.resumeRecording);
   const discardRecording = useLectureRecordingStore((s) => s.discard);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
+  const segments = useLectureRecordingStore((s) => s.segments);
+  const segmentsNoteId = useLectureRecordingStore((s) => s.transcriptNoteId);
+  const retrySegment = useLectureRecordingStore((s) => s.retrySegment);
+  const hydrateFromNote = useLectureRecordingStore((s) => s.hydrateFromNote);
 
   const courseNotes = useMemo(
     () => studioMaterials(notes, { studySetId, courseId }),
@@ -136,6 +144,8 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   const [notesBody, setNotesBody] = useState('');
   const [askDraft, setAskDraft] = useState('');
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
+  /** One line about the reader, appended to the enhance prompt as a hint. */
+  const [skillHint, setSkillHint] = useState('');
   const [writing, setWriting] = useState(false);
   /**
    * Notes read as a hierarchy by default; Edit brings back the text box. A
@@ -227,6 +237,19 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   }, [recording]);
   const busy = status === 'uploading' || status === 'transcribing' || status === 'naming';
   const paused = recording && Boolean(pausedAt);
+
+  /**
+   * Read the note's own segment rows whenever a lecture is opened and nothing
+   * is running. This is the recovery path: the rows were written BEFORE their
+   * audio was transcribed, so an app Android reaped mid-lecture left a trail
+   * here that the cache file could never have left.
+   */
+  useEffect(() => {
+    if (status !== 'idle' || !activeNote?.id) return;
+    hydrateFromNote(activeNote.id, activeNote.attachments);
+  }, [status, activeNote?.id, activeNote?.attachments, hydrateFromNote]);
+
+  const segmentsForNote = segmentsNoteId === activeNote?.id ? segments : [];
 
   const tabSource = {
     body: activeNote?.body ?? '',
@@ -342,7 +365,10 @@ export function LectureStudioScreen({ navigation, route }: Props) {
         title: snapshot.title,
         body: composeBody(snapshot.body, liveRef.current),
       });
-      const result = await summarizeNote(activeNote.id, { depth });
+      const result = await summarizeNote(activeNote.id, {
+        depth,
+        skillLevelHint: skillHint.trim() || undefined,
+      });
       if (result.note) {
         setSelectedNote({
           ...(useNotesStore.getState().selectedNote ?? activeNote),
@@ -431,7 +457,20 @@ export function LectureStudioScreen({ navigation, route }: Props) {
               />
               <T.Body>I can record this lecture.</T.Body>
             </Pressable>
-            <Button disabled={!agreed} onPress={() => void handleStart()}>
+            {/*
+              The pre-check, before the take rather than only during it. The
+              Level row reads "No signal yet" until the recorder is running —
+              expo-av meters a RECORDING, so unlike the browser there is no
+              live bar before Start. Every other row (permission, connection,
+              cost, length, screen) is a real reading at this moment.
+            */}
+            <LecturePreflightCard />
+            <LectureLanguagePicker />
+            <Button
+              disabled={!agreed}
+              onPress={() => void handleStart()}
+              accessibilityLabel="Start recording"
+            >
               {starting ? 'Starting…' : 'Start recording'}
             </Button>
           </View>
@@ -500,18 +539,21 @@ export function LectureStudioScreen({ navigation, route }: Props) {
               className="rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-heading text-lantern-text"
             />
 
+            {/*
+              The transcript during class. The Transcript TAB is locked while a
+              take runs — nothing may pull a typing student off My Notes — so
+              the growing list lives here, above the tabs.
+            */}
             {recording || busy ? (
               <View>
                 <T.Label>Live transcript</T.Label>
                 <View className="mt-2 min-h-[120px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
-                  {liveTranscript ? (
-                    <T.Body>{liveTranscript}</T.Body>
-                  ) : (
-                    <T.Body tone="tertiary">
-                      Listening… captions appear here when this phone can transcribe live. The full
-                      transcript still lands after you stop.
-                    </T.Body>
-                  )}
+                  <LectureTranscriptSegments
+                    segments={segmentsForNote}
+                    liveCaptions={liveTranscript}
+                    recording={recording}
+                    onRetry={(seq) => void retrySegment(seq)}
+                  />
                 </View>
               </View>
             ) : null}
@@ -519,6 +561,8 @@ export function LectureStudioScreen({ navigation, route }: Props) {
             {/* The lecture surface, shared with the Library door. */}
             <LectureTabs
               noteId={activeNote?.id}
+              segments={segmentsForNote}
+              onRetrySegment={(seq) => void retrySegment(seq)}
               source={tabSource}
               noteTitle={title || activeNote?.title}
               recording={recording}
@@ -601,6 +645,35 @@ export function LectureStudioScreen({ navigation, route }: Props) {
                       <T.Body style={depth === option.id ? { color: '#ffffff' } : undefined}>
                         {`${option.label} · ${formatCreditCost(SMART_NOTES_CREDIT_COST[option.id])}`}
                       </T.Body>
+                    </Pressable>
+                  ))}
+                </View>
+                {/*
+                  One optional line about the reader. Free: a hint is a
+                  sentence in the prompt, not a second call, so the price above
+                  does not move.
+                */}
+                <T.Caption tone="secondary" className="mt-1">
+                  How much do you already know? (optional)
+                </T.Caption>
+                <TextInput
+                  value={skillHint}
+                  onChangeText={setSkillHint}
+                  maxLength={SMART_NOTES_SKILL_HINT_MAX_CHARS}
+                  accessibilityLabel="How much do you already know?"
+                  placeholder="e.g. I know the basics but not the maths"
+                  className="mt-1 min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 text-body text-lantern-text"
+                />
+                <View className="flex-row flex-wrap gap-2 mt-2 mb-2">
+                  {SMART_NOTES_SKILL_HINT_EXAMPLES.map((example) => (
+                    <Pressable
+                      key={example.id}
+                      onPress={() => setSkillHint(example.text)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${example.label} level`}
+                      className="min-h-[44px] justify-center rounded-full border border-lantern-border bg-lantern-surface px-3"
+                    >
+                      <T.Body>{example.label}</T.Body>
                     </Pressable>
                   ))}
                 </View>

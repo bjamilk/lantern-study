@@ -139,6 +139,21 @@ export const IMAGE_TOO_LARGE_MESSAGE =
   'Image is too large to process. Please use a smaller image.';
 export const GIF_TOO_MANY_FRAMES_MESSAGE =
   'Animated GIF has too many frames. Please use a shorter GIF.';
+
+/**
+ * HEIC arrived but this build of libvips cannot decode it.
+ *
+ * sharp's prebuilt libvips carries HEIF support and was verified to decode a
+ * real iPhone-format still before the accept list was widened — but that is a
+ * property of the binary the deploy target installs, not of our code, and a
+ * build without it would otherwise refuse an iPhone photograph with "Could not
+ * read image metadata", which tells a student nothing they can act on. This
+ * sentence tells them the one thing they can do about it themselves.
+ */
+export const HEIC_UNREADABLE_MESSAGE =
+  'This iPhone photo could not be read. On your iPhone, open Settings › Camera › Formats and choose "Most Compatible", or share the photo as a JPEG, then upload it again.';
+
+const HEIC_MIMES = new Set(['image/heic', 'image/heif']);
 export async function normalizeImageForStorage(
   buffer: Buffer,
   budget: ImageBudget,
@@ -154,6 +169,9 @@ export async function normalizeImageForStorage(
     // libvips pixel-limit error raised while merely reading dimensions.
     meta = await sharp(buffer, { animated: true, failOn: "none" }).metadata();
   } catch (err: any) {
+    if (detectedMime && HEIC_MIMES.has(detectedMime)) {
+      throw new Error(HEIC_UNREADABLE_MESSAGE);
+    }
     throw new Error(err?.message || "Could not read image metadata");
   }
 
@@ -194,7 +212,17 @@ export async function normalizeImageForStorage(
     })
     .webp({ quality: budget.quality });
 
-  const out = await pipeline.toBuffer({ resolveWithObject: true });
+  let out;
+  try {
+    out = await pipeline.toBuffer({ resolveWithObject: true });
+  } catch (err: any) {
+    // The header read above can succeed on a build whose HEIF decoder is
+    // missing; the failure then lands here, on the first real pixel.
+    if (detectedMime && HEIC_MIMES.has(detectedMime)) {
+      throw new Error(HEIC_UNREADABLE_MESSAGE);
+    }
+    throw err;
+  }
   return {
     buffer: out.data,
     contentType: "image/webp",

@@ -14,8 +14,16 @@
  * Touches: expo-av (Audio.Recording, imported lazily), expo-file-system/legacy
  * for the audio file, expo-keep-awake, the native lecture-recording-service
  * (Android foreground service + notification), react-native AppState,
- * services/notes (`transcribeAudioForNote`), services/liveSpeech for live
+ * services/notes (the per-segment prepare/upload/transcribe), services/liveSpeech for live
  * captions, services/ai (`fetchAIUsage`), plus notesStore and toastStore.
+ *
+ * Segmented since W4: every LECTURE_SEGMENT_MS the recorder is stopped and a
+ * NEW `Audio.Recording` is started, so each closed segment is a standalone
+ * file that is uploaded and transcribed WHILE the lecture runs. On Android the
+ * app being killed mid-lecture is routine rather than exceptional, so the old
+ * "one cache file, uploaded after Stop" shape meant a killed app lost the
+ * whole take. It now loses at most the five minutes still open. The naming
+ * sheet is unchanged and still gates the FINAL segment.
  *
  * Gotchas: the status machine is load-bearing. `naming` is the only point
  * where nothing has been spent yet, and `failed` HOLDS the audio file so
@@ -30,11 +38,32 @@ import { create } from 'zustand';
 import { AppState, type AppStateStatus } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { composeLectureNoteBody, displayLectureTranscript } from '@lantern/shared';
-import { maxLectureRecordingMs } from '@lantern/shared/utils/lectureAudio';
+// The SUBPATH, not the bare package: mobile's jest maps
+// `@lantern/shared/<subpath>` but not `@lantern/shared` itself, so a bare
+// import makes this store impossible to load in a test at all.
+import { composeLectureNoteBody, displayLectureTranscript } from '@lantern/shared/learning';
+import {
+  maxLectureRecordingMs,
+  normalizeLectureSpokenLanguage,
+  normalizeLectureTranscribeTarget,
+} from '@lantern/shared/utils/lectureAudio';
+import {
+  formatLectureSegmentStamp,
+  lectureSegmentRows,
+  newLectureSessionId,
+  resolveLectureResume,
+  shouldRotateLectureSegment,
+  type LectureSegmentAttachmentLike,
+  type LectureSegmentRow,
+} from '@lantern/shared/utils/lectureSegments';
 import { startLiveCaptionStream } from '../services/liveSpeech';
 import { fetchAIUsage } from '../services/ai';
-import { transcribeAudioForNote } from '../services/notes';
+import {
+  prepareLectureSegmentUpload,
+  transcribeLectureSegment,
+  uploadLectureSegment,
+} from '../services/notes';
+import { useSettingsStore } from './settingsStore';
 import {
   hasLectureForegroundService,
   startLectureForegroundService,
@@ -69,6 +98,21 @@ import {
  * student had just sat through was gone. Now the file is HELD, `Retry
  * transcription` is offered, and Discard is the only thing that deletes it.
  */
+/**
+ * The two language choices, read off the synced settings blob.
+ *
+ * Returns the wire shape rather than the setting shape so the call site reads
+ * as one spread; `normalize*` runs on the way out because a blob written by a
+ * newer build must not reach Whisper unchecked.
+ */
+function lectureTranscribeLanguages(): { language: string; translateTo: string } {
+  const lecture = useSettingsStore.getState().settings?.lecture;
+  return {
+    language: normalizeLectureSpokenLanguage(lecture?.spokenLanguage),
+    translateTo: normalizeLectureTranscribeTarget(lecture?.transcribeTo),
+  };
+}
+
 export type LectureRecordingStatus =
   | 'idle'
   | 'recording'
@@ -127,7 +171,22 @@ interface LectureRecordingState {
   whisperTranscript: string;
   transcriptNoteId: string | null;
 
-  start: (noteId: string, noteTitle: string, options?: { currentBody?: string }) => Promise<void>;
+  /** The take this store is recording or last recorded. */
+  sessionId: string | null;
+  /** Every segment of the open take, in recorded order. */
+  segments: LectureSegmentUi[];
+  /** Segments still uploading or transcribing. */
+  inFlight: number;
+
+  start: (
+    noteId: string,
+    noteTitle: string,
+    options?: {
+      currentBody?: string;
+      /** Carry on an interrupted take instead of starting a new one. */
+      resume?: { sessionId: string; nextSeq: number; recordedMs: number };
+    }
+  ) => Promise<void>;
   /** Stop the recorder and open the title sheet. Nothing is uploaded yet. */
   stopForTitle: (options?: { currentBody?: string }) => Promise<void>;
   /** Accept the sheet's title (empty keeps the suggestion) and transcribe. */
@@ -142,9 +201,42 @@ interface LectureRecordingState {
   refreshMicPermission: () => Promise<void>;
   discard: () => Promise<void>;
   cancelTranscription: () => void;
+  /** Transcribe one segment again. Its audio is already safe. */
+  retrySegment: (seq: number) => Promise<void>;
+  /** Read the note's own segment rows so a reload can offer to carry on. */
+  hydrateFromNote: (
+    noteId: string,
+    attachments: readonly LectureSegmentAttachmentLike[] | null | undefined
+  ) => void;
   setCurrentBodyProvider: (provider: (() => string) | null) => void;
   isActiveForNote: (noteId: string) => boolean;
 }
+
+export type LectureSegmentUiStatus = 'uploading' | 'transcribing' | 'done' | 'failed';
+
+/** One card in the transcript list, and one row in the Audio files list. */
+export interface LectureSegmentUi {
+  seq: number;
+  startOffsetMs: number;
+  durationMs: number;
+  /** `0:00`, `5:00`, `1:05:00` — the gutter time on the card. */
+  stamp: string;
+  status: LectureSegmentUiStatus;
+  transcript: string;
+  error?: string;
+  attachmentId?: string;
+  fileName?: string;
+  fileUrl?: string;
+  createdAt?: string;
+}
+
+/** The audio of one closed segment, held on disk until the server has its words. */
+type HeldSegment = {
+  uri: string;
+  seq: number;
+  startOffsetMs: number;
+  durationMs: number;
+};
 
 type SessionRefs = {
   recording: RecordingHandle | null;
@@ -170,6 +262,18 @@ type SessionRefs = {
   keepAwake: boolean;
   stopCaptions: (() => void) | null;
   captionPersistTimer: ReturnType<typeof setTimeout> | null;
+
+  /* ---- segments ---- */
+  /** The take id. One per Start, reused by a Resume. */
+  sessionId: string | null;
+  /** The seq of the segment currently open. */
+  openSeq: number;
+  /** Recorded milliseconds at which the open segment began. */
+  openStartOffsetMs: number;
+  /** True while a rotation is in flight, so two cannot overlap. */
+  rotating: boolean;
+  /** Closed segments whose audio is still on this phone, keyed by seq. */
+  held: Map<number, HeldSegment>;
 };
 
 const session: SessionRefs = {
@@ -187,6 +291,11 @@ const session: SessionRefs = {
   keepAwake: false,
   stopCaptions: null,
   captionPersistTimer: null,
+  sessionId: null,
+  openSeq: 1,
+  openStartOffsetMs: 0,
+  rotating: false,
+  held: new Map(),
 };
 
 const KEEP_AWAKE_TAG = 'lecture-recording';
@@ -402,6 +511,208 @@ export function formatRecordingDuration(totalSeconds: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+/**
+ * Close the open segment and open the next one, without ending the lecture.
+ *
+ * `expo-av` has no equivalent of the browser's "same stream, new encoder": the
+ * recording IS the capture, so the microphone is briefly released and
+ * reacquired. That gap is why the next segment's offset is the measured close
+ * time rather than a round five minutes — the stamps say where the audio
+ * actually is, and the offsets stay contiguous with it.
+ *
+ * Guarded by `session.rotating` so a slow `createAsync` cannot let a second
+ * rotation start on a recorder that is already down.
+ */
+async function rotateSegment(
+  set: (fn: (state: LectureRecordingState) => Partial<LectureRecordingState>) => void,
+  get: () => LectureRecordingState,
+  noteId: string
+): Promise<void> {
+  if (session.rotating) return;
+  const rec = session.recording;
+  const AudioMod = session.AudioMod;
+  const sessionId = session.sessionId;
+  if (!rec || !AudioMod || !sessionId) return;
+  session.rotating = true;
+
+  const seq = session.openSeq;
+  const startOffsetMs = session.openStartOffsetMs;
+  try {
+    const closedAtMs = getSessionElapsedMs(get());
+    await rec.stopAndUnloadAsync();
+    const uri = rec.getURI();
+    session.recording = null;
+
+    // Reopen FIRST: every millisecond between the two recorders is a
+    // millisecond of the lecture nobody hears again.
+    const { recording: next } = await AudioMod.Recording.createAsync(
+      speechRecordingOptions(AudioMod.RecordingOptionsPresets.HIGH_QUALITY) as Parameters<
+        typeof AudioMod.Recording.createAsync
+      >[0],
+      (recStatus: { metering?: number }) => {
+        const db = typeof recStatus?.metering === 'number' ? recStatus.metering : null;
+        set(() => ({ meterDb: db !== null && Number.isFinite(db) ? db : null }));
+      },
+      METERING_INTERVAL_MS
+    );
+    session.recording = next as unknown as RecordingHandle;
+    session.openSeq = seq + 1;
+    session.openStartOffsetMs = closedAtMs;
+
+    if (uri) {
+      const held: HeldSegment = {
+        uri,
+        seq,
+        startOffsetMs,
+        durationMs: Math.max(0, closedAtMs - startOffsetMs),
+      };
+      session.held.set(seq, held);
+      set((state) => ({
+        segments: [
+          ...state.segments.filter((row) => row.seq !== seq),
+          {
+            seq,
+            startOffsetMs,
+            durationMs: held.durationMs,
+            stamp: formatLectureSegmentStamp(startOffsetMs),
+            status: 'uploading' as const,
+            transcript: '',
+            createdAt: new Date().toISOString(),
+          },
+        ].sort((a, b) => a.startOffsetMs - b.startOffsetMs || a.seq - b.seq),
+        // The captions belong to the segment that just closed; Whisper is about
+        // to say what was in it properly.
+        committedTranscript: '',
+        interimTranscript: '',
+      }));
+      void runSegmentUpload(
+        set,
+        (partial) => set(() => partial),
+        get,
+        noteId,
+        sessionId,
+        held
+      );
+    }
+  } catch {
+    // The recorder would not restart. Say so plainly and end the take rather
+    // than pretend a microphone is open that is not.
+    useToastStore
+      .getState()
+      .showToast('Recording stopped unexpectedly. What you have so far is saved.', 'error');
+    void get().stopForTitle();
+  } finally {
+    session.rotating = false;
+  }
+}
+
+/** Replace one segment's row, leaving the rest of the list alone. */
+function patchSegment(
+  set: (fn: (state: LectureRecordingState) => Partial<LectureRecordingState>) => void,
+  seq: number,
+  patch: Partial<LectureSegmentUi>
+) {
+  set((state) => ({
+    segments: state.segments.map((row) => (row.seq === seq ? { ...row, ...patch } : row)),
+  }));
+}
+
+/** The MIME and extension a cache file's name implies. */
+function mimeForUri(uri: string): string {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith('.webm')) return 'audio/webm';
+  if (lower.endsWith('.wav')) return 'audio/wav';
+  if (lower.endsWith('.ogg')) return 'audio/ogg';
+  return 'audio/mp4';
+}
+
+/**
+ * Upload one closed segment and ask for its words.
+ *
+ * Never awaited by the recorder: the lecture does not pause for a round trip
+ * on a phone with two bars of signal, and a segment that fails must leave the
+ * microphone running. The cache file is deleted ONLY once the server has the
+ * words — a failure keeps it, which is what the per-segment Retry uses.
+ */
+async function runSegmentUpload(
+  set: (fn: (state: LectureRecordingState) => Partial<LectureRecordingState>) => void,
+  setPartial: (partial: Partial<LectureRecordingState>) => void,
+  get: () => LectureRecordingState,
+  noteId: string,
+  sessionId: string,
+  held: HeldSegment
+): Promise<void> {
+  set((state) => ({ inFlight: state.inFlight + 1 }));
+  patchSegment(set, held.seq, { status: 'uploading', error: undefined });
+  const mimeType = mimeForUri(held.uri);
+
+  try {
+    const info = await FileSystem.getInfoAsync(held.uri);
+    const byteLength = info.exists && 'size' in info ? Number(info.size) || 0 : 0;
+
+    const ticket = await prepareLectureSegmentUpload({
+      noteId,
+      sessionId,
+      seq: held.seq,
+      startOffsetMs: held.startOffsetMs,
+      durationMs: held.durationMs,
+      mimeType,
+      byteLength,
+    });
+
+    // The server already has this segment's words — a resumed take re-offering
+    // what it could not confirm. Uploading again would be data for nothing,
+    // which on a student's phone plan is not a rounding error.
+    if (!ticket.alreadyTranscribed) {
+      await uploadLectureSegment(held.uri, ticket);
+    }
+
+    patchSegment(set, held.seq, {
+      status: 'transcribing',
+      attachmentId: ticket.attachmentId ?? undefined,
+      fileName: ticket.fileName,
+    });
+
+    const result = await transcribeLectureSegment({
+      noteId,
+      sessionId,
+      seq: held.seq,
+      startOffsetMs: held.startOffsetMs,
+      durationMs: held.durationMs,
+      storagePath: ticket.storagePath,
+      mimeType: ticket.mimeType,
+      fileName: ticket.fileName,
+      byteLength,
+      // Read HERE rather than captured at start: a failed segment keeps its
+      // file and offers a retry, and a student who retries after fixing the
+      // language in settings should get the language they fixed.
+      ...lectureTranscribeLanguages(),
+    });
+
+    patchSegment(set, held.seq, {
+      status: 'done',
+      transcript: (result.transcript ?? '').trim(),
+      error: undefined,
+    });
+    if (typeof result.transcriptText === 'string' && get().transcriptNoteId === noteId) {
+      setPartial({ whisperTranscript: result.transcriptText });
+    }
+    if (result.persistWarning) {
+      useToastStore.getState().showToast(result.persistWarning, 'info');
+    }
+    // The words are on the server; the cache copy has no reader left.
+    session.held.delete(held.seq);
+    await deleteRecordingFile(held.uri);
+    void fetchAIUsage();
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : 'Could not transcribe this part of the lecture.';
+    patchSegment(set, held.seq, { status: 'failed', error: message });
+  } finally {
+    set((state) => ({ inFlight: Math.max(0, state.inFlight - 1) }));
+  }
+}
+
 export const useLectureRecordingStore = create<LectureRecordingState>((set, get) => ({
   status: 'idle',
   noteId: null,
@@ -419,6 +730,9 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
   interimTranscript: '',
   whisperTranscript: '',
   transcriptNoteId: null,
+  sessionId: null,
+  segments: [],
+  inFlight: 0,
 
   setCurrentBodyProvider: (provider) => {
     session.currentBodyProvider = provider;
@@ -453,7 +767,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
     }
   },
 
-  start: async (noteId, noteTitle) => {
+  start: async (noteId, noteTitle, options) => {
     const current = get();
     if (current.status === 'recording') {
       if (current.noteId === noteId) return;
@@ -515,19 +829,38 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
         METERING_INTERVAL_MS
       );
       session.recording = rec as unknown as RecordingHandle;
-      const startedAt = Date.now();
+      /**
+       * A resume carries on the SAME take: the same id, the next free seq, and
+       * a clock wound back to where the interrupted take stopped, so segment
+       * 7's stamp is where minute 30 really was. A fresh Start gets a new take
+       * and a clock at zero.
+       */
+      const resume = options?.resume;
+      session.sessionId = resume?.sessionId ?? newLectureSessionId();
+      session.openSeq = resume?.nextSeq ?? 1;
+      session.openStartOffsetMs = resume?.recordedMs ?? 0;
+      session.rotating = false;
+      session.held.clear();
+      const startedAt = Date.now() - (resume?.recordedMs ?? 0);
       clearTickTimer();
       session.tickTimer = setInterval(() => {
         set({ tick: Date.now() });
+        if (get().status !== 'recording') return;
         // Stop ourselves at the cap rather than let the server refuse the
         // upload after the lecture is over. The audio is kept and named as
         // usual — this ends the recording, it does not throw it away.
-        if (get().status === 'recording' && getSessionElapsedMs(get()) >= MAX_RECORDING_MS) {
+        if (getSessionElapsedMs(get()) >= MAX_RECORDING_MS) {
           useToastStore
             .getState()
             .showToast('Recording reached the longest a lecture can be. Name it to transcribe.', 'info');
           void get().stopForTitle();
+          return;
         }
+        if (get().pausedAt) return;
+        // Rotation is driven by RECORDED time, so a lecture paused for ten
+        // minutes does not close a segment while nothing is being captured.
+        const openMs = getSessionElapsedMs(get()) - session.openStartOffsetMs;
+        if (shouldRotateLectureSegment(openMs)) void rotateSegment(set, get, noteId);
       }, 1000);
       clearAppStateSub();
       session.appStateSub = AppState.addEventListener('change', (next: AppStateStatus) => {
@@ -545,6 +878,9 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
         canRetryTranscription: false,
         pausedAt: null,
         pausedTotalMs: 0,
+        sessionId: session.sessionId,
+        segments: resume ? get().segments : [],
+        inFlight: 0,
         ...captionFieldsForNote(get(), noteId),
       });
       // After the state is set, so the notification's text is the title the
@@ -567,13 +903,26 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
       interimTranscript: '',
       whisperTranscript: '',
       transcriptNoteId: null,
+      sessionId: null,
+      segments: [],
+      inFlight: 0,
     };
+    // Segments already transcribed are IN THE NOTE and were paid for. Discard
+    // ends the take and drops what this phone is still holding; it does not
+    // reach back into the note, which is the student's to edit.
+    const dropHeld = async () => {
+      for (const held of session.held.values()) await deleteRecordingFile(held.uri);
+      session.held.clear();
+      session.sessionId = null;
+    };
+
     if (status === 'naming' || status === 'failed') {
       // The recorder is already down. THIS is the only path that deletes the
       // audio — a student saying "throw it away" is the one instruction that
       // may destroy a recording.
       const uri = status === 'failed' ? session.failedUri : session.pendingUri;
       await deleteRecordingFile(uri);
+      await dropHeld();
       await resetAudioMode();
       resetSession(set, clearCaptions);
       return;
@@ -582,6 +931,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
       session.abort?.abort();
       session.abort = null;
       await deleteRecordingFile(session.pendingUri ?? session.failedUri);
+      await dropHeld();
       resetSession(set, clearCaptions);
       await resetAudioMode();
       return;
@@ -594,6 +944,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
     try {
       if (rec) await rec.stopAndUnloadAsync();
       await deleteRecordingFile(rec?.getURI() ?? null);
+      await dropHeld();
     } catch {
       // ignore
     }
@@ -671,7 +1022,14 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
       const uri = rec.getURI();
       if (!uri) throw new Error('No recording file');
       session.pendingUri = uri;
-      session.pendingElapsedMs = elapsed;
+      /**
+       * The FINAL SEGMENT's length, not the take's.
+       *
+       * This is what the last transcription is priced on, and the take has
+       * already paid for every segment before it. Sending the whole elapsed
+       * time here would re-buy the entire lecture at the end of it.
+       */
+      session.pendingElapsedMs = Math.max(0, elapsed - session.openStartOffsetMs);
       // The store's copy of the title is refreshed from the notes store here:
       // it was captured at start, and the editor adopts it when the upload
       // begins, so a stale copy would undo a rename made mid-lecture.
@@ -775,8 +1133,126 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
    */
   retryTranscription: async () => {
     const { status } = get();
-    if (status !== 'failed' || !session.failedUri) return;
-    await runTranscription(set, get);
+    if (status !== 'failed') return;
+    if (session.failedUri) {
+      await runTranscription(set, get);
+      return;
+    }
+    // No final segment outstanding: only earlier ones failed.
+    for (const row of get().segments.filter((item) => item.status !== 'done')) {
+      await get().retrySegment(row.seq);
+    }
+  },
+
+  /**
+   * Transcribe one segment again.
+   *
+   * Two doors, because the audio can be in either place. This phone may still
+   * hold the cache file (a transcription that failed while the lecture ran), in
+   * which case the whole prepare/upload/transcribe run happens again and the
+   * server recognises the segment and charges nothing extra. Or the file is
+   * gone and the row is all there is — then the audio is already in storage and
+   * only the words are missing, which is what a reload's Retry acts on.
+   */
+  retrySegment: async (seq) => {
+    const state = get();
+    const noteId = state.noteId ?? state.transcriptNoteId;
+    const sessionId = state.sessionId;
+    if (!noteId || !sessionId) return;
+    const row = state.segments.find((item) => item.seq === seq);
+    if (!row || row.status === 'done') return;
+
+    const setFn = (fn: (s: LectureRecordingState) => Partial<LectureRecordingState>) => {
+      useLectureRecordingStore.setState(fn as never);
+    };
+    const held = session.held.get(seq);
+    if (held) {
+      await runSegmentUpload(setFn, set, get, noteId, sessionId, held);
+      return;
+    }
+
+    set({ inFlight: get().inFlight + 1 });
+    patchSegment(setFn, seq, { status: 'transcribing', error: undefined });
+    try {
+      const ticket = await prepareLectureSegmentUpload({
+        noteId,
+        sessionId,
+        seq,
+        startOffsetMs: row.startOffsetMs,
+        durationMs: row.durationMs,
+        mimeType: 'audio/mp4',
+        byteLength: 0,
+      });
+      const result = await transcribeLectureSegment({
+        noteId,
+        sessionId,
+        seq,
+        startOffsetMs: row.startOffsetMs,
+        durationMs: row.durationMs,
+        storagePath: ticket.storagePath,
+        mimeType: ticket.mimeType,
+        fileName: ticket.fileName,
+        byteLength: 0,
+        ...lectureTranscribeLanguages(),
+      });
+      patchSegment(setFn, seq, {
+        status: 'done',
+        transcript: (result.transcript ?? '').trim(),
+        error: undefined,
+      });
+      if (typeof result.transcriptText === 'string') {
+        set({ whisperTranscript: result.transcriptText });
+      }
+      void fetchAIUsage();
+    } catch (error: unknown) {
+      patchSegment(setFn, seq, {
+        status: 'failed',
+        error:
+          error instanceof Error ? error.message : 'Could not transcribe this part of the lecture.',
+      });
+    } finally {
+      set({ inFlight: Math.max(0, get().inFlight - 1) });
+    }
+  },
+
+  /**
+   * Read the note's own segment rows.
+   *
+   * This is what makes a killed app recoverable: the rows were written before
+   * the audio was transcribed, so an app Android reaped mid-lecture left a
+   * trail on the server that the cache file could never have left. Never called
+   * while a take is running — the live list is the truth then.
+   */
+  hydrateFromNote: (noteId, attachments) => {
+    if (get().status !== 'idle') return;
+    const rows: LectureSegmentRow[] = lectureSegmentRows(attachments ?? []);
+    const decision = resolveLectureResume({ rows });
+    if (decision.action === 'none' && rows.length === 0) {
+      set({ segments: [], sessionId: null });
+      return;
+    }
+    const sessionId = decision.action === 'none' ? null : decision.sessionId;
+    const ofSession = sessionId ? rows.filter((row) => row.sessionId === sessionId) : rows;
+    set({
+      sessionId,
+      transcriptNoteId: noteId,
+      segments: ofSession.map((row) => ({
+        seq: row.seq,
+        startOffsetMs: row.startOffsetMs,
+        durationMs: row.durationMs,
+        stamp: formatLectureSegmentStamp(row.startOffsetMs),
+        status: row.status === 'done' && row.transcript ? ('done' as const) : ('failed' as const),
+        transcript: row.transcript,
+        error:
+          row.status === 'done' && row.transcript
+            ? undefined
+            : 'This part was recorded but never transcribed.',
+        attachmentId: row.attachmentId,
+        fileName: row.fileName,
+        fileUrl: row.fileUrl,
+        createdAt: row.createdAt,
+      })),
+    });
   },
 }));
 
@@ -795,11 +1271,15 @@ async function runTranscription(
 ): Promise<void> {
   const uri = session.failedUri;
   const noteId = get().noteId;
-  if (!uri || !noteId) {
+  const sessionId = session.sessionId;
+  if (!uri || !noteId || !sessionId) {
     resetSession(set);
     return;
   }
-  const elapsed = session.pendingElapsedMs;
+  const seq = session.openSeq;
+  const startOffsetMs = session.openStartOffsetMs;
+  const durationMs = session.pendingElapsedMs;
+
   set({
     status: 'uploading',
     error: null,
@@ -807,107 +1287,70 @@ async function runTranscription(
     canRetryTranscription: false,
   });
 
-  const abortController = new AbortController();
-  session.abort = abortController;
+  const held: HeldSegment = { uri, seq, startOffsetMs, durationMs };
+  session.held.set(seq, held);
+  const setFn = (fn: (state: LectureRecordingState) => Partial<LectureRecordingState>) => {
+    useLectureRecordingStore.setState(fn as never);
+  };
+  setFn((state) => ({
+    segments: [
+      ...state.segments.filter((row) => row.seq !== seq),
+      {
+        seq,
+        startOffsetMs,
+        durationMs,
+        stamp: formatLectureSegmentStamp(startOffsetMs),
+        status: 'uploading' as const,
+        transcript: '',
+        createdAt: new Date().toISOString(),
+      },
+    ].sort((a, b) => a.startOffsetMs - b.startOffsetMs || a.seq - b.seq),
+  }));
 
-  try {
-    const info = await FileSystem.getInfoAsync(uri);
-    const byteLength = info.exists && 'size' in info ? Number(info.size) || 0 : 0;
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType?.Base64 ?? 'base64',
-    });
-    if (!base64 || base64.length < 64 || (byteLength > 0 && byteLength < 256)) {
-      throw new Error(
-        `Recording was empty. Hold a bit longer, then stop again. (${Math.round(elapsed / 1000)}s, ${byteLength || base64.length}B)`
-      );
-    }
+  set({ status: 'transcribing' });
+  await runSegmentUpload(setFn, set, get, noteId, sessionId, held);
 
-    const lowerUri = uri.toLowerCase();
-    const mimeType = lowerUri.endsWith('.webm')
-      ? 'audio/webm'
-      : lowerUri.endsWith('.wav')
-        ? 'audio/wav'
-        : lowerUri.endsWith('.ogg')
-          ? 'audio/ogg'
-          : 'audio/mp4';
-    const ext = lowerUri.endsWith('.webm')
-      ? 'webm'
-      : lowerUri.endsWith('.wav')
-        ? 'wav'
-        : lowerUri.endsWith('.ogg')
-          ? 'ogg'
-          : 'm4a';
+  // Everything outstanding, not only the piece just closed: a segment that
+  // failed mid-lecture is still holding its audio, and this is the moment the
+  // student is watching a spinner anyway.
+  const outstanding = get().segments.filter((row) => row.status === 'failed');
+  for (const row of outstanding) {
+    const heldRow = session.held.get(row.seq);
+    if (heldRow) await runSegmentUpload(setFn, set, get, noteId, sessionId, heldRow);
+  }
 
-    const notesState = useNotesStore.getState();
-    const currentBody =
-      typeof session.pendingBody === 'string'
-        ? session.pendingBody
-        : notesState.selectedNote?.id === noteId
-          ? notesState.selectedNote.body
-          : notesState.notes.find((n) => n.id === noteId)?.body;
+  await useNotesStore.getState().loadNote(noteId).catch(() => undefined);
+  await resetAudioMode();
+  session.abort = null;
 
-    set({ status: 'transcribing' });
-    const result = await transcribeAudioForNote(base64, {
-      mimeType,
-      noteId,
-      fileName: `lecture-${Date.now()}.${ext}`,
-      signal: abortController.signal,
-      currentBody: typeof currentBody === 'string' ? currentBody : undefined,
-      durationMs: elapsed,
-      clientByteLength: byteLength || undefined,
-      localFileUri: uri,
-      useStoragePath: true,
-    });
-
-    await useNotesStore.getState().loadNote(noteId);
-
-    if (result.persistWarning) {
-      useToastStore.getState().showToast(result.persistWarning, 'info');
-    } else if (result.transcript) {
-      useToastStore.getState().showToast('Transcript ready', 'success');
-    }
-    void fetchAIUsage();
-    // The transcript is in the note and the audio is in storage; the cache
-    // copy has no reader left.
-    session.abort = null;
-    await deleteRecordingFile(uri);
-    await resetAudioMode();
-    const incoming = result.transcript?.trim() ?? '';
-    const current = get();
-    const previous =
-      current.transcriptNoteId === noteId ? current.whisperTranscript.trim() : '';
-    resetSession(set, {
-      whisperTranscript: previous && incoming && previous !== incoming
-        ? `${previous}\n\n${incoming}`
-        : incoming || previous,
-      transcriptNoteId: noteId,
-      committedTranscript: current.committedTranscript,
-      interimTranscript: '',
-    });
-  } catch (e: unknown) {
-    // Only this attempt's controller may be cleared: a Discard followed by a
-    // fresh recording can have installed a new one before this rejection lands.
-    if (session.abort === abortController) session.abort = null;
-    if (abortController.signal.aborted || (e instanceof Error && e.name === 'AbortError')) {
-      // `cancelTranscription` or `discard` has already decided what state to
-      // be in. Checking the signal, not just the error's name, means a network
-      // error surfacing after the abort cannot drag a reset session back into
-      // `failed` with no file behind it.
-      return;
-    }
-    const message = e instanceof Error ? e.message : 'Could not transcribe audio';
-    useToastStore.getState().showToast(message, 'error');
-    await resetAudioMode();
-    // The failure path: keep the file, keep the note, offer Retry. Nothing
+  const failed = get().segments.filter((row) => row.status !== 'done');
+  if (failed.length > 0) {
+    // The failure path: keep the files, keep the note, offer Retry. Nothing
     // here signs the student out or clears the session — a dropped connection
     // is a transient failure, not a reason to lose an hour of lecture.
+    const message = `${failed.length} part${failed.length === 1 ? '' : 's'} of this lecture did not transcribe. The audio is saved — tap Retry.`;
+    useToastStore.getState().showToast(message, 'error');
     set({
       status: 'failed',
       error: message,
       canRetryTranscription: true,
       meterDb: null,
     });
+    return;
   }
+
+  useToastStore.getState().showToast('Transcript ready', 'success');
+  session.failedUri = null;
+  const current = get();
+  resetSession(set, {
+    whisperTranscript: current.whisperTranscript,
+    transcriptNoteId: noteId,
+    committedTranscript: '',
+    interimTranscript: '',
+    sessionId: current.sessionId,
+    segments: current.segments,
+    inFlight: 0,
+  });
 }
 
 export const MIN_MOBILE_LECTURE_RECORD_MS = MIN_LECTURE_RECORD_MS;

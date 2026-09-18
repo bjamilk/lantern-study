@@ -1,6 +1,8 @@
 declare module 'adm-zip' {
   interface IZipEntry {
     entryName: string;
+    /** The central-directory header. `size` is the DECLARED uncompressed size — attacker-controlled, so check it before `getData()`. */
+    header: { size: number; compressedSize: number };
     getData(): Buffer;
   }
 
