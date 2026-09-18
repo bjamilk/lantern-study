@@ -41,6 +41,7 @@ jest.mock('@supabase/supabase-js', () => ({
   }),
 }));
 
+import { setSchemaCapabilities } from './schemaCapabilities';
 import { createDataLayer } from './data';
 import { createDataClient } from './data/client';
 
@@ -90,8 +91,18 @@ const sessionRow = (id: string, answers: Record<string, any>, startTime: string)
 });
 
 beforeEach(() => {
+  // `getUserTests` asks whether `test_sessions.practice_folder_id` exists
+  // before it builds the select (20260918120000 is hand-applied). Forcing the
+  // answer is what `setSchemaCapabilities` is for: this scripted database has
+  // no probe to serve, and an unforced probe would issue a `select("id")` of
+  // its own that the capture below would read as the list query's.
+  setSchemaCapabilities({ practiceFolders: true });
   capturedSelect.length = 0;
   rows = [];
+});
+
+afterEach(() => {
+  setSchemaCapabilities({ practiceFolders: null });
 });
 
 describe('getUserTests — lean completed history', () => {

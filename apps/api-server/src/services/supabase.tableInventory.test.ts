@@ -138,6 +138,11 @@ const FROZEN_TABLES: readonly string[] = [
   'offline_bundles',
   'platform_admins',
   'points_transactions',
+  // From `data/practiceFolders.ts`, behind `routes/studySets.ts`
+  // (#130 follow-up: folders that hold a study set's quizzes and tests).
+  // Created by the hand-applied 20260918120000 migration, so every query
+  // against it degrades or answers 503 until the founder applies that file.
+  'practice_folders',
   // From `routes/analytics.ts` (lane R2, PR 2b).
   'product_events',
   'profiles',
@@ -242,9 +247,9 @@ function scan(): Scan {
 describe('services data layer table inventory', () => {
   const scanned = scan();
 
-  it('touches exactly the frozen set of 67 tables', () => {
+  it('touches exactly the frozen set of tables', () => {
     expect([...scanned.tables].sort()).toEqual([...FROZEN_TABLES].sort());
-    expect(FROZEN_TABLES).toHaveLength(68);
+    expect(FROZEN_TABLES).toHaveLength(69);
   });
 
   it('reaches exactly the frozen set of storage bucket literals', () => {

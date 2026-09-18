@@ -49,10 +49,12 @@
  *   `uploadCoverImage` / `deleteCoverObject`.
  *
  * Migration tolerance
- * - Two migrations here are applied by hand and the API runs on both sides of
+ * - Three migrations here are applied by hand and the API runs on both sides of
  *   each: reads degrade past a missing tile column so a student still sees
  *   their sets, while a write that CHOSE a tile answers 503 rather than
- *   reporting success over a row that never changed.
+ *   reporting success over a row that never changed. The practice-folder
+ *   routes follow the same split — the list answers `supported: false` with a
+ *   200 and every write answers 503 with `PRACTICE_FOLDER_MIGRATION`.
  */
 /**
  * /api/v1/users/me/study-sets — personal study sets on the Study tab.
@@ -76,6 +78,11 @@ import {
   CoverColumnMissingError,
   CoverStorageUnavailableError,
 } from '../services/data/coverImages';
+import {
+  PRACTICE_FOLDER_MIGRATION,
+  PRACTICE_FOLDER_TITLE_MAX,
+  PracticeFolderSchemaMissingError,
+} from '../services/data/practiceFolders';
 import type { DataLayer } from '../services/data';
 import {
   SET_TILE_MIGRATION,
@@ -83,6 +90,7 @@ import {
   getStudySetsService,
 } from '../services/studySets';
 import { getStudySetPreAssessmentService } from '../services/studySetPreAssessment';
+import { hasPracticeFolders } from '../services/schemaCapabilities';
 import { logger } from '../utils/logger';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 
@@ -620,6 +628,217 @@ router.delete(
       res.json({ success: true });
     } catch (err) {
       if (handlePublicError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Practice folders
+// ---------------------------------------------------------------------------
+/**
+ * Folders that hold ONE set's quizzes and tests (#130 follow-up).
+ *
+ * They live here rather than under `/tests` because a Practice folder is a
+ * property of the SET, not of the account: `/users/me/study-sets/:setId/...`
+ * puts the owner and the set in the path, so both halves of the ownership
+ * predicate are required parameters of every query rather than something a
+ * handler has to remember to add.
+ *
+ * Quizzes and tests are ONE table and the quiz/test split is derived on the
+ * client, so one folder holds both doors and there is one set of routes, not
+ * two.
+ *
+ * Migration tolerance: 20260918120000 is hand-applied. Until it lands, the
+ * LIST answers `{ supported: false, folders: [] }` — a 200, because "this
+ * database has no folders yet" is not an error the student can act on and the
+ * hub simply draws what it drew before — while every WRITE answers 503 naming
+ * the file, because reporting success over a row that never changed is worse
+ * than refusing.
+ */
+
+/** A write that needs the hand-applied migration: 503, never 500. */
+const handleSchemaMissing = (err: unknown, res: Response): boolean => {
+  if (!(err instanceof PracticeFolderSchemaMissingError)) return false;
+  res.status(503).json({ success: false, error: err.message, migration: PRACTICE_FOLDER_MIGRATION });
+  return true;
+};
+
+/** Both refusals a practice-folder handler can answer, in one place. */
+const handleFolderError = (err: unknown, res: Response): boolean =>
+  handleSchemaMissing(err, res) || handlePublicError(err, res);
+
+export const validatePracticeFolderCreate = [
+  param('setId').isUUID().withMessage('setId must be a valid UUID'),
+  body('title')
+    .isString()
+    .isLength({ min: 1, max: PRACTICE_FOLDER_TITLE_MAX })
+    .withMessage(`title must be 1-${PRACTICE_FOLDER_TITLE_MAX} characters`),
+];
+
+export const validatePracticeFolderId = [
+  param('setId').isUUID().withMessage('setId must be a valid UUID'),
+  param('folderId').isUUID().withMessage('folderId must be a valid UUID'),
+];
+
+export const validatePracticeItemMove = [
+  param('setId').isUUID().withMessage('setId must be a valid UUID'),
+  param('testId').isUUID().withMessage('testId must be a valid UUID'),
+  // `optional({ values: 'null' })` is the "send null to clear this" idiom: null
+  // is how the hub unfiles an item ("Move out"), and it is the ONLY non-uuid
+  // value accepted.
+  body('practiceFolderId')
+    .optional({ values: 'null' })
+    .isUUID()
+    .withMessage('practiceFolderId must be a valid UUID or null'),
+];
+
+router.get(
+  '/:setId/practice-folders',
+  authMiddleware,
+  validateStudySetId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const setId = String(req.params.setId);
+    const folders = await dataLayer.practiceFolders.listPracticeFolders(userId, setId);
+    const counts = await dataLayer.practiceFolders.countPracticeFolderItems(userId, setId);
+    // `supported` is a FIELD, not an inference from an empty list: "no folders
+    // yet" must still offer a Create folder card, and "no column yet" must not.
+    const supported = await hasPracticeFolders(dataLayer.getClient());
+    res.json({
+      success: true,
+      data: {
+        supported,
+        folders: folders.map((folder) => ({ ...folder, itemCount: counts[folder.id] ?? 0 })),
+      },
+    });
+  })
+);
+
+router.post(
+  '/:setId/practice-folders',
+  authMiddleware,
+  validatePracticeFolderCreate,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await dataLayer.practiceFolders.createPracticeFolder(
+        userId,
+        String(req.params.setId),
+        req.body || {},
+      );
+      res.status(201).json({ success: true, data: { ...data, itemCount: 0 } });
+    } catch (err) {
+      if (handleFolderError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+router.patch(
+  '/:setId/practice-folders/:folderId',
+  authMiddleware,
+  validatePracticeFolderId,
+  body('title')
+    .isString()
+    .isLength({ min: 1, max: PRACTICE_FOLDER_TITLE_MAX })
+    .withMessage(`title must be 1-${PRACTICE_FOLDER_TITLE_MAX} characters`),
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const setId = String(req.params.setId);
+    try {
+      const data = await dataLayer.practiceFolders.renamePracticeFolder(
+        userId,
+        setId,
+        String(req.params.folderId),
+        req.body || {},
+      );
+      // 404, not 403: a folder this account does not own, one in another set
+      // and one that does not exist are the same answer, so the response
+      // cannot be used to confirm that an id exists.
+      if (!data) {
+        res.status(404).json({ success: false, error: 'Folder not found' });
+        return;
+      }
+      const counts = await dataLayer.practiceFolders.countPracticeFolderItems(userId, setId);
+      res.json({ success: true, data: { ...data, itemCount: counts[data.id] ?? 0 } });
+    } catch (err) {
+      if (handleFolderError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+router.delete(
+  '/:setId/practice-folders/:folderId',
+  authMiddleware,
+  validatePracticeFolderId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      // The folder's quizzes and tests are KEPT: the column is
+      // ON DELETE SET NULL, so they are unfiled by the same statement.
+      const removed = await dataLayer.practiceFolders.deletePracticeFolder(
+        userId,
+        String(req.params.setId),
+        String(req.params.folderId),
+      );
+      if (!removed) {
+        res.status(404).json({ success: false, error: 'Folder not found' });
+        return;
+      }
+      res.json({ success: true });
+    } catch (err) {
+      if (handleFolderError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+router.patch(
+  '/:setId/practice-items/:testId',
+  authMiddleware,
+  validatePracticeItemMove,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const setId = String(req.params.setId);
+    const testId = String(req.params.testId);
+    const raw = (req.body || {}).practiceFolderId;
+    const folderId = raw === undefined || raw === null ? null : String(raw);
+    try {
+      // TWO checks, and both are needed. This one proves the DESTINATION is
+      // this owner's folder in THIS set — without it an owner could file their
+      // own quiz into somebody else's folder, or into a folder of a set they
+      // are not in. The update below proves the TEST is this owner's.
+      if (folderId) {
+        const belongs = await dataLayer.practiceFolders.practiceFolderBelongsToSet(
+          userId,
+          setId,
+          folderId,
+        );
+        if (!belongs) {
+          res.status(404).json({ success: false, error: 'Folder not found' });
+          return;
+        }
+      }
+      const moved = await dataLayer.practiceFolders.setTestPracticeFolder(userId, testId, folderId);
+      if (!moved) {
+        res.status(404).json({ success: false, error: 'Test not found' });
+        return;
+      }
+      res.json({ success: true, data: { id: testId, practiceFolderId: folderId } });
+    } catch (err) {
+      if (handleFolderError(err, res)) return;
       throw err;
     }
   })

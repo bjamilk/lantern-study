@@ -1627,6 +1627,43 @@
       ]
     },
     {
+      "namespace": "practiceFolders",
+      "functions": [
+        {
+          "name": "countPracticeFolderItems",
+          "arity": 0
+        },
+        {
+          "name": "createPracticeFolder",
+          "arity": 0
+        },
+        {
+          "name": "deletePracticeFolder",
+          "arity": 0
+        },
+        {
+          "name": "listPracticeFolders",
+          "arity": 0
+        },
+        {
+          "name": "mapPracticeFolder",
+          "arity": 1
+        },
+        {
+          "name": "practiceFolderBelongsToSet",
+          "arity": 0
+        },
+        {
+          "name": "renamePracticeFolder",
+          "arity": 0
+        },
+        {
+          "name": "setTestPracticeFolder",
+          "arity": 0
+        }
+      ]
+    },
+    {
       "namespace": "productEvents",
       "functions": [
         {

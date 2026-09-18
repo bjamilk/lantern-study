@@ -68,6 +68,7 @@ import * as marketplaceReconcileData from "./marketplaceReconcile";
 import * as messageSearchData from "./messageSearch";
 import * as notesData from "./notes";
 import * as notificationsData from "./notifications";
+import * as practiceFoldersData from "./practiceFolders";
 import * as productEventsData from "./productEvents";
 import * as offlineBundlesData from "./offlineBundles";
 import * as readStateData from "./readState";
@@ -529,6 +530,7 @@ export function createDataLayer(options: CreateDataLayerOptions) {
   layer.notes = createNotesApi(client, notesDeps);
   layer.messageSearch = createMessageSearchApi(client);
   layer.notifications = createNotificationsApi(client, notificationsDeps);
+  layer.practiceFolders = createPracticeFoldersApi(client);
   layer.productEvents = createProductEventsApi(client);
   layer.sitemap = createSitemapApi(client);
   layer.offlineBundles = createOfflineBundlesApi(client, offlineBundlesDeps);
@@ -663,6 +665,27 @@ function createProductEventsApi(
 ) {
   return {
     insertProductEvents: bindDb(client, productEventsData.insertProductEvents),
+  };
+}
+
+/**
+ * Folders that hold a study set's quizzes and tests (#130 follow-up). Deps-free
+ * on purpose: every function takes the client and its own arguments, and the
+ * one cross-function call it makes (the cap count in `createPracticeFolder`)
+ * is a LOCAL call rather than a dep, because nothing stubs it.
+ */
+function createPracticeFoldersApi(
+  client: DataClient,
+) {
+  return {
+    mapPracticeFolder: practiceFoldersData.mapPracticeFolder,
+    listPracticeFolders: bindDb(client, practiceFoldersData.listPracticeFolders),
+    countPracticeFolderItems: bindDb(client, practiceFoldersData.countPracticeFolderItems),
+    practiceFolderBelongsToSet: bindDb(client, practiceFoldersData.practiceFolderBelongsToSet),
+    createPracticeFolder: bindDb(client, practiceFoldersData.createPracticeFolder),
+    renamePracticeFolder: bindDb(client, practiceFoldersData.renamePracticeFolder),
+    deletePracticeFolder: bindDb(client, practiceFoldersData.deletePracticeFolder),
+    setTestPracticeFolder: bindDb(client, practiceFoldersData.setTestPracticeFolder),
   };
 }
 
@@ -1297,6 +1320,7 @@ export type DataLayer = {
   notes: NotesApi;
   messageSearch: MessageSearchApi;
   notifications: NotificationsApi;
+  practiceFolders: PracticeFoldersApi;
   productEvents: ProductEventsApi;
   sitemap: SitemapApi;
   offlineBundles: OfflineBundlesApi;
@@ -1326,6 +1350,7 @@ export type MarketplaceReconcileApi = ReturnType<typeof createMarketplaceReconci
 export type NotesApi = ReturnType<typeof createNotesApi>;
 export type MessageSearchApi = ReturnType<typeof createMessageSearchApi>;
 export type NotificationsApi = ReturnType<typeof createNotificationsApi>;
+export type PracticeFoldersApi = ReturnType<typeof createPracticeFoldersApi>;
 export type ProductEventsApi = ReturnType<typeof createProductEventsApi>;
 export type SitemapApi = ReturnType<typeof createSitemapApi>;
 export type OfflineBundlesApi = ReturnType<typeof createOfflineBundlesApi>;
