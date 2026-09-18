@@ -46,6 +46,229 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'set-room-upload-chips-1-0-62',
+    title: 'Set room: the Add-materials chips open the picker they name',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'In a study set\'s Add materials screen on the phone, the PDF and PPT chips now open a real file picker and file the result into that set. The Audio and Video chips are removed — no platform can read an audio or video file — and a Record chip opens the lecture recorder in their place.',
+    details: [
+      'Four of the eight chips (PDF, PPT, Audio, Video) opened the import sheet, which had a picker for none of them. A student tapped PDF and got photos, Word and a paste box.',
+      'PDF now opens the document picker filtered to application/pdf and uploads through POST /notes/upload-pdf; PPT opens it filtered to both PowerPoint mimes and uploads through POST /notes/upload-presentation. Either way the note is filed into the set and starts the same flashcard and quiz job every other door there starts.',
+      'Audio and Video are removed rather than wired: file transcription exists on no platform, so a picker would have taken a 25 MB upload and handed back a file nothing can read. The recorder does transcribe, so the row gains Record, which opens the lecture studio on that set.',
+      'The mimes and the 25 MB refusal moved into apps/mobile/src/utils/fileImportDoors.ts, shared with the Notes import sheet so the two cannot drift, and the chip list moved into setUploadDoors.ts so a test can assert that every chip resolves to a picker, the recorder, a panel or the Anki sheet.',
+    ],
+    howToUse: [
+      'Phone: open a study set, Add materials, then press PDF, PPT, Word or Record.',
+      'The file picker opens straight away; backing out of it leaves the import sheet open with the same doors listed.',
+    ],
+    surfaces: ['mobile'],
+    adminNotes: [
+      'No migration and no new endpoint: the upload routes are the ones the Notes import sheet has been calling on production.',
+      'Closes issue #137 (PR #138). If a student reports that a set has no Audio or Video chip any more, that is deliberate — point them at Record.',
+    ],
+    commits: ['e7c1ef47'],
+  },
+  {
+    id: 'word-import-mobile-1-0-62',
+    title: 'Word (.docx) import on the phone',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'A student can bring a Word document into Lantern from their phone, the way web has since the same release: pick one in Notes → Import, in a set\'s Add materials sheet, or on the AI question generator\'s attach chip, and its text becomes a note with the usual flashcards, quiz and study plan.',
+    details: [
+      'It was the one common class file the phone could not read — handed out in tutorials, passed round in group chats, and until now openable only on a laptop.',
+      'The document is read on the server (POST /notes/extract-document-text) and nothing is stored: the note is created through the same path the paste door uses.',
+      'A legacy .doc, a non-.docx and anything over 25 MB are refused at the picker, before the upload, with a sentence the student can act on ("open it in Word and save as .docx").',
+      'With no connection the door is visibly disabled with the reason under it, because the parse happens on the server.',
+      'A document longer than Lantern reads in one note still becomes a note, with a line inside it saying where the text stops.',
+    ],
+    howToUse: [
+      'Phone: Notes → Import → Import Word (.docx); or a set room → Add materials → Word; or AI Generate Questions → attach.',
+    ],
+    surfaces: ['mobile', 'api'],
+    adminNotes: [
+      'No migration: notes.source_type stays "typed" and no note_attachments row is written, which is why this worked on the live database the day it deployed.',
+      'The API route is the one web has been running since PR #135; nothing new was deployed for the phone.',
+    ],
+    commits: ['ffee155d'],
+  },
+  {
+    id: 'upload-materials-page-word-web-1-0-62',
+    title: 'Upload Materials page, and Word (.docx) import on web',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'A set\'s /add page is now a real upload page — an intro card, a dropzone, a grid of typed doors, a share band, the live-lecture band and a plain list of what an upload produces — and it takes Word documents.',
+    details: [
+      'Every door on the page does something today. The three the measurement expected to be dead (Audio Files, Video Files, Google Drive) are not drawn at all rather than drawn disabled: a control a student reaches for and cannot use is still a dead door.',
+      'Word documents are extracted, not stored. POST /notes/extract-document-text parses the bytes with officeparser (already a dependency — no package was added) and returns text; the note is made through the paste door\'s path.',
+      'The upload is gated before the parser sees it: auth, the upload burst limit, 25 MB decoded, the .docx name check, ZIP signature checks, and the declared mime. The parse is abandoned after 30 seconds and the text capped at 500k characters, because 25 MB of XML can expand to far more text than any generator reads.',
+      'A document with no readable text is refused with advice to upload it as photos or a PDF, never saved as a note with a placeholder in it.',
+      'The share band says what is true: a classmate you share a set with can open everything in it, but uploading to it is still yours alone. Lantern has no collaborative upload.',
+    ],
+    howToUse: [
+      'Web: a study set → Add materials (/study/sets/:id/add) → Word Documents, or drop a file on the dashed box.',
+    ],
+    surfaces: ['web', 'api'],
+    adminNotes: [
+      'No migration and no new dependency, so the npm audit allowlist is unchanged.',
+      'Legacy .doc is deliberately not in the accept list: the student is told to re-save before a 25 MB upload rather than after it.',
+    ],
+    commits: ['8499a81a'],
+  },
+  {
+    id: 'practice-folders-1-0-62',
+    title: 'Practice folders: file quizzes and tests into folders',
+    area: 'notes',
+    status: 'partial',
+    shippedAt: '2026-09-18',
+    summary:
+      'In a set\'s Practice hub on web, a student can create folders and file quizzes and tests into them: a Create folder card, folder cards reading "Folder · n items", Rename and Delete (which keeps the items), a Practice › folder breadcrumb, and Move to folder… on each quiz or test.',
+    details: [
+      'One folder holds both doors, so the same folder appears on All, Tests and Quiz — the Tests tab shows its tests, Quiz its quizzes. That follows the database: quizzes and tests are one table (test_sessions) and the split is derived on the client, so one nullable column files both.',
+      'Deleting a folder keeps its items; they return to the ungrouped list.',
+      'This replaces a misreading, not a gap: the old quiz library passed the study-SET folders through, so clicking one left the room for the set picker.',
+    ],
+    howToUse: [
+      'Web: a study set → Practice → Create folder, then ⋮ on a quiz or test → Move to folder…',
+    ],
+    surfaces: ['web', 'api', 'database'],
+    adminNotes: [
+      'MIGRATION TO HAND-APPLY: supabase/migrations/20260918120000_practice_folders.sql. This is why the entry is "partial".',
+      'Until it is applied the feature is inert and harmless: the API capability probe answers false, the list endpoint returns { supported: false, folders: [] } with a 200, the Practice hub renders exactly as before (no folder card, no Create folder, no ⋮), and every write answers 503 naming the file rather than reporting success over a row that never changed.',
+      'Mobile has no Practice folders; this is web only.',
+    ],
+    commits: ['51ad4bd6'],
+  },
+  {
+    id: 'tutor-styles-1-0-62',
+    title: 'Tutor styles: four voices for the AI companion',
+    area: 'platform',
+    status: 'partial',
+    shippedAt: '2026-09-18',
+    summary:
+      'The companion can be asked to teach in one of four voices — Lantern (balanced), Coach (asks you to try first, hints before answers), Professor (precise, cites your material) and Study buddy (casual, short, quizzes you back). The picker sits in the chat header, the choice saves to the account, and it applies from the next message.',
+    details: [
+      'A style changes tone and method only: same model, same context, same credit cost. The menu says so out loud and the AI disclaimer under the composer is unchanged.',
+      'These are not characters: there is no illustrated cast and no per-persona memory. Four prompt fragments and a menu.',
+      'The fragment is appended last in the system prompt, after the safety, grounding and honesty rules, followed by a sentence saying it relaxes none of them — a persona placed above those rules could have softened them, so the order is asserted by test for all four styles.',
+      'The style a client sends is normalised at the edge, again at the point of use, and again on the way into settings; anything unknown becomes the default, so injected text cannot reach the prompt.',
+    ],
+    howToUse: [
+      'Web: open the AI companion in a set room → the style menu in the chat header.',
+      'The choice is per account and follows the student to another device.',
+    ],
+    surfaces: ['web', 'api'],
+    adminNotes: [
+      'No migration: the choice is one string on the settings blob the app already syncs.',
+      'Partial because mobile honours a stored style but has no picker yet — a phone-only student cannot change it.',
+      'The four fragments are the copy to edit, in packages/shared/src/ai/tutorStyles.ts.',
+    ],
+    commits: ['b16841bf'],
+  },
+  {
+    id: 'studyfetch-parity-waves-1-4-1-0-62',
+    title: 'Study set room rebuilt to the measured reference (waves 1–4)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'Four waves of parity work on the web set room: a new type system app-wide, the set home, the study plan page with a per-unit pre-assessment, the Materials and Practice pages, the Upload Materials page, and the AI companion column.',
+    details: [
+      'Wave 1: the type system (Inter body, Bitter headings, a warmer secondary ink that still passes AA) across web and both mobile mirrors, and the set home at the measured dimensions — 728px content column, 64px set tile, a stats row with a progress bar, unit chips, recommendation cards.',
+      'Wave 2: the study plan page gains a Customize bar and three real sort orders, and a per-unit pre-assessment replaces the page-level self-rating card that asked a student to sit through a whole course to skip one lecture and then took their word for it.',
+      'Wave 3: Materials becomes a set-scoped page ("View all materials" used to leave the set for the account-wide library), Practice becomes one hub over quizzes and tests with All / Tests / Quiz tabs, and the create wizard gains an Exit that is on every screen rather than only the first.',
+      'Wave 4: the companion column\'s suggestion pills are about the page the student is on rather than the same seven prompts everywhere; the header is one row with a thread menu; the empty state greets by name; the composer gives the field the whole row with its tools underneath; and the docked panel lands at 400px instead of eating every spare pixel.',
+    ],
+    howToUse: [
+      'Web: any study set. The room, its plan, materials, practice and upload pages, and the companion column.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'No migration. Mobile is touched only by the shared type tokens; the phone\'s set room is not rebuilt.',
+      'Characters, plugins, scenarios and voice calls from the reference are deliberately absent — nothing was drawn as a placeholder.',
+    ],
+    commits: ['99945d4a', '4bb76ec8', '9c5b4190', '6417af60'],
+  },
+  {
+    id: 'study-room-focus-1-0-62',
+    title: 'The study room gets out of the way',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'The set room quietens down while a student is working: one slim bar instead of stacked chrome, a companion rail that collapses and docks by the room\'s real width, and a creation wizard that asks one question per step with the count showing.',
+    details: [
+      'Focus mode: opening a tool hands the screen to the work behind a single 48px bar; the room\'s own navigation stands down until the student leaves it.',
+      'The AI companion rail can be collapsed, and its dock width is measured from the room rather than assumed.',
+      'The create wizard asks one numbered question per step, with the counts and topic screens split, instead of one dense form.',
+      'The admin console was restyled in the same pass.',
+    ],
+    howToUse: ['Web: open a study set and start a tool; use the collapse control on the companion rail.'],
+    surfaces: ['web'],
+    adminNotes: ['No migration.'],
+    commits: ['47b835f0', 'a9ddf923', '77e92ee7', '482b4811'],
+  },
+  {
+    id: 'write-errors-and-money-reconciliation-1-0-62',
+    title: 'A failed write is never reported as success',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'The database client this app uses does not throw when a write fails, so a discarded error read as success all the way back to the student. Every remaining one of those — in the payment path, the marketplace, the jobs board, the study services and the account defaults — now either fails loudly or is reconciled later, and a guard keeps the count at zero.',
+    details: [
+      'Money writes go through must-succeed helpers: a failure is an error the caller sees, not a silent no-op over a row that never changed. Webhook handlers throw so the provider retries; inline paths reconcile.',
+      'A ratchet in CI holds the number of discarded write errors at zero, so this cannot come back by refactor.',
+      'Two reconciliation tools for wedged marketplace money rows: a report-only finder, then a repair for one row at a time.',
+      'An idempotency claim stuck in __processing__ now carries a lease, so a crashed request cannot block the same purchase forever.',
+      'A failed companion analytics insert reports the failure instead of answering success.',
+    ],
+    howToUse: ['Nothing to learn: work that looked saved and was not is the failure this removes.'],
+    surfaces: ['api', 'web', 'mobile'],
+    adminNotes: [
+      'Support impact: a student reporting "it said it saved but nothing is there" on a money or study write should now be a real error with a trace, not silence.',
+      'The reconciliation scripts are operator tools — read the finder\'s report before running the repair.',
+    ],
+    commits: [
+      '27ddfb73',
+      'fb7c8ad6',
+      'a8688693',
+      'a6e17ca1',
+      '988f0faa',
+      'e707a197',
+      '836de29e',
+      '8e5cf2ed',
+      '5af23621',
+      'dd858d54',
+      '372bafa8',
+    ],
+  },
+  {
+    id: 'monolith-program-1-0-62',
+    title: 'The API monolith is gone, and the bugs it was hiding are fixed',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'A forty-pull-request programme replaced the single SupabaseService file every route reached through with twenty-two data modules and a composition root, and decomposed the largest web and mobile files. Nothing about it is visible to a student except the defects it surfaced, which are fixed.',
+    details: [
+      'The facade is deleted; routes and services call the data layer directly, with CI guards freezing the data-layer surface and forbidding the any-casts that made the old one possible.',
+      'Fixes found on the way: web chat sends could fail on a malformed client message id; a challenge question called a method that no longer existed; the Home group picker and parts of the onboarding checklist were dead controls; an alert() failure path did nothing; the Home checklist\'s progress lived on the device instead of the account, so it reset on a new phone; the weak-topic rule existed twice and could disagree with itself.',
+    ],
+    howToUse: ['Nothing to learn.'],
+    surfaces: ['api', 'web', 'mobile'],
+    adminNotes: [
+      'No migration. This is the record that the refactor shipped, so a support question about "why did this file move" has an answer.',
+      'The programme\'s lane-to-PR map is in the handover notes; the guards live in the api test suite.',
+    ],
+    commits: ['0599c45e', '5dc19e85', '4241916a', '439e70c0', 'c9f92544', '12c51af2', 'f4095c25', '4c667674', 'e9423313'],
+  },
+  {
     id: 'team-readiness-1-0-61',
     title: 'Mobile 1.0.61 — team-readiness release: hardened auth, money and offline paths, open Campus and Shop',
     area: 'platform',

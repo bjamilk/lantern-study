@@ -262,7 +262,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // home with a "Needs you" strip; Buy Again; order rows with status pills;
   // and the buy/sell tools that lived behind a "..." menu are all visible.
   // Shop moves to the top bar, Jobs to the profile drawer (open to every student since 1.0.61).
-  version: '1.0.61',
+  // 1.0.62: the set room grows real doors. The phone reads Word documents; a
+  // set's Add-materials chips open the file picker they name (PDF, slides,
+  // Word) and the two that named a file type nothing could read — Audio and
+  // Video — are replaced by the lecture recorder, which does transcribe.
+  version: '1.0.62',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
