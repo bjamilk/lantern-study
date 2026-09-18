@@ -1628,12 +1628,20 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           rail.mode === 'none' ? 'flex-col' : 'flex-row'
         }`}
       >
+        {/* THE MEASURED CONTENT COLUMN. The reference holds set home to 728px
+            inside a 976px main column with 24px gutters — a line of body copy
+            at 14px stops being one at about 90 characters, and an 790px-wide
+            wall of 40px pills is what made Lantern's room read as a dashboard.
+            `items-center` + `max-w` on the two children rather than a wrapper
+            div, so the documented min-h-0 / shrink-0 chain below is untouched.
+            Only on set HOME: a studio (quiz, notes, the plan timeline) wants
+            every pixel the room has. */}
         <div
           className={`flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden px-4 md:px-6 ${
             focusActivity ? 'pt-0' : 'pt-4'
-          }`}
+          } ${activity === 'home' && studySetId ? 'items-center' : ''}`}
         >
-        <div className="shrink-0">
+        <div className={`shrink-0 ${activity === 'home' && studySetId ? 'w-full max-w-[728px]' : ''}`}>
         {focusActivity && studySetId ? (
           // The bleed puts the bar's hairline against the window edge while the
           // studio below keeps the room's gutter. Negative margin only — no new
@@ -1672,6 +1680,19 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             progress={activity === 'home' ? roomProgress : null}
             counts={activity === 'home' ? roomCounts : undefined}
             visibility={studySet?.visibility}
+            variant={activity === 'home' ? 'home' : 'compact'}
+            mode={studySet?.mode ?? null}
+            // `mode` is already an end-to-end field — the plan's own
+            // `pickRecommendedTopic` reads it and the settings screen writes
+            // it — so Mode needed no migration and no new column: it is the
+            // SAME store action, surfaced where a student stands.
+            onSelectMode={
+              studySet
+                ? (next) => {
+                    void updateSet(studySetId, { mode: next }).catch(() => undefined);
+                  }
+                : undefined
+            }
             onOpenSettings={() => setSettingsOpen(true)}
             menu={roomMenu}
             controls={
@@ -1734,7 +1755,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         ) : null}
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
+            activity === 'home' && studySetId ? 'w-full max-w-[728px]' : ''
+          }`}
+        >
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row">
         {/* Materials column. Hidden on a study set — the set rail already
             holds Upload and the materials tree — and while a note is open
