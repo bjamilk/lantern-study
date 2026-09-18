@@ -249,6 +249,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [planGenerating, setPlanGenerating] = useState(false);
   const [quizQuestionCount, setQuizQuestionCount] = useState(10);
   const [importSource, setImportSource] = useState<StudyUploadSource | null>(null);
+  // Files the Upload Materials page's dropzone handed over, waiting for the
+  // modal to consume them once. Cleared by the modal, not by this component,
+  // so a re-render cannot re-upload them.
+  const [importFiles, setImportFiles] = useState<File[] | null>(null);
   const [createKind, setCreateKind] = useState<CreateFromSourceKind | null>(null);
   const [createOptions, setCreateOptions] = useState<CreateFromSourceOptions | null>(null);
   const [testPreset, setTestPreset] = useState<(typeof TEST_SITTING_PRESETS)[number]['id'] | null>(null);
@@ -1993,6 +1997,20 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 setImportOpen(true);
               }}
               onRecord={() => go('lecture', { createNew: true })}
+              onFiles={(files) => {
+                // Straight into the modal's own handlers — see `initialFiles`.
+                setImportFiles(files);
+                setImportSource(null);
+                setImportOpen(true);
+              }}
+              onNoMaterial={() => go('notes', { createNew: true })}
+              onCopyLink={() =>
+                void shareStudySet({
+                  setId: studySetId,
+                  title: label,
+                  visibility: studySet?.visibility,
+                })
+              }
             />
           ) : activity === 'home' && studySetId ? (
             <StudySetHome
@@ -2637,9 +2655,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           courseId={courseId || undefined}
           studySetId={studySetId}
           source={importSource}
+          initialFiles={importFiles}
+          onInitialFilesConsumed={() => setImportFiles(null)}
           onClose={() => {
             setImportOpen(false);
             setImportSource(null);
+            setImportFiles(null);
           }}
           onComplete={() => {
             void reloadNotes()
