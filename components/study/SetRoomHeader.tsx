@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { STUDY_SET_MODES, type StudySetMode, type StudySetPlanProgress } from '@lantern/shared';
+import {
+  STUDY_SET_MODES,
+  examHeaderCountdown,
+  type StudySetMode,
+  type StudySetPlanProgress,
+} from '@lantern/shared';
 import { AppIcon, type AppIconName } from '../ui/AppIcon';
 import { FEATURE_INK_BG, FEATURE_TINT_BG } from '../ui/featureClasses';
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '../ui/Menu';
@@ -60,6 +65,16 @@ interface SetRoomHeaderProps {
   /** The one-line fallback when there is no plan: "4 notes · 2 decks". */
   counts?: string;
   /**
+   * The set's own exam date, drawn as "Exam in 23 days" in the stats row.
+   *
+   * In the STATS row rather than beside the title because it is a fact about
+   * the set's state, like the topic counts, and the title row is the set as an
+   * object. A past date draws nothing (`examHeaderCountdown` returns null) —
+   * the date is still listed, struck through, in the set's exam rows, and a
+   * header permanently reading "Exam in -40 days" is noise nobody can clear.
+   */
+  examDate?: string | null;
+  /**
    * The set's stored visibility, passed only so a caller that still wants it
    * for a share toast can keep threading it. The header no longer draws Share
    * itself — that lives in the kebab, so the title row stays one object.
@@ -102,6 +117,7 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
   tileGlyph,
   progress,
   counts,
+  examDate,
   onOpenSettings,
   menu,
   controls,
@@ -136,8 +152,10 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
       ? Math.round((progress.covered / progress.topics) * 100)
       : null;
 
+  const examCountdown = examHeaderCountdown(examDate ?? null);
+
   const statsRow =
-    progress || counts ? (
+    progress || counts || examCountdown ? (
       // 38px high, as measured: the three counts with their own glyphs, the
       // bar, and Mode. A ROW rather than a line of prose under the title —
       // "covered" and "mastered" are different facts and a student has to be
@@ -161,9 +179,18 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
               <span className="tabular-nums text-lantern-text">{progress.mastered}</span> Mastered
             </span>
           </>
-        ) : (
+        ) : counts ? (
           <span>{counts}</span>
-        )}
+        ) : null}
+        {examCountdown ? (
+          <span
+            data-testid="set-room-exam-countdown"
+            className="inline-flex items-center gap-1.5 font-medium text-lantern-text"
+          >
+            <AppIcon name="calendar" size={16} aria-hidden className="shrink-0" />
+            {examCountdown}
+          </span>
+        ) : null}
         {percent === null ? null : (
           <span className="inline-flex min-w-[8rem] flex-1 items-center gap-2">
             <span

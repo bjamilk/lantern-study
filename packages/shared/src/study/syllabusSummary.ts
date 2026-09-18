@@ -84,6 +84,26 @@ export interface SyllabusSummary {
   extractedAt: string;
 }
 
+/** What `GET /study-sets/:id/syllabus` answers. */
+export interface StudySetSyllabusResponse {
+  /** False when 20260918150000 is unapplied — the clients hide the card. */
+  supported: boolean;
+  noteId: string | null;
+  summary: SyllabusSummary | null;
+}
+
+/** What `POST /study-sets/:id/syllabus` answers. */
+export interface SyllabusUploadResponse {
+  noteId: string;
+  summary: SyllabusSummary | null;
+  /** "Found 12 weeks · 2 exam dates", or "No schedule found in that file." */
+  foundLabel: string;
+  /** The set's exam date AFTER the upload, whether or not this upload set it. */
+  examDate: string | null;
+  /** True only when this upload is what put the date there. */
+  examDateApplied: boolean;
+}
+
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
