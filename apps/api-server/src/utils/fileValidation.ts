@@ -1,7 +1,8 @@
 /**
  * Content-based upload validation and the signed-URL lifetime clamp.
  *
- * Exports `detectImageMime`, `assertImageMagicBytes`, `assertPdfMagicBytes`,
+ * Exports `detectImageMime`, `detectHeifMime`, `detectPhotoMime`,
+ * `assertImageMagicBytes`, `assertPhotoMagicBytes`, `assertPdfMagicBytes`,
  * `clampSignedUrlTtl` and the TTL bounds. Called by the upload handlers in
  * routes/storage.ts, routes/notes.ts, routes/marketplace.ts and the avatar and
  * chat-photo paths, before bytes are written to a Supabase storage bucket.
@@ -36,6 +37,58 @@ export function detectImageMime(buffer: Buffer): string | null {
   return null;
 }
 
+// --- HEIC / HEIF, note photographs only ---------------------------------------
+// A photo taken on an iPhone is HEIC unless its owner changed a setting, so the
+// photograph door has to read one. It is NOT added to IMAGE_SIGNATURES above,
+// and `detectImageMime` is left exactly as it was, because that function gates
+// avatars, chat photos and marketplace covers as well — surfaces that store the
+// bytes and serve them straight back to a browser, where a HEIC is a file most
+// browsers cannot display. The note-photo path is different: every image it
+// accepts is re-encoded to WebP by `normalizeImageForStorage` before anything is
+// stored, so what comes back out is a format every browser renders.
+//
+// A HEIC is ISO base media (the same container as MP4): a 4-byte big-endian box
+// length, then the ASCII "ftyp", then the major brand. Only the still-image
+// brands are matched — `mif1`/`msf1` are the generic HEIF ones Apple also
+// writes, and the `hev*`/`hei*` pairs are the HEVC-coded stills. Sequence-only
+// brands are deliberately absent: a HEIC "live photo" video is not a page of
+// notes, and libvips would decode only its cover image anyway.
+const HEIF_STILL_BRANDS = new Set([
+  'heic',
+  'heix',
+  'heim',
+  'heis',
+  'hevc',
+  'hevx',
+  'hevm',
+  'hevs',
+  'mif1',
+  'msf1',
+]);
+
+/** The two names in circulation for the same bytes. */
+export const HEIF_MIMES = new Set(['image/heic', 'image/heif']);
+
+/** The mime for a HEIC/HEIF still, or null when the bytes are not one. */
+export function detectHeifMime(buffer: Buffer): string | null {
+  if (buffer.length < 12) return null;
+  if (buffer.subarray(4, 8).toString('ascii') !== 'ftyp') return null;
+  const brand = buffer.subarray(8, 12).toString('ascii').toLowerCase();
+  if (!HEIF_STILL_BRANDS.has(brand)) return null;
+  // `heif` and `heic` are both in circulation for the same bytes; the one the
+  // brand implies is the one reported, so a declared type can be cross-checked
+  // against it without a second alias table.
+  return brand.startsWith('hev') || brand === 'heic' || brand === 'heix' ? 'image/heic' : 'image/heif';
+}
+
+/**
+ * What `detectImageMime` detects, PLUS HEIC/HEIF. Use it only where the bytes
+ * are re-encoded before storage — see the note above.
+ */
+export function detectPhotoMime(buffer: Buffer): string | null {
+  return detectImageMime(buffer) ?? detectHeifMime(buffer);
+}
+
 /**
  * A rejected upload is the caller's mistake, not a server fault. Without a
  * status the error handler reports 500 and Sentry files it as a crash — these
@@ -59,6 +112,29 @@ export function assertImageMagicBytes(buffer: Buffer, declaredContentType?: stri
   if (declaredContentType && declaredContentType !== detected && declaredContentType !== 'image/jpg') {
     throw invalidUpload('Image content does not match declared content type.');
   }
+}
+
+/**
+ * `assertImageMagicBytes` for a note photograph, where HEIC is also allowed.
+ *
+ * `image/heic` and `image/heif` are cross-checked against each other rather
+ * than for equality: a phone may declare either for the same bytes, and
+ * refusing an iPhone photo over which of two synonyms the picker chose would be
+ * a rejection no student could act on.
+ */
+export function assertPhotoMagicBytes(buffer: Buffer, declaredContentType?: string): void {
+  const detected = detectPhotoMime(buffer);
+  if (!detected) {
+    throw invalidUpload(
+      'File content is not a supported image (JPEG, PNG, GIF, WebP, or HEIC).'
+    );
+  }
+  if (!declaredContentType) return;
+  const declared = declaredContentType.toLowerCase();
+  if (declared === detected || declared === 'image/jpg') return;
+  const bothHeif = HEIF_MIMES.has(declared) && HEIF_MIMES.has(detected);
+  if (bothHeif) return;
+  throw invalidUpload('Image content does not match declared content type.');
 }
 
 export function assertPdfMagicBytes(buffer: Buffer): void {

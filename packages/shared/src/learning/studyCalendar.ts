@@ -155,6 +155,53 @@ export function resolveExamDate(
   return null;
 }
 
+/**
+ * Whole calendar days from `today` to `examDate`, or null.
+ *
+ * Both sides are parsed as LOCAL days (`parseDateOnlyLocal`), not as instants:
+ * the answer a student wants is "how many times do I wake up before the exam",
+ * and subtracting two UTC midnights gives a different number either side of a
+ * DST change. `Math.round` after the local parse absorbs the one-hour shift
+ * that a DST boundary puts into the millisecond difference.
+ *
+ * Negative for a date that has passed — the caller decides what to show, and
+ * `isPastExam` is the predicate for "hide this". Null when there is no usable
+ * date at all, which is not the same as zero.
+ */
+export function daysUntilExam(
+  examDate: string | null | undefined,
+  today: string = todayDateOnlyLocal()
+): number | null {
+  const exam = (examDate ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(exam)) return null;
+  const base = (today || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(base)) return null;
+  return Math.round(
+    (parseDateOnlyLocal(exam).getTime() - parseDateOnlyLocal(base).getTime()) / 86400000
+  );
+}
+
+/**
+ * "Exam in 23 days" — the set header's countdown, or null for no header line.
+ *
+ * Deliberately NOT `examCountdownLabel` from `network/`: that one reads "23
+ * days to your exam", which is a sentence about the student, and this sits
+ * inline in a header beside the set's title where a phrase, not a sentence, is
+ * what fits. A past exam returns null rather than a negative countdown — the
+ * date is still listed in the set's exam rows (struck through), and a header
+ * that permanently reads "Exam in -40 days" is noise a student cannot clear.
+ */
+export function examHeaderCountdown(
+  examDate: string | null | undefined,
+  today: string = todayDateOnlyLocal()
+): string | null {
+  const days = daysUntilExam(examDate, today);
+  if (days === null || days < 0) return null;
+  if (days === 0) return 'Exam today';
+  if (days === 1) return 'Exam tomorrow';
+  return `Exam in ${days} days`;
+}
+
 export function studyCalendarBlocker(input: {
   examDate?: string | null;
   today?: string;

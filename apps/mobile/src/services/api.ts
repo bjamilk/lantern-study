@@ -621,6 +621,12 @@ export const {
   fetchStudySetPlan,
   replaceStudySetPlan,
   updateStudySetTopicStatus,
+  // The syllabus ("Sync with your class"). `fetchStudySetSyllabus` answers
+  // `supported: false` when 20260918150000 is unapplied, which is how the
+  // phone knows to hide the card rather than offer an upload that 503s.
+  fetchStudySetSyllabus,
+  uploadStudySetSyllabus,
+  deleteStudySetSyllabus,
   fetchStudySetFolders,
   createStudySetFolder,
   deleteStudySetFolder,

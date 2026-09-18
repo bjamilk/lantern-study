@@ -66,7 +66,10 @@ import {
   type PdfTextExtractionAssessment,
 } from '@lantern/shared/utils/noteStudyContent';
 import { logger } from '../utils/logger';
-import { assertImageMagicBytes, assertPdfMagicBytes } from '../utils/fileValidation';
+import {
+  assertPdfMagicBytes,
+  assertPhotoMagicBytes,
+} from '../utils/fileValidation';
 
 // --- Bucket, size caps and OCR budgets ---------------------------------------
 // Every MAX_OCR_* and timeout is env-overridable but floored, so a bad value
@@ -966,30 +969,47 @@ export function imageContentTypeFromFileName(fileName: string): string {
   if (lower.endsWith('.png')) return 'image/png';
   if (lower.endsWith('.gif')) return 'image/gif';
   if (lower.endsWith('.webp')) return 'image/webp';
+  // An iPhone photograph, which is what most photographed notes are. It is
+  // re-encoded to WebP before storage like every other image here, so nothing
+  // downstream ever has to render a HEIC.
+  if (lower.endsWith('.heic')) return 'image/heic';
+  if (lower.endsWith('.heif')) return 'image/heif';
   if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
   return 'image/jpeg';
 }
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const ALLOWED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+]);
 
 /**
  * Gate a note image: allowed type, size cap, real bytes.
  *
- * The allowlist is JPEG, PNG, GIF and WebP — SVG is absent deliberately, since
- * an SVG served from a same-origin bucket is stored XSS. The declared type is
- * checked against the allowlist and then cross-checked against the detected
- * format by `assertImageMagicBytes`, so a PNG-named SVG fails on both counts.
+ * The allowlist is JPEG, PNG, GIF, WebP and HEIC — SVG is absent deliberately,
+ * since an SVG served from a same-origin bucket is stored XSS. The declared type
+ * is checked against the allowlist and then cross-checked against the detected
+ * format by `assertPhotoMagicBytes`, so a PNG-named SVG fails on both counts.
+ *
+ * HEIC is allowed HERE and not on the avatar, chat-photo or marketplace paths,
+ * which share `assertImageMagicBytes`: those store the bytes and serve them back
+ * to a browser, and most browsers cannot draw a HEIC. A note photograph is
+ * re-encoded to WebP by `normalizeImageForStorage` before it is stored.
  */
 export function assertNoteImageUpload(buffer: Buffer, contentType: string): void {
   const normalized = contentType.toLowerCase();
   if (!ALLOWED_IMAGE_TYPES.has(normalized)) {
-    throw new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.');
+    throw new Error('Invalid file type. Only JPEG, PNG, GIF, WebP, and HEIC are allowed.');
   }
   if (buffer.length > MAX_IMAGE_BYTES) {
     throw new Error('File is too large. Maximum size is 10 MB.');
   }
-  assertImageMagicBytes(buffer, normalized);
+  assertPhotoMagicBytes(buffer, normalized);
 }
 
 export { NOTE_FILES_BUCKET, MAX_PDF_BYTES, MAX_PRESENTATION_BYTES, MAX_DOCUMENT_BYTES };
