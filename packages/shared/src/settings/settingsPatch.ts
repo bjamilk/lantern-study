@@ -3,6 +3,7 @@
  * Used by API merge, web save queue, and mobile offline sync.
  */
 import { normalizeGenerationOptions } from '../flashcards/generationOptions';
+import { normalizeTutorStyleId, type TutorStyleId } from '../ai/tutorStyles';
 import {
   DEFAULT_USER_SETTINGS,
   type AccessibilitySettings,
@@ -44,6 +45,12 @@ export type UserSettingsPatch = {
   featureTips?: Partial<FeatureTipsSettings>;
   onboardingVisited?: Partial<OnboardingVisitedSettings>;
   flashcardGeneration?: Partial<FlashcardGenerationSettings>;
+  /**
+   * Not a category — a scalar, so it is patched by VALUE and is deliberately
+   * absent from `SettingsCategoryKey` and from the category loops below (both
+   * of which assume an object and would drop or mangle a string).
+   */
+  tutorStyle?: TutorStyleId;
   version?: number;
   updatedAt?: string;
 };
@@ -325,6 +332,10 @@ export function applySettingsPatch(
           base.flashcardGeneration ?? DEFAULT_USER_SETTINGS.flashcardGeneration!
         )
       : base.flashcardGeneration,
+    // Scalar, allowlisted on the way in: an id from a newer build, a typo or a
+    // smuggled object all resolve to `default` rather than reaching the prompt.
+    tutorStyle:
+      p.tutorStyle !== undefined ? normalizeTutorStyleId(p.tutorStyle) : base.tutorStyle,
     version: typeof p.version === 'number' && Number.isFinite(p.version) ? p.version : base.version,
     updatedAt: new Date().toISOString(),
   };
@@ -355,6 +366,10 @@ export function diffSettingsPatch(
     if (JSON.stringify(prevCat) !== JSON.stringify(nextCat) && nextCat != null) {
       (patch as Record<string, unknown>)[key] = nextCat;
     }
+  }
+  // The one scalar preference, compared by value rather than by JSON shape.
+  if (next.tutorStyle != null && next.tutorStyle !== previous.tutorStyle) {
+    patch.tutorStyle = next.tutorStyle;
   }
   return patch;
 }

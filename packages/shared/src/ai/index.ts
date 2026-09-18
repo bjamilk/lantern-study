@@ -11,3 +11,14 @@ export {
   type AIUsageSnapshot,
   type AIUsageView,
 } from './aiUsageView';
+export {
+  DEFAULT_TUTOR_STYLE_ID,
+  TUTOR_STYLES,
+  TUTOR_STYLE_HONESTY_NOTE,
+  getTutorStyle,
+  isTutorStyleId,
+  normalizeTutorStyleId,
+  tutorStylePromptFragment,
+  type TutorStyle,
+  type TutorStyleId,
+} from './tutorStyles';
