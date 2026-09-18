@@ -52,4 +52,4 @@ hiding — dead buttons on Home and in the onboarding checklist, a checklist who
 progress lived on the phone instead of your account, a challenge question that
 could not be answered, and web chat messages that could fail to send.
 
-TODO (coordinator, after the build): versionCode <N> · built from main @ <sha>
+versionCode 226 · built from main @ 58888722
