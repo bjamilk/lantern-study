@@ -329,11 +329,14 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         setImportProgress
       );
       useUIStore.getState().clearImportProgress();
-      if (truncated) {
-        // Not an error — the note is real, it is just the first 500k characters.
-        console.warn('[import] Word document truncated at the server text cap', file.name);
-      }
-      await processContent(text, title, 'import');
+      // A truncated document is not an error — the note is real, it is just the
+      // first N characters. Saying so IN the note is the only way the student
+      // ever finds out; a toast is gone by the time they read it, and silence
+      // would let them revise from a document that quietly stops halfway.
+      const body = truncated
+        ? `${text}\n\n---\n\n[This document was longer than Lantern reads in one note. Everything above is the start of “${file.name}”; split the rest into a second file to bring it in.]`
+        : text;
+      await processContent(body, title, 'import');
     } catch (e: unknown) {
       useUIStore.getState().clearImportProgress();
       setError(e instanceof Error ? e.message : 'Word document import failed');
