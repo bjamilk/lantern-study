@@ -827,6 +827,20 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       : null;
 
   /**
+   * Which page the companion's suggestion pills are about (wave 4).
+   *
+   * The ROUTE rather than the local `activity`, because the URL is the state in
+   * a set room and `activity` can be a frame behind it on a back/forward.
+   * `null` in a course room, which has no set-room pages and so gets the
+   * generic pills the whole app outside this room gets.
+   */
+  const companionActivity: StudySetPathActivity | null =
+    studySetId ? routePath?.activity ?? 'home' : null;
+
+  /** Whether this set has a plan, so the home pill reads it instead of offering a second one. */
+  const companionHasPlan = planTopics.length > 0;
+
+  /**
    * What the focus bar calls the pane when the Practice hub is what is open.
    *
    * The hub is three tabs over the `quiz` pane, so `focusActivity` is `quiz`
@@ -2679,6 +2693,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 // The rest of the plan, so the picker can offer a cold start
                 // on any topic that is not the Continue row.
                 guidedTopics={guidedTopics}
+                // The page the pills are about, and whether this set has a
+                // plan — the two facts the suggestion table cannot work out
+                // for itself (wave 4).
+                activity={companionActivity}
+                hasPlan={companionHasPlan}
                 // The close control on a docked rail COLLAPSES it rather than
                 // shutting the companion — the difference the student feels is
                 // that the 48px rail is still there to press. Until this, the
@@ -2715,6 +2734,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               turnIntoExisting={companionNote ? turnIntoExisting(companionNote.id) : undefined}
               guidedNextTopic={guidedNextTopic}
               guidedTopics={guidedTopics}
+              activity={companionActivity}
+              hasPlan={companionHasPlan}
             />
           </>
         )}

@@ -64,11 +64,15 @@ import ReactMarkdown from 'react-markdown';
 // bubble showed the same answer's table as a row of raw pipes.
 import remarkGfm from 'remark-gfm';
 import type { MdProps } from './ui/markdownProps';
-import type { MessageNoteDraft, TurnIntoTargetId } from '@lantern/shared';
+import type { MessageNoteDraft, StudySetPathActivity, TurnIntoTargetId } from '@lantern/shared';
 import { messageToNoteDraft } from '@lantern/shared';
 import { TurnIntoMenu } from './study/TurnIntoMenu';
 import { CompanionHistory } from './companion/CompanionHistory';
 import { CompanionPrompts } from './companion/CompanionPrompts';
+import {
+  companionSuggestionsFor,
+  type CompanionSuggestion,
+} from './companion/companionSuggestions';
 import { GuidedPicker } from './companion/GuidedPicker';
 import {
   buildGuidedGoals,
@@ -256,6 +260,20 @@ interface AICompanionPanelProps {
    * done). A host that has only titles may still pass strings.
    */
   guidedTopics?: readonly (string | GuidedStartTopic)[];
+  /**
+   * Which page of a set room the companion is sitting beside.
+   *
+   * This is what makes the suggestion pills about the thing on screen rather
+   * than about studying in general (wave 4). Optional and honestly so: the
+   * global drawer follows every screen in the app and has no set-room activity,
+   * so it gets the generic list — exactly what every surface got before.
+   */
+  activity?: StudySetPathActivity | null;
+  /**
+   * Whether this set already has a study plan, so the set home offers to
+   * EXPLAIN it rather than to build a second one.
+   */
+  hasPlan?: boolean;
 }
 
 // --- Dictation tuning. `RECORDER_CHUNK_WAIT_MS` is the grace period after
@@ -334,6 +352,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   onTurnIntoMessage,
   guidedNextTopic,
   guidedTopics,
+  activity,
+  hasPlan,
 }) => {
   const {
     isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
@@ -381,6 +401,35 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     [conversations, activeConversationId]
   );
   const [promptsExpanded, setPromptsExpanded] = useState(false);
+  /**
+   * The pills, decided from the page the companion is sitting beside.
+   *
+   * The rule itself is in `companion/companionSuggestions` and is unit-tested
+   * there; all this does is READ the three facts the panel already holds —
+   * which set-room page the host says it is on, whether a note is attached to
+   * this thread, and whether a test is running — and hand them over. A test in
+   * progress is taken from the context the model is already told about
+   * (`activeSessionSummary`), so the pills and the answers cannot disagree
+   * about whether there is a test on screen.
+   */
+  const suggestions = useMemo(
+    () =>
+      companionSuggestionsFor({
+        activity,
+        hasOpenNote: Boolean(activeNoteContext),
+        hasTestInProgress: Boolean(context?.activeSessionSummary),
+        hasPlan,
+      }),
+    [activity, activeNoteContext, context?.activeSessionSummary, hasPlan]
+  );
+  /**
+   * "View more" is per list. Without this, expanding on the set home and then
+   * walking into a quiz would open that page's shorter list already expanded,
+   * which is not a state the student asked for.
+   */
+  useEffect(() => {
+    setPromptsExpanded(false);
+  }, [suggestions]);
   /**
    * Guided is per-thread UI state, never an account setting: a new chat starts
    * in normal mode, and the pill stays reachable mid-lesson so the student can
@@ -1140,6 +1189,30 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     close();
   };
 
+  /**
+   * A suggestion pill that opens a door rather than asking a question.
+   *
+   * It goes through the SAME `onAction` path the model's own tool calls take,
+   * so the flashcard door a pill opens is the flashcard door the companion
+   * opens — one implementation, one set of credits, one navigation.
+   *
+   * It differs from `handleAction` above in one way, deliberately: a DOCKED
+   * rail is not dismissed. `close()` there would put the companion away behind
+   * a panel that is still on screen, and the student pressed a chip in the
+   * chat, not a button in an answer. The overlay drawer still closes, because
+   * it is covering the thing the door is about to show.
+   */
+  const handleSuggestionDoor = (suggestion: CompanionSuggestion) => {
+    if (!suggestion.door) return;
+    const action: CompanionAction = { type: suggestion.door, label: suggestion.label };
+    onAction?.(action);
+    trackAIAnalyticsEvent('companion_suggestion_door', {
+      action_type: suggestion.door,
+      label: suggestion.label,
+    });
+    if (variant !== 'rail') close();
+  };
+
   // A drawer unmounts when closed; a rail is permanent chrome and renders
   // regardless of `isOpen`. Every effect above that tears something down has to
   // honour the same split.
@@ -1274,6 +1347,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             <EmptyState
               theme={theme}
               onQuickPrompt={handleSend}
+              suggestions={suggestions}
+              onOpenDoor={handleSuggestionDoor}
               promptsExpanded={promptsExpanded}
               onTogglePrompts={() => setPromptsExpanded((v) => !v)}
               disabled={isBusy || dictationBusy}
@@ -1892,6 +1967,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 const EmptyState: React.FC<{
   theme: 'light' | 'dark';
   onQuickPrompt: (text: string) => void;
+  suggestions: readonly CompanionSuggestion[];
+  onOpenDoor: (suggestion: CompanionSuggestion) => void;
   promptsExpanded: boolean;
   onTogglePrompts: () => void;
   disabled?: boolean;
@@ -1902,6 +1979,8 @@ const EmptyState: React.FC<{
 }> = ({
   theme,
   onQuickPrompt,
+  suggestions,
+  onOpenDoor,
   promptsExpanded,
   onTogglePrompts,
   disabled,
@@ -1932,9 +2011,11 @@ const EmptyState: React.FC<{
       />
     ) : (
       <CompanionPrompts
+        suggestions={suggestions}
         expanded={promptsExpanded}
         onToggleExpanded={onTogglePrompts}
         onAsk={onQuickPrompt}
+        onOpenDoor={onOpenDoor}
         disabled={disabled}
       />
     )}
