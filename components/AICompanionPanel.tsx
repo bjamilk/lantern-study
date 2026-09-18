@@ -154,6 +154,7 @@ function withHardBreaks(content: string): string {
 }
 import Drawer from './ui/Drawer';
 import { Illustration } from './ui/Illustration';
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from './ui/Menu';
 
 interface AICompanionPanelProps {
   context?: CompanionUserContext;
@@ -1223,20 +1224,59 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   // only element allowed to grow and scroll.
   const body = (
     <>
-        {/* Header */}
-        <div className={`flex items-center gap-3 px-4 py-3 border-b flex-shrink-0
+        {/* Header. The reference's is one 52px row: a "Chat ▾" menu on the
+            left, then "+" and the collapse control. Ours carries the THREAD's
+            own name in the trigger rather than the word "Chat", because Lantern
+            has threads and the reference's menu is how you move between them —
+            a trigger that says which one you are in is the same control doing
+            more work. The `Past chats` / `Delete this chat` buttons that used
+            to sit in this row moved INTO that menu: at 400px they were four
+            ghost icons competing with the two that matter. */}
+        <div className={`flex items-center gap-1 px-3 py-2 border-b flex-shrink-0
           ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-primary-background'}`}>
-          <div className="flex items-center justify-center w-9 h-9 rounded-full bg-lantern-primary flex-shrink-0">
-            <AppIcon name="sparkles" size={20} className="text-white" />
-          </div>
           <div className="flex-1 min-w-0">
-            {/* The chat's own name, from the first thing that was asked. The
-                header used to say "Lantern AI" over every thread, so the one
-                open chat was indistinguishable from the fifty in history. */}
-            <p id="ai-companion-title" className="font-semibold text-sm text-lantern-text dark:text-white truncate">
-              {chatTitle}
-            </p>
-            <p className={`text-xs truncate ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+            <Menu>
+              <MenuTrigger
+                className={`flex max-w-full items-center gap-1 rounded-lg px-2 py-1 transition-colors ${
+                  theme === 'dark'
+                    ? 'hover:bg-lantern-surface-secondary'
+                    : 'hover:bg-lantern-background-secondary'
+                }`}
+              >
+                {/* The chat's own name, from the first thing that was asked.
+                    The header used to say "Lantern AI" over every thread, so
+                    the one open chat was indistinguishable from the fifty in
+                    history. */}
+                <span
+                  id="ai-companion-title"
+                  className="truncate text-body font-semibold text-lantern-text dark:text-white"
+                >
+                  {chatTitle}
+                </span>
+                <AppIcon
+                  name="chevron-down"
+                  size={14}
+                  className="flex-shrink-0 text-lantern-text-secondary dark:text-lantern-text-tertiary"
+                />
+              </MenuTrigger>
+              <MenuContent align="start">
+                <MenuItem onSelect={handleOpenHistory} icon={<AppIcon name="time" size={16} />}>
+                  Past chats
+                </MenuItem>
+                <MenuItem onSelect={handleNewChat} icon={<AppIcon name="add" size={16} />}>
+                  New chat
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem
+                  destructive
+                  onSelect={() => setShowClearConfirm(true)}
+                  icon={<AppIcon name="trash" size={16} />}
+                >
+                  Delete this chat
+                </MenuItem>
+              </MenuContent>
+            </Menu>
+            <p className={`px-2 truncate text-caption ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
               {guided
                 ? 'Guided'
                 : context?.currentScreen
@@ -1251,35 +1291,21 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
                 title="Turn this note into something"
                 aria-label="Turn into"
                 aria-expanded={showTurnInto}
-                className={`p-1.5 rounded-lg transition-colors ${showTurnInto ? 'text-lantern-feature-ai-ink' : theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
+                className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${showTurnInto ? 'text-lantern-feature-ai-ink' : theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
               >
                 <AppIcon name="apps" size={16} />
               </button>
             )}
-            <button
-              onClick={handleOpenHistory}
-              title="Past chats"
-              aria-label="Past chats"
-              aria-pressed={showHistoryList}
-              className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'} ${showHistoryList ? 'text-lantern-primary' : ''}`}
-            >
-              <AppIcon name="time" size={16} />
-            </button>
+            {/* "+" — a new chat in one press, as in the reference. It is also
+                in the menu above, because the glyph alone does not say what it
+                makes. */}
             <button
               onClick={handleNewChat}
               title="New chat"
               aria-label="New chat"
-              className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
+              className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
             >
-              <AppIcon name="chatbubbles" size={16} />
-            </button>
-            <button
-              onClick={() => setShowClearConfirm(true)}
-              title="Delete this chat"
-              aria-label="Delete this chat"
-              className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
-            >
-              <AppIcon name="trash" size={16} />
+              <AppIcon name="add" size={20} />
             </button>
             {(variant !== 'rail' || closable) && (
             <button
@@ -1347,6 +1373,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             <EmptyState
               theme={theme}
               onQuickPrompt={handleSend}
+              // `context.userName` is already `firstName || name`; the store's
+              // own user is the fallback for a host that passes no context.
+              firstName={context?.userName || currentUser?.firstName || ''}
               suggestions={suggestions}
               onOpenDoor={handleSuggestionDoor}
               promptsExpanded={promptsExpanded}
@@ -1966,6 +1995,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
 const EmptyState: React.FC<{
   theme: 'light' | 'dark';
+  /** The student's first name, when the app knows one. */
+  firstName?: string;
   onQuickPrompt: (text: string) => void;
   suggestions: readonly CompanionSuggestion[];
   onOpenDoor: (suggestion: CompanionSuggestion) => void;
@@ -1978,6 +2009,7 @@ const EmptyState: React.FC<{
   onGuidedSomethingElse: () => void;
 }> = ({
   theme,
+  firstName,
   onQuickPrompt,
   suggestions,
   onOpenDoor,
@@ -1996,8 +2028,19 @@ const EmptyState: React.FC<{
         reads — a book. */}
     <Illustration name="sparkles-book" feature="ai" size={88} />
     <div>
-      <p className={`font-semibold text-base ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}>Hi, I'm Lantern!</p>
-      <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+      {/* The reference greets by name in its serif display voice and asks a
+          question underneath: "Hello, Jamin" / "How can I help?". `text-title`
+          is the step that carries `--font-display`, so the serif comes from the
+          scale rather than from a font class of this component's own. The name
+          is only used when the app HAS one — "Hello, there" reads worse than
+          the unnamed greeting, so the unnamed form is the fallback. */}
+      <p className={`text-title ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}>
+        {firstName ? `Hello, ${firstName}` : "Hi, I'm Lantern"}
+      </p>
+      <p className={`text-title ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+        How can I help?
+      </p>
+      <p className={`text-body mt-2 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
         {guided ? GUIDED_MODE_PROMISE : 'Your personal AI study companion. Ask me anything.'}
       </p>
     </div>
