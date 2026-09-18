@@ -16,6 +16,35 @@ export const SMART_NOTES_DEPTHS: readonly SmartNotesDepth[] = ['concise', 'stand
 /** Max characters of free-text guidance accepted by the summarize endpoint. */
 export const SMART_NOTES_GUIDANCE_MAX_CHARS = 500;
 
+/**
+ * Max characters of the "how much do you already know?" hint.
+ *
+ * Deliberately a fifth of `guidance`: this is one line about the student, not
+ * a second brief. Anything longer is a goal, and goals already have a field.
+ */
+export const SMART_NOTES_SKILL_HINT_MAX_CHARS = 200;
+
+/**
+ * How much of an attached material reaches the enhance prompt.
+ *
+ * A bound rather than the whole file, because the attached note is CONTEXT —
+ * the slides beside the lecture — and the transcript is still the thing being
+ * summarized. Without the cap a long PDF would crowd the transcript out of
+ * the model's window and the "enhanced lecture notes" would be notes on the
+ * PDF.
+ */
+export const SMART_NOTES_CONTEXT_MAX_CHARS = 4000;
+
+/** The two chips beside the skill-level field. Examples, not a fixed choice. */
+export const SMART_NOTES_SKILL_HINT_EXAMPLES: readonly { id: string; label: string; text: string }[] = [
+  { id: 'basic', label: 'Basic', text: 'I am new to this — explain the basics as you go.' },
+  {
+    id: 'advanced',
+    label: 'Advanced',
+    text: 'I know this subject well — skip the basics and go deep.',
+  },
+] as const;
+
 /** Which materials Smart Notes may read when a note has more than one source. */
 export const SMART_NOTE_SOURCE_IDS = [
   'typed',
@@ -113,6 +142,17 @@ export interface SmartNotesRequestOptions {
   depth?: SmartNotesDepth;
   /** When set, only these materials are synthesized. Omitted = current full merge. */
   sources?: SmartNoteSourceId[];
+  /**
+   * One line about how much the student already knows. Server-sanitized and
+   * capped at `SMART_NOTES_SKILL_HINT_MAX_CHARS`; it steers pitch, never rules.
+   */
+  skillLevelHint?: string;
+  /**
+   * Another note from the SAME study set to read alongside this one — the
+   * slides beside the lecture. The server verifies the owner and the set
+   * before reading a character of it.
+   */
+  contextNoteId?: string;
 }
 
 const MARKER_SECTION_RE = new RegExp(

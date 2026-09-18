@@ -3,7 +3,12 @@ import {
   getLectureTranscriptionCost,
 } from '@lantern/shared/utils/aiCredits';
 import {
+  LECTURE_LEVEL_BAR_FLOOR_DB,
+  LECTURE_LEVEL_THRESHOLDS_DB,
+  classifyLectureAudioQuality,
   lectureCapacityLine,
+  lectureLevelBarFraction,
+  lectureLevelWord,
   maxLectureRecordingMinutes,
 } from '@lantern/shared/utils/lectureAudio';
 import {
@@ -13,6 +18,7 @@ import {
   screenRow,
   LECTURE_OFFLINE_QUEUEING,
   LEVEL_BAR_FLOOR_DB,
+  LEVEL_THRESHOLDS_DB,
   connectionRow,
   levelBarFraction,
   levelRow,
@@ -287,5 +293,28 @@ describe('screenRow', () => {
   it('says the screen stays on either way — that part is always true', () => {
     expect(screenRow(true).state).toBe('Stays on');
     expect(screenRow(false).state).toBe('Stays on');
+  });
+});
+
+/**
+ * The card's level arithmetic now LIVES in `@lantern/shared`, so the browser's
+ * pre-check panel grades the same room the same way. If these two ever stop
+ * being the same function, the two platforms have started disagreeing about
+ * what "Good" means and this test is how you find out.
+ */
+describe('the level thresholds are shared, not copied', () => {
+  it('re-exports the shared word and bar', () => {
+    expect(levelStateWord).toBe(lectureLevelWord);
+    expect(levelBarFraction).toBe(lectureLevelBarFraction);
+    expect(LEVEL_THRESHOLDS_DB).toBe(LECTURE_LEVEL_THRESHOLDS_DB);
+    expect(LEVEL_BAR_FLOOR_DB).toBe(LECTURE_LEVEL_BAR_FLOOR_DB);
+  });
+
+  it('grades a phone reading with the same classifier the browser uses', () => {
+    // -50 dBFS is below the silent threshold on both platforms.
+    expect(levelStateWord(-50)).toBe('Silent');
+    expect(classifyLectureAudioQuality({ rmsDb: -50 }).grade).toBe('poor');
+    expect(levelStateWord(-20)).toBe('Good');
+    expect(classifyLectureAudioQuality({ rmsDb: -20 }).grade).toBe('great');
   });
 });

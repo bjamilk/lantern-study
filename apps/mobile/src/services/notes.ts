@@ -341,6 +341,13 @@ export const transcribeAudioForNote = async (
     /** Local recording file for signed-URL PUT via FileSystem.uploadAsync. */
     localFileUri?: string;
     useStoragePath?: boolean;
+    /**
+     * What the student said they are speaking, and where the transcript should
+     * land. Both are narrowed by the server against the shared allowlists —
+     * these are a request, not a promise.
+     */
+    language?: string;
+    translateTo?: string;
   }
 ) => {
   const preferStorage = options?.useStoragePath ?? Boolean(options?.noteId);
@@ -406,6 +413,8 @@ export const transcribeAudioForNote = async (
           currentBody: compactCurrentBody,
           durationMs: options?.durationMs,
           clientByteLength,
+          language: options?.language,
+          translateTo: options?.translateTo,
         }
       : {
           audioBase64,
@@ -415,6 +424,8 @@ export const transcribeAudioForNote = async (
           currentBody: compactCurrentBody,
           durationMs: options?.durationMs,
           clientByteLength,
+          language: options?.language,
+          translateTo: options?.translateTo,
         },
     { signal: options?.signal, timeoutMs: 120_000 }
   );
