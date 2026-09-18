@@ -27,6 +27,7 @@ vi.mock('../../hooks/useResolvedStorageUrl', () => ({
 }));
 
 import { SetRoomHeader } from './SetRoomHeader';
+import { UnitChipRow } from './UnitChipRow';
 
 const SET_ID = '8f1b0c2e-2222-4a2b-9c3d-000000000002';
 
@@ -81,5 +82,31 @@ describe('set room header stats row', () => {
   it('keeps the compact header for a studio: no stats row, no 64px tile', () => {
     const html = header({ variant: 'compact', progress: null, counts: undefined });
     expect(html).not.toContain('data-testid="set-room-stats"');
+  });
+});
+
+describe('unit chip row', () => {
+  const units = [
+    { id: 'u1', studySetId: SET_ID, title: 'AI Foundations', position: 0 },
+    { id: 'u2', studySetId: SET_ID, title: 'Neural Networks', position: 1 },
+  ];
+
+  it('numbers the cards from 01 and says which one is current', () => {
+    const html = renderToStaticMarkup(
+      <UnitChipRow units={units} activeUnitId="u2" onSelect={() => undefined} />
+    );
+    expect(html).toContain('01');
+    expect(html).toContain('02');
+    expect(html).toContain('AI Foundations');
+    expect(html).toContain('Neural Networks');
+    // A toggle over mutually exclusive choices, not a navigation position.
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('aria-pressed="false"');
+  });
+
+  it('draws nothing at all when the plan has no units', () => {
+    expect(
+      renderToStaticMarkup(<UnitChipRow units={[]} activeUnitId={null} onSelect={() => undefined} />)
+    ).toBe('');
   });
 });

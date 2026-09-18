@@ -23,11 +23,27 @@ import type { Deck, StudyNote, StudySet } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
 import { Button, Card } from '../ui';
 import { Headline } from '../ui/Headline';
-import { ChipRowScroller } from './ChipRowScroller';
 import { OwnWayGrid } from './OwnWayGrid';
 import { RecentMaterials } from './RecentMaterials';
 import { RoomRecommendationCard } from './RoomRecommendationCard';
 import { RoomTopicRing } from './RoomTopicRing';
+import { UnitChipRow } from './UnitChipRow';
+
+/**
+ * The two pill anatomies measured off the reference, spelt once.
+ *
+ * Both are 32px TALL and carry a 44px hit target through a transparent
+ * pseudo-element rather than through a taller pill: the reference's controls
+ * are 32px and growing them would be a different design, but a 32px tap
+ * target is below every platform's minimum. `after:-inset-1.5` adds 6px on
+ * each side of a 32px box, which is 44.
+ */
+const PILL_BASE =
+  "relative inline-flex h-8 shrink-0 items-center justify-center rounded-full px-3 text-body font-medium after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40";
+/** `View full study plan`, `Skip topic`: 1px hairline on the card ground. */
+const PILL_SECONDARY = `${PILL_BASE} border border-lantern-border bg-lantern-surface text-lantern-text hover:border-lantern-text-tertiary`;
+/** `Show more`: the tonal one — the second plane, no border. */
+const PILL_TONAL = `${PILL_BASE} bg-lantern-background-secondary text-lantern-text hover:bg-lantern-border`;
 
 /**
  * `About ⓘ` — why this door is the one being offered, in one sentence.
@@ -130,6 +146,8 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
     unitTopics[0] ||
     nextTopic;
   const recommendedCards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => card.primary);
+  const moreCards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => !card.primary);
+  const [showMoreCards, setShowMoreCards] = useState(false);
   const homeScrollRef = useAutohideScrollbar<HTMLDivElement>();
 
   return (
@@ -145,65 +163,54 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
 
       {currentTopic ? (
         <section>
-          <div className="flex flex-wrap items-end justify-between gap-2 mb-2">
-            <Headline accent="study plan" feature="ai">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <Headline accent="study plan" feature="ai" size="eyebrow">
               Recommended from your study plan
             </Headline>
             {onOpenPlan ? (
-              <button
-                type="button"
-                onClick={onOpenPlan}
-                className="min-h-[44px] text-caption font-medium text-lantern-primary-text hover:underline"
-              >
+              // The measured secondary pill: h32, r9999, 1px hairline, p8 12,
+              // with the 44px hit target behind it. It was an underlined text
+              // link, which is the one anatomy on this page that does not say
+              // "this is a control you can press".
+              <button type="button" onClick={onOpenPlan} className={PILL_SECONDARY}>
                 View full study plan
               </button>
             ) : null}
           </div>
 
-          {/* The numbered unit pills. Drawn whenever the plan has units at all,
+          {/* The numbered unit cards. Drawn whenever the plan has units at all,
               not only when it has two: a single `01 AI Foundations` still tells
               a student which stretch of the course they are standing in, which
               is the whole thing the flattened band was missing. */}
-          {units.length > 0 ? (
-            <ChipRowScroller aria-label="Study plan units" className="mb-2">
-              {units.map((unit, index) => {
-                const active = unit.id === activeUnitId;
-                return (
-                  <button
-                    key={unit.id}
-                    type="button"
-                    onClick={() => setUnitId(unit.id)}
-                    aria-pressed={active}
-                    className={`shrink-0 min-h-[40px] rounded-full border px-3 text-caption ${
-                      active
-                        ? 'border-lantern-text text-lantern-text font-semibold'
-                        : 'border-lantern-border text-lantern-text-secondary hover:border-lantern-text-tertiary'
-                    }`}
-                  >
-                    <span className="tabular-nums">{String(index + 1).padStart(2, '0')}</span>{' '}
-                    {unit.title}
-                  </button>
-                );
-              })}
-            </ChipRowScroller>
-          ) : null}
+          <UnitChipRow units={units} activeUnitId={activeUnitId} onSelect={setUnitId} />
 
-          <div className="rounded-2xl bg-lantern-background-secondary/60 p-3">
-            <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+          {/* The topic card: r24 on the palest step of the AI lilac, which is
+              the reference's #FCF6FF. NOT A NEW TOKEN — `feature-ai-tint` IS
+              #f5d5ff, and a 30% wash of it over the card ground is that colour;
+              minting a near-duplicate ground is what index.css's own note
+              about the plan ring warns against. */}
+          <div className="rounded-3xl bg-lantern-feature-ai-tint/30 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
               <div className="flex min-w-0 items-center gap-3">
                 <RoomTopicRing status={currentTopic.status} />
                 <div className="min-w-0">
                   <p className="text-caption text-lantern-text-secondary">
                     {topicUnitLabel(topics, units, currentTopic)}
                   </p>
-                  <h3 className="text-heading text-lantern-text mt-1">{currentTopic.title}</h3>
+                  <h3 className="mt-0.5 text-body font-semibold text-lantern-text">
+                    {currentTopic.title}
+                  </h3>
                 </div>
               </div>
               {onSkipTopic ? (
-                <Button size="sm" variant="ghost" onClick={() => onSkipTopic(currentTopic.id)}>
+                <button
+                  type="button"
+                  onClick={() => onSkipTopic(currentTopic.id)}
+                  className={PILL_SECONDARY}
+                >
                   Skip topic
-                  <AppIcon name="flag" size={14} className="ml-1.5" />
-                </Button>
+                  <AppIcon name="flag" size={14} aria-hidden className="ml-1.5" />
+                </button>
               ) : null}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -238,6 +245,42 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
                 )
               )}
             </div>
+            {/* "Show more": the measured tonal pill, 120×32, no border. The
+                other five doors were reachable only from the rail's practice
+                drawer, which is a different mental model from "here are the
+                ways into THIS topic". */}
+            {moreCards.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowMoreCards((value) => !value)}
+                aria-expanded={showMoreCards}
+                className={PILL_TONAL + ' mt-3'}
+              >
+                {showMoreCards ? 'Show less' : 'Show more'}
+                <AppIcon
+                  name={showMoreCards ? 'chevron-up' : 'chevron-down'}
+                  size={14}
+                  aria-hidden
+                  className="ml-1.5"
+                />
+              </button>
+            ) : null}
+            {showMoreCards ? (
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {moreCards.map((card) => (
+                  <RoomRecommendationCard
+                    key={card.id}
+                    feature={card.feature}
+                    icon={card.icon}
+                    scene={tileSceneForTool(card.id)}
+                    eyebrow={card.eyebrow}
+                    label={card.label}
+                    about={RECOMMENDATION_ABOUT[card.id]}
+                    onClick={() => onOpenRecommended(card.id)}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         </section>
       ) : recommended ? (

@@ -58,19 +58,22 @@ export const RoomRecommendationCard: React.FC<RoomRecommendationCardProps> = ({
   const [showAbout, setShowAbout] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-lantern-border bg-lantern-surface">
+    // The measured card: 235×200, `rounded-xl` (r12), one hairline, no shadow.
+    // `min-h` rather than `h`, because the About disclosure expands INSIDE it
+    // and a fixed height would either clip that sentence or force it into a
+    // popover — and the whole reason About is a disclosure is that a tooltip
+    // does not exist on a touch screen.
+    <div className="flex min-h-[200px] flex-col overflow-hidden rounded-xl border border-lantern-border bg-lantern-surface">
       <button
         type="button"
         onClick={onClick}
-        className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lantern-ink/40"
+        className="block w-full flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lantern-ink/40"
       >
         <div
-          className={`flex h-24 items-center justify-center ${FEATURE_TINT_BG[feature]} ${FEATURE_PANEL_INK_TEXT[feature]}`}
+          className={`flex h-[104px] items-center justify-center ${FEATURE_TINT_BG[feature]} ${FEATURE_PANEL_INK_TEXT[feature]}`}
         >
           {scene ? (
-            // The band is 96px tall; 80 leaves the scene a margin without
-            // making it a stamp in the middle of the panel.
-            <TileScene scene={scene} feature={feature} height={80} />
+            <TileScene scene={scene} feature={feature} height={84} />
           ) : illustration ? (
             <Illustration
               name={illustration}
@@ -82,23 +85,32 @@ export const RoomRecommendationCard: React.FC<RoomRecommendationCardProps> = ({
             <AppIcon name={icon} size={40} aria-hidden />
           )}
         </div>
-        <div className="px-4 pt-3">
-          <p className="text-caption text-lantern-text-secondary">{eyebrow}</p>
-          <p className="text-heading text-lantern-text mt-0.5">{label}</p>
+        {/* Eyebrow and label are BOTH 14/500 as measured — the label was a
+            17px heading, which made three cards side by side read as three
+            section headings rather than as three choices. The 16px glyph
+            beside the label is what tells them apart at a glance. */}
+        <div className="px-3 pt-2.5">
+          <p className="text-body font-medium text-lantern-text-secondary">{eyebrow}</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-body font-medium text-lantern-text">
+            <AppIcon name={icon} size={16} aria-hidden className="shrink-0" />
+            <span className="min-w-0 truncate">{label}</span>
+          </p>
         </div>
       </button>
-      <div className="px-4 pb-3">
+      <div className="px-3 pb-2.5">
         <button
           type="button"
           onClick={() => setShowAbout((value) => !value)}
           aria-expanded={showAbout}
-          className="inline-flex min-h-[36px] items-center gap-1.5 text-caption text-lantern-text-secondary hover:text-lantern-text"
+          aria-label={`About ${label}`}
+          // 16×16 glyph, 44px hit target through the pseudo-element rather
+          // than through a taller control — the reference's (i) is 16px.
+          className="relative inline-flex h-4 w-4 items-center justify-center rounded-full text-lantern-text-secondary after:absolute after:-inset-3.5 after:content-[''] hover:text-lantern-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
         >
-          About
-          <AppIcon name="information-circle" size={14} />
+          <AppIcon name="information-circle" size={16} />
         </button>
         {showAbout ? (
-          <p className="text-caption text-lantern-text-secondary pb-1">{about}</p>
+          <p className="mt-1.5 text-caption text-lantern-text-secondary">{about}</p>
         ) : null}
       </div>
     </div>
