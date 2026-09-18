@@ -13,6 +13,7 @@ import {
   COMPANION_RAIL_DEFAULTS,
   COMPANION_RAIL_DOCK_MIN_ROW,
   COMPANION_RAIL_MIN_ROW,
+  COMPANION_RAIL_REFERENCE_WIDTH,
   COMPANION_RAIL_STUDIO_MIN,
   companionRailFit,
   decideCompanionRail,
@@ -87,15 +88,30 @@ describe('companionRailFit', () => {
     }
   });
 
-  it('grows the rail in three steps as the row gets roomier', () => {
-    expect(companionRailFit(980).dockWidth).toBe(384);
-    expect(companionRailFit(988).dockWidth).toBe(448);
-    expect(companionRailFit(1052).dockWidth).toBe(512);
+  it('docks at the reference 400 on an ordinary room, and grows only when earned', () => {
+    // WAVE 4 changed these numbers deliberately. The ladder used to spend every
+    // spare pixel on the chat, so Lantern's own 1440 window — a 1216px row once
+    // the 224px sidebar is out — docked 512px beside the studio, 28% wider than
+    // the product being matched at the window it was measured at. Each step now
+    // names the studio it insists on leaving behind, and 400 is the default.
+    expect(companionRailFit(1440 - 224).dockWidth).toBe(COMPANION_RAIL_REFERENCE_WIDTH);
+    // On the floor itself, still the narrowest panel.
+    expect(companionRailFit(924).dockWidth).toBe(384);
+    expect(companionRailFit(960).dockWidth).toBe(400);
+    // 448 wants the reference's own 976px main column behind it…
+    expect(companionRailFit(1423).dockWidth).toBe(400);
+    expect(companionRailFit(1424).dockWidth).toBe(448);
+    // …and 512 a studio past anything the reference lays out.
+    expect(companionRailFit(1600).dockWidth).toBe(512);
   });
 
   it('compares two fits by the answer, not by the pixel', () => {
     expect(sameCompanionRailFit(companionRailFit(1200), companionRailFit(1250))).toBe(true);
-    expect(sameCompanionRailFit(companionRailFit(980), companionRailFit(1100))).toBe(false);
+    // 980 and 1100 are the SAME answer since wave 4 — both dock at 400 — so
+    // the crossing this asserts is the one that survived: 400 → 448.
+    expect(sameCompanionRailFit(companionRailFit(980), companionRailFit(1100))).toBe(true);
+    expect(sameCompanionRailFit(companionRailFit(1100), companionRailFit(1424))).toBe(false);
+    expect(sameCompanionRailFit(companionRailFit(900), companionRailFit(1100))).toBe(false);
   });
 });
 

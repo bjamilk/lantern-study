@@ -65,14 +65,46 @@ export const COMPANION_RAIL_MIN_WIDTH = 384;
 export const COMPANION_RAIL_COLLAPSED_WIDTH = 48;
 
 /**
- * The docked widths, widest first. The rail grows on a roomy row the way it
- * used to grow at `xl` / `2xl`, except the number it grows on is the row's own
- * width, so a wide window with both nav columns open no longer counts as roomy.
+ * THE REFERENCE WIDTH. StudyFetch's chat column is 400px at a 1440×900 window,
+ * beside a 976px main column. That is the width the wave-4 parity pass is
+ * matching, and it is what the companion docks at on any ordinary room.
  */
-const DOCK_WIDTHS = [512, 448, COMPANION_RAIL_MIN_WIDTH] as const;
+export const COMPANION_RAIL_REFERENCE_WIDTH = 400;
+
+/**
+ * The docked widths, widest first, each with the studio it insists on leaving
+ * behind.
+ *
+ * WHY EACH STEP CARRIES ITS OWN MINIMUM (changed in wave 4). The ladder used to
+ * be `[512, 448, 384]` against ONE minimum — take the widest width that leaves
+ * `COMPANION_RAIL_STUDIO_MIN`. That rule has no notion of a target: it spends
+ * every spare pixel on the chat, so Lantern's own 1440 window (a 1216px row
+ * once the 224px sidebar is out) docked a 512px panel — 28% wider than the
+ * product we are matching, on the exact window it was measured at.
+ *
+ * So 400 is the DEFAULT dock, and growing past it now has to be earned:
+ *  - 400 wants a 560px studio. That is the number `COMPANION_RAIL_STUDIO_MIN`
+ *    started at, before it was lowered to 540 to reach the founder's own
+ *    942px focus room by two pixels. Keeping 560 here is what keeps that room
+ *    on 384 — 942 − 400 = 542 would clear the floor, but the floor is a floor,
+ *    not a target, and 558px of studio there is the decision #126 made
+ *    deliberately.
+ *  - 448 wants 976px of studio: the reference's own main column. Below that we
+ *    are not in a roomier layout than the one we are copying, so there is no
+ *    reason to be wider than it.
+ *  - 512 wants 1088. A genuinely large desktop, where the studio is already
+ *    past anything the reference lays out.
+ *  - 384 is the narrowest the panel is ever drawn, on the floor itself.
+ */
+const DOCK_STEPS = [
+  { width: 512, studioMin: 1088 },
+  { width: 448, studioMin: 976 },
+  { width: COMPANION_RAIL_REFERENCE_WIDTH, studioMin: 560 },
+  { width: COMPANION_RAIL_MIN_WIDTH, studioMin: COMPANION_RAIL_STUDIO_MIN },
+] as const;
 
 /** The docked width, in px. A union so the class lookup below stays total. */
-export type CompanionRailDockWidth = (typeof DOCK_WIDTHS)[number];
+export type CompanionRailDockWidth = (typeof DOCK_STEPS)[number]['width'];
 
 /**
  * What a row of a given width can hold. Everything the layout needs to know,
@@ -91,6 +123,7 @@ export interface CompanionRailFit {
 /** Tailwind classes for the three docked widths. Literals, so the scanner sees them. */
 export const COMPANION_RAIL_WIDTH_CLASS: Record<CompanionRailDockWidth, string> = {
   384: 'w-96',
+  400: 'w-[25rem]',
   448: 'w-[28rem]',
   512: 'w-[32rem]',
 };
@@ -110,8 +143,8 @@ export const COMPANION_RAIL_DOCK_MIN_ROW =
   COMPANION_RAIL_STUDIO_MIN + COMPANION_RAIL_MIN_WIDTH;
 
 export function companionRailFit(rowWidth: number): CompanionRailFit {
-  const dockWidth =
-    DOCK_WIDTHS.find((width) => rowWidth - width >= COMPANION_RAIL_STUDIO_MIN) ??
+  const dockWidth: CompanionRailDockWidth =
+    DOCK_STEPS.find((step) => rowWidth - step.width >= step.studioMin)?.width ??
     COMPANION_RAIL_MIN_WIDTH;
   return {
     fits: rowWidth >= COMPANION_RAIL_MIN_ROW,
