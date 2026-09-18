@@ -11,9 +11,10 @@
  * opponent), the active community + its presence, `isOnline`, `lowDataMode`,
  * `importProgress`, and the `libraryTab` / `budgetTab` selections.
  *
- * Touches: zustand `persist`, localStorage key `ui-storage`. Only seven fields
+ * Touches: zustand `persist`, localStorage key `ui-storage`. Only nine fields
  * are persisted (`theme`, `isSidebarExpanded`, `isChatsSectionExpanded`,
- * `lowDataMode`, `libraryTab`, `isLibraryRailCollapsed`, `visitedSurfaces`) —
+ * `focusStoodDown`, `lowDataMode`, `libraryTab`, `isLibraryRailCollapsed`,
+ * `companionRail`, `visitedSurfaces`) —
  * everything else is per-page-load. It also writes the `dark` class on `document.documentElement`
  * and registers window `online`/`offline` listeners at module scope.
  *
@@ -51,6 +52,13 @@ import { AppMode, ChatItem, Deck, Flashcard, FlashcardSession, TestResult, Messa
 import type { NoteImportProgress } from '../services/notes';
 import { isEphemeralAppMode, isRoutableAppMode, type BudgetTabParam } from '../utils/appRoutes';
 import { navigateForAppMode } from '../utils/appNavigation';
+// Types + defaults only; the module is pure and pulls in no React.
+import {
+  COMPANION_RAIL_DEFAULTS,
+  type CompanionRailPreference,
+  type CompanionRailPreferences,
+  type CompanionRailSurface,
+} from '../components/study/companionRail';
 
 export interface ActiveCommunity {
   id: string;
@@ -361,6 +369,29 @@ interface UIState {
   isLibraryRailCollapsed: boolean;
   setLibraryRailCollapsed: (collapsed: boolean) => void;
   toggleLibraryRailCollapsed: () => void;
+
+  /**
+   * Whether the AI companion is docked beside the studio or sitting as a 48px
+   * rail, remembered SEPARATELY for the set home and for a studio.
+   *
+   * Two values rather than one because the two surfaces want opposite things:
+   * the set home is a browsing surface and keeps the companion visible (as
+   * StudyFetch does), while focus mode's whole claim is that the screen goes to
+   * studying. A single flag made one of those two wrong on every visit.
+   *
+   * It is a PREFERENCE, not a layout: whether the panel can actually dock is
+   * decided from the room's measured width (`components/study/companionRail`),
+   * and a room too narrow to dock renders the rail collapsed without ever
+   * touching what is stored here. Only the student's own toggle writes it — a
+   * programmatic open ("Ask Lantern", a note attached to a question) expands the
+   * rail for that visit and no further.
+   */
+  companionRail: CompanionRailPreferences;
+  /** Write ONE surface's preference. The other is left exactly as it was. */
+  setCompanionRailPreference: (
+    surface: CompanionRailSurface,
+    preference: CompanionRailPreference
+  ) => void;
 }
 
 const initialModals = {
@@ -628,6 +659,14 @@ export const useUIStore = create<UIState>()(
       setLibraryRailOpen: (open) => set({ isLibraryRailOpen: open }),
       toggleLibraryRail: () => set((state) => ({ isLibraryRailOpen: !state.isLibraryRailOpen })),
 
+      companionRail: { ...COMPANION_RAIL_DEFAULTS },
+      setCompanionRailPreference: (surface, preference) =>
+        set((state) =>
+          state.companionRail[surface] === preference
+            ? {}
+            : { companionRail: { ...state.companionRail, [surface]: preference } }
+        ),
+
       isLibraryRailCollapsed: false,
       setLibraryRailCollapsed: (collapsed) => set({ isLibraryRailCollapsed: collapsed }),
       toggleLibraryRailCollapsed: () =>
@@ -646,6 +685,9 @@ export const useUIStore = create<UIState>()(
         lowDataMode: state.lowDataMode,
         libraryTab: state.libraryTab,
         isLibraryRailCollapsed: state.isLibraryRailCollapsed,
+        // The whole point of the two values: a student who collapsed the
+        // companion on the set home must not find it docked again tomorrow.
+        companionRail: state.companionRail,
         visitedSurfaces: state.visitedSurfaces,
       }),
     }
