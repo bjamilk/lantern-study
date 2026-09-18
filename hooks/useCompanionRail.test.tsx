@@ -137,7 +137,9 @@ describe('deciding from the room, not the window', () => {
 
   it('grows the docked panel on the row, not on the viewport', async () => {
     await show();
-    expect(rail.dockWidthClass).toBe('w-[32rem]');
+    // A 1200px row docks at the reference 400 since wave 4 — it used to take
+    // 512, every spare pixel it could reach. See `companionRail.ts`.
+    expect(rail.dockWidthClass).toBe('w-[25rem]');
     await resize(950);
     expect(rail.dockWidthClass).toBe('w-96');
   });
