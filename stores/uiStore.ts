@@ -59,6 +59,7 @@ import {
   type CompanionRailPreferences,
   type CompanionRailSurface,
 } from '../components/study/companionRail';
+import { asPlanSortKey, DEFAULT_PLAN_SORT, type PlanSortKey } from '@lantern/shared';
 
 export interface ActiveCommunity {
   id: string;
@@ -392,6 +393,25 @@ interface UIState {
     surface: CompanionRailSurface,
     preference: CompanionRailPreference
   ) => void;
+
+  /**
+   * The study plan page's `Sort By`, per study set.
+   *
+   * PER SET, because the answer is about a course and not about a person: a
+   * student cramming one module by weakest topic still wants their other set in
+   * the order it is taught. A single global key made every set inherit the last
+   * one they touched.
+   *
+   * It lives here rather than on the set row because there is no settings JSON
+   * on `study_sets` to put it in, and a nullable column for a menu the client
+   * can re-derive on any device is not worth a hand-applied migration. The cost
+   * is that it does not follow the student to another device, which is the
+   * right trade for a sort order.
+   */
+  planSortBySet: Record<string, PlanSortKey>;
+  /** Read one set's sort, falling back to the default rather than undefined. */
+  planSortFor: (studySetId: string | null | undefined) => PlanSortKey;
+  setPlanSort: (studySetId: string, sort: PlanSortKey) => void;
 }
 
 const initialModals = {
@@ -659,6 +679,16 @@ export const useUIStore = create<UIState>()(
       setLibraryRailOpen: (open) => set({ isLibraryRailOpen: open }),
       toggleLibraryRail: () => set((state) => ({ isLibraryRailOpen: !state.isLibraryRailOpen })),
 
+      planSortBySet: {},
+      planSortFor: (studySetId) =>
+        studySetId ? asPlanSortKey(get().planSortBySet[studySetId]) : DEFAULT_PLAN_SORT,
+      setPlanSort: (studySetId, sort) =>
+        set((state) =>
+          state.planSortBySet[studySetId] === sort
+            ? {}
+            : { planSortBySet: { ...state.planSortBySet, [studySetId]: sort } }
+        ),
+
       companionRail: { ...COMPANION_RAIL_DEFAULTS },
       setCompanionRailPreference: (surface, preference) =>
         set((state) =>
@@ -689,6 +719,10 @@ export const useUIStore = create<UIState>()(
         // companion on the set home must not find it docked again tomorrow.
         companionRail: state.companionRail,
         visitedSurfaces: state.visitedSurfaces,
+        // A sort a student chose on Monday is still the sort they want on
+        // Tuesday; re-deriving it from nothing is what made the menu feel like
+        // it forgot every reload.
+        planSortBySet: state.planSortBySet,
       }),
     }
   )

@@ -1,19 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  asPlanSortKey,
   initialOpenUnitId,
   isWalkableAttachment,
   pickRecommendedTopic,
   planTimeline,
   planTopicActivity,
-  STUDY_SET_MODES,
+  preAssessmentCardAction,
+  sortPlanTimeline,
   studySetPlanProgress,
   studySetProgressPercent,
   todayDateOnlyLocal,
-  topicUnitLabel,
   topicsFromReadingNotes,
   unitsForTopics,
   unitsFromSourceMaterials,
   type PlanTopicActivity,
+  type PreAssessmentCardAction,
   type StudySetMode,
   type StudySetTopic,
   type StudySetUnit,
@@ -23,11 +25,20 @@ import { AppMode, type StudyNote } from '../../types';
 import { Button, Card } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { ExamDateField } from './ExamDateField';
+import { PlanCustomizeBar } from './PlanCustomizeBar';
 import { StudyPlanTimeline } from './StudyPlanTimeline';
+import { UnitPreAssessmentCard } from './UnitPreAssessmentCard';
 import { isPastExam } from './SetRoomFooter';
-import { fetchStudySetPlan, replaceStudySetPlan, updateStudySetTopicStatus } from '../../services/academic';
+import {
+  applyUnitPreAssessmentResults,
+  fetchStudySetPlan,
+  replaceStudySetPlan,
+  startUnitPreAssessment,
+  updateStudySetTopicStatus,
+} from '../../services/academic';
 import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { useStudySetStore } from '../../stores/studySetStore';
+import { useUIStore } from '../../stores/uiStore';
 import { useToastStore } from '../../stores/toastStore';
 
 interface StudySetPlanPanelProps {
@@ -46,6 +57,8 @@ interface StudySetPlanPanelProps {
   onViewSchedule?: () => void;
   /** Defaults to the set's own add-material route. */
   onAddSyllabus?: () => void;
+  /** Opens the set's settings from the customize bar. Omitted hides the gear. */
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -62,10 +75,17 @@ interface StudySetPlanPanelProps {
  * syllabus that would make the plan sharper. Every rule about what is next and
  * what strikes through is in `@lantern/shared`'s `planTimeline`.
  *
- * DELIBERATELY ABSENT. The reference's `Sources:` chips (a topic carries note
- * ids but no verified provenance, and a chip pointing at the wrong material is
- * worse than no chip) and its `Sort By` control (the plan has one order, the
- * one the units were built in — a sort menu with a single option is furniture).
+ * WAVE 2 (the StudyFetch parity pass) added the three things the reference has
+ * on this page that Lantern did not: the `Customize your Study Plan` bar, a
+ * `Sort By` that has three real orders to offer rather than one (see
+ * `sortPlanTimeline`), and the per-unit pre-assessment — a REAL short
+ * diagnostic built by the question generator, not the local self-rating walk
+ * that used to stand in for it.
+ *
+ * STILL DELIBERATELY ABSENT: the reference's filter icon. There is nothing on a
+ * plan row to filter by that the sort does not already express, and a control
+ * that looks live and does nothing is what the declutter pass removed
+ * everywhere else.
  */
 export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   studySetId,
@@ -76,6 +96,7 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   onStart,
   onViewSchedule,
   onAddSyllabus,
+  onOpenSettings,
 }) => {
   const showToast = useToastStore((s) => s.showToast);
   const { navigateTo } = useAppNavigation();
@@ -89,8 +110,19 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   const [storedUnits, setStoredUnits] = useState<StudySetUnit[]>([fallback.unit]);
   const [storedTopics, setStoredTopics] = useState<StudySetTopic[]>(fallback.topics);
   const [generating, setGenerating] = useState(false);
-  const [diagnosticIndex, setDiagnosticIndex] = useState<number | null>(null);
   const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
+  // The pre-assessment's per-unit state. Keyed by unit id because a student can
+  // have finished one unit's check, be resuming another's, and have never
+  // opened a third's — one flag for the page would collapse all three.
+  const [preAction, setPreAction] = useState<Record<string, PreAssessmentCardAction>>({});
+  const [preBusyUnitId, setPreBusyUnitId] = useState<string | null>(null);
+  const [preMoved, setPreMoved] = useState<Record<string, number>>({});
+  // Which check the student went off to take, so the panel knows what to grade
+  // when they come back. A ref, not state: writing it must not re-render the
+  // page the student is in the middle of leaving.
+  const pendingCheck = useRef<{ unitId: string; testId: string } | null>(null);
+  const sort = useUIStore((state) => asPlanSortKey(state.planSortBySet[studySetId]));
+  const setPlanSort = useUIStore((state) => state.setPlanSort);
   const [seededUnitId, setSeededUnitId] = useState<string | null>(null);
 
   // A local plan files every topic under one unit called "Your materials",
@@ -125,6 +157,26 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
           setStoredUnits(nextUnits);
           setStoredTopics(nextTopics);
         }
+        // Which units already carry a check, so the first paint draws the right
+        // verb. Without this a student who finished one is offered
+        // "Continue · uses 1 AI credit" for work they have already done.
+        const checks = Array.isArray(
+          (data as { preAssessments?: { unitId: string; completedAt: string | null }[] })
+            ?.preAssessments
+        )
+          ? (data as { preAssessments: { unitId: string; completedAt: string | null }[] })
+              .preAssessments
+          : [];
+        setPreAction((current) => {
+          const next = { ...current };
+          for (const check of checks) {
+            next[check.unitId] = preAssessmentCardAction({
+              id: check.unitId,
+              completedAt: check.completedAt,
+            });
+          }
+          return next;
+        });
       })
       .catch(() => undefined);
     return () => {
@@ -135,12 +187,16 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   const progress = studySetPlanProgress(topics);
   const percent = studySetProgressPercent(progress);
   const recommended = pickRecommendedTopic(topics, mode);
-  const timeline = planTimeline(units, topics, recommended?.id ?? null);
+  const planOrder = planTimeline(units, topics, recommended?.id ?? null);
+  // Sorting happens AFTER the timeline is built, never before: the ring
+  // percentages and the `next` row are facts about the plan, and a sort that
+  // ran first would be ranking units by an arc it had not computed yet.
+  const timeline = sortPlanTimeline(planOrder, sort);
 
   // Open the unit holding the recommendation once, when the plan first has one.
   // Seeding by id rather than by a boolean means a student who shut that unit
   // keeps it shut, and a plan that arrives from the server later still opens.
-  const seedUnitId = initialOpenUnitId(timeline);
+  const seedUnitId = initialOpenUnitId(planOrder);
   useEffect(() => {
     if (!seedUnitId || seedUnitId === seededUnitId) return;
     setSeededUnitId(seedUnitId);
@@ -178,6 +234,83 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
     const walkable = Boolean(note?.attachments?.some(isWalkableAttachment));
     onStart(walkable ? 'walkthrough' : 'notes', source.id);
   };
+
+  /**
+   * `Continue` on a unit's check.
+   *
+   * The server decides whether this generates or resumes — and refunds the
+   * reserved AI credit when it resumes — so this does not have to guess, and a
+   * student who presses it twice cannot be charged twice. What comes back is a
+   * test id, which is opened on the room's OWN test screen through
+   * `/study/sets/:id/test/:testId`: the app already seeds a set-scoped session
+   * from that route, so the diagnostic is taken on the same screen as every
+   * other test rather than on a second one built for it.
+   */
+  const startPreAssessment = async (unitId: string) => {
+    if (preBusyUnitId) return;
+    setPreBusyUnitId(unitId);
+    try {
+      const started = await startUnitPreAssessment(studySetId, unitId, {
+        retake: (preAction[unitId] ?? 'start') === 'retake',
+      });
+      setPreAction((current) => ({ ...current, [unitId]: 'resume' }));
+      // Remembered so the results can be graded onto the plan when the student
+      // comes back from the test screen — the test itself knows nothing about
+      // study plans, deliberately.
+      pendingCheck.current = { unitId, testId: started.testId };
+      navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+        studySetId,
+        workspaceActivity: 'test',
+        testId: started.testId,
+      });
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Could not start that check.',
+        'error'
+      );
+    } finally {
+      setPreBusyUnitId(null);
+    }
+  };
+
+  /**
+   * Grade a finished check onto the plan, on the way back to this page.
+   *
+   * Runs on MOUNT rather than on the test's submit, because the test screen is
+   * a different route: leaving it unmounts this panel, and a callback threaded
+   * through the workspace would have to survive that. The server is idempotent
+   * here — it never moves a topic backwards, so a second call over the same
+   * session finds every status already stored and writes nothing — which is
+   * what makes running it on every return safe.
+   */
+  useEffect(() => {
+    const pending = pendingCheck.current;
+    if (!pending) return;
+    pendingCheck.current = null;
+    let cancelled = false;
+    void applyUnitPreAssessmentResults(studySetId, pending.unitId, pending.testId)
+      .then((outcome) => {
+        if (cancelled) return;
+        const updates = Array.isArray(outcome?.updates) ? outcome.updates : [];
+        setPreAction((current) => ({ ...current, [pending.unitId]: 'retake' }));
+        setPreMoved((current) => ({ ...current, [pending.unitId]: updates.length }));
+        if (updates.length === 0) return;
+        setStoredTopics((rows) =>
+          rows.map((row) => {
+            const update = updates.find((entry) => entry.topicId === row.id);
+            return update ? { ...row, status: update.status } : row;
+          })
+        );
+        showToast(
+          `Your check moved ${updates.length} ${updates.length === 1 ? 'topic' : 'topics'} forward.`,
+          'success'
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [showToast, studySetId]);
 
   const goToSetActivity = (workspaceActivity: 'calendar' | 'add') => {
     navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId, workspaceActivity });
@@ -263,27 +396,13 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
             </p>
           </div>
 
-          {/* `Mode:` is kept because the model has real modes that change which
-              topic is recommended. `Sort By` is not — see the file comment. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-caption text-lantern-text-secondary">Mode</span>
-            {STUDY_SET_MODES.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onModeChange(item.id)}
-                aria-pressed={mode === item.id}
-                className={`min-h-[40px] rounded-full border px-3 text-caption ${
-                  mode === item.id
-                    ? 'border-lantern-text font-semibold text-lantern-text'
-                    : 'border-lantern-border text-lantern-text-secondary hover:border-lantern-text-tertiary'
-                }`}
-                title={item.promise}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+          <PlanCustomizeBar
+            mode={mode}
+            onModeChange={onModeChange}
+            sort={sort}
+            onSortChange={(next) => setPlanSort(studySetId, next)}
+            onOpenSettings={onOpenSettings}
+          />
 
           {topics.length === 0 ? (
             <Card padding="md">
@@ -318,74 +437,16 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
             </div>
           )}
 
-          {/* The reference's highlighted CTA row. Shown only while a real
-              pre-test exists to run — the self-rating pass below — and hidden
-              once it has been worked through, rather than sitting there for
-              ever offering three minutes that do nothing. */}
-          {topics.length > 0 && diagnosticIndex === null ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-lantern-border bg-lantern-feature-ai-tint/40 p-3">
-              <AppIcon name="sparkles" size={18} className="text-lantern-feature-ai-ink" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-body font-semibold text-lantern-text">
-                  See what you already know
-                </span>
-                <span className="block text-caption text-lantern-text-secondary">
-                  Takes about 3 minutes · marks topics covered so the plan skips them
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setDiagnosticIndex(0)}
-                className="shrink-0 min-h-[40px] rounded-full bg-lantern-text px-4 text-caption font-semibold text-lantern-surface"
-              >
-                Continue
-              </button>
-            </div>
-          ) : null}
-
-          {diagnosticIndex !== null && topics[diagnosticIndex] ? (
-            <Card padding="md">
-              <p className="text-label uppercase text-lantern-text-secondary">Quick check</p>
-              <p className="text-caption text-lantern-text-secondary mt-1">
-                {topicUnitLabel(topics, units, topics[diagnosticIndex])} ·{' '}
-                {diagnosticIndex + 1} of {topics.length}
-              </p>
-              <h3 className="text-heading text-lantern-text mt-1">{topics[diagnosticIndex].title}</h3>
-              <p className="text-body text-lantern-text-secondary mt-2">
-                Do you already know this well enough to skip it?
-              </p>
-              <div className="flex flex-wrap gap-2 mt-3">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setStatus(topics[diagnosticIndex], 'covered');
-                    setDiagnosticIndex(
-                      diagnosticIndex + 1 >= topics.length ? null : diagnosticIndex + 1
-                    );
-                  }}
-                >
-                  I know this
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() =>
-                    setDiagnosticIndex(
-                      diagnosticIndex + 1 >= topics.length ? null : diagnosticIndex + 1
-                    )
-                  }
-                >
-                  Not yet
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setDiagnosticIndex(null)}>
-                  Stop the check
-                </Button>
-              </div>
-            </Card>
-          ) : null}
-
           <StudyPlanTimeline
             timeline={timeline}
+            renderUnitPreAssessment={(unit) => (
+              <UnitPreAssessmentCard
+                action={preAction[unit.id] ?? 'start'}
+                busy={preBusyUnitId === unit.id}
+                covered={preMoved[unit.id] ?? null}
+                onStart={() => void startPreAssessment(unit.id)}
+              />
+            )}
             openUnitIds={openUnits}
             onToggleUnit={(unitId) =>
               setOpenUnits((current) => ({ ...current, [unitId]: !(current[unitId] ?? false) }))

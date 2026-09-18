@@ -1875,3 +1875,44 @@ export async function findUnitPreAssessment(
   if (error) throw error;
   return (Array.isArray(data) ? data[0] : null) ?? null;
 }
+
+/**
+ * Every unit pre-assessment in one study set, newest first.
+ *
+ * The list half of `findUnitPreAssessment`, and filtered the same way and for
+ * the same reason: on `config`, never on the `study_set_id` COLUMN, which a
+ * hand-applied migration gates. It exists so the plan page can draw the right
+ * verb on every unit's card in ONE round trip — a student who has finished a
+ * check must not be offered `Continue · uses 1 AI credit` for it.
+ *
+ * Returns the id, the unit and whether it is finished, and nothing else: the
+ * questions and answers are not the plan page's business.
+ */
+export async function listSetPreAssessments(
+  supabase: DataClient,
+  userId: string,
+  studySetId: string,
+): Promise<{ unitId: string; testId: string; completedAt: string | null }[]> {
+  const { data, error } = await supabase
+    .from("test_sessions")
+    .select("id, end_time, config, start_time")
+    .eq("user_id", userId)
+    .eq("config->preAssessment->>studySetId", studySetId)
+    .order("start_time", { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  const seen = new Set<string>();
+  const rows: { unitId: string; testId: string; completedAt: string | null }[] = [];
+  for (const row of Array.isArray(data) ? data : []) {
+    const unitId = String((row as any)?.config?.preAssessment?.unitId ?? "");
+    // Newest first, so the first row for a unit is the attempt that counts.
+    if (!unitId || seen.has(unitId)) continue;
+    seen.add(unitId);
+    rows.push({
+      unitId,
+      testId: String((row as any).id),
+      completedAt: (row as any).end_time ?? null,
+    });
+  }
+  return rows;
+}

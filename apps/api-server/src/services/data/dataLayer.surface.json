@@ -1874,6 +1874,10 @@
           "arity": 0
         },
         {
+          "name": "listSetPreAssessments",
+          "arity": 0
+        },
+        {
           "name": "mapTestSessionRowToClient",
           "arity": 0
         },

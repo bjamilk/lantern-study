@@ -1,7 +1,7 @@
 {
   "//": "Frozen set of pre-existing type errors in the web app root graph. See scripts/check-web-typecheck.mjs. This file may only shrink: fix errors, then run `node scripts/check-web-typecheck.mjs --update`.",
   "project": "apps/web/tsconfig.typecheck.json",
-  "total": 764,
+  "total": 763,
   "fileCount": 136,
   "errors": {
     "App.tsx TS2304 Cannot find name 'Group'.": 1,
@@ -173,7 +173,6 @@
     "components/study/PlayStudio.test.ts TS2532 Object is possibly 'undefined'.": 2,
     "components/study/RecapStudio.tsx TS2353 Object literal may only specify known properties, and 'id' does not exist in type 'Partial<CompanionUserContext>'.": 1,
     "components/study/StudySetPlanPanel.tsx TS2339 Property 'attachments' does not exist on type 'StudyNote'.": 2,
-    "components/study/StudySetPlanPanel.tsx TS2345 Argument of type 'StudySetTopic | undefined' is not assignable to parameter of type 'StudySetTopic'.": 1,
     "components/ui/AppIcon.test.tsx TS2532 Object is possibly 'undefined'.": 1,
     "components/ui/Avatar.test.tsx TS2532 Object is possibly 'undefined'.": 1,
     "components/ui/ConnectionBadge.tsx TS2322 Type '\"document\" | \"filter\" | \"at\" | \"library\" | \"search\" | \"repeat\" | \"link\" | \"notifications\" | \"sync\" | \"open\" | \"image\" | \"settings\" | \"institution\" | \"gift\" | \"text\" | \"options\" | ... 188 more ..": 1,

@@ -214,6 +214,15 @@ interface StudyPlanTimelineProps {
   materials?: readonly UnitSourceMaterial[];
   /** Opens a chip's material. Without it the chips are not drawn at all. */
   onOpenSource?: (source: UnitSource) => void;
+  /**
+   * The unit's pre-assessment card, drawn at the top of an OPEN unit.
+   *
+   * A render prop rather than props, because the card's state (is there an
+   * unfinished check, is one building right now) belongs to whoever owns the
+   * API calls; the timeline's job is to say where it goes. Returning null for a
+   * unit draws nothing at all — no placeholder, no reserved space.
+   */
+  renderUnitPreAssessment?: (unit: PlanTimelineUnit['unit']) => React.ReactNode;
 }
 
 /**
@@ -241,6 +250,7 @@ export const StudyPlanTimeline: React.FC<StudyPlanTimelineProps> = ({
   onStartTopic,
   materials,
   onOpenSource,
+  renderUnitPreAssessment,
 }) => {
   if (timeline.length === 0) return null;
 
@@ -320,6 +330,12 @@ export const StudyPlanTimeline: React.FC<StudyPlanTimelineProps> = ({
 
                 {expanded ? (
                   <div id={panelId} className="border-t border-lantern-border p-2">
+                    {/* The check comes FIRST inside the unit, as the reference
+                        draws it: "what do you already know" is the question
+                        that decides which of these rows you need at all. */}
+                    {renderUnitPreAssessment ? (
+                      <div className="px-1 pb-2 pt-1">{renderUnitPreAssessment(unit)}</div>
+                    ) : null}
                     {rows.length === 0 ? (
                       <p className="px-3 py-2 text-caption text-lantern-text-secondary">
                         Nothing is filed under this unit yet.

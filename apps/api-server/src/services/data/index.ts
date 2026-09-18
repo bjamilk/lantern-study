@@ -1177,6 +1177,7 @@ function createTestsApi(
     // Moved out of routes/tests.ts (lane R2, PR 2b).
     getOwnedTestSession: bindDb(client, testsData.getOwnedTestSession),
     findUnitPreAssessment: bindDb(client, testsData.findUnitPreAssessment),
+    listSetPreAssessments: bindDb(client, testsData.listSetPreAssessments),
     generateTestQuestions: testsData.generateTestQuestions,
     calculateTestScore: testsData.calculateTestScore,
     getUserTests: bindDbDeps(client, testsDeps, testsData.getUserTests),
