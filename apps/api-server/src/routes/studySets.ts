@@ -49,12 +49,18 @@
  *   `uploadCoverImage` / `deleteCoverObject`.
  *
  * Migration tolerance
- * - Three migrations here are applied by hand and the API runs on both sides of
+ * - Four migrations here are applied by hand and the API runs on both sides of
  *   each: reads degrade past a missing tile column so a student still sees
  *   their sets, while a write that CHOSE a tile answers 503 rather than
  *   reporting success over a row that never changed. The practice-folder
  *   routes follow the same split — the list answers `supported: false` with a
  *   200 and every write answers 503 with `PRACTICE_FOLDER_MIGRATION`.
+ * - The syllabus routes (20260918150000) follow it too, with one addition that
+ *   matters: `POST /:setId/syllabus` is the only route in this API that spends
+ *   an AI use BEFORE it stores anything, so its migration check is a
+ *   MIDDLEWARE ordered above `aiRateLimitForFeature` rather than a check
+ *   inside the handler. A student must not be one dropped refund away from
+ *   paying for a 503.
  */
 /**
  * /api/v1/users/me/study-sets — personal study sets on the Study tab.
@@ -86,11 +92,18 @@ import {
 import type { DataLayer } from '../services/data';
 import {
   SET_TILE_MIGRATION,
+  STUDY_SET_SYLLABUS_MIGRATION,
   SetTileColumnMissingError,
+  StudySetSyllabusMissingError,
   getStudySetsService,
 } from '../services/studySets';
 import { getStudySetPreAssessmentService } from '../services/studySetPreAssessment';
-import { hasPracticeFolders } from '../services/schemaCapabilities';
+import {
+  SyllabusGenerationFailedError,
+  getStudySetSyllabusService,
+} from '../services/studySetSyllabus';
+import { SYLLABUS_UNSUPPORTED_MESSAGE } from '@lantern/shared/study/syllabusSummary';
+import { hasPracticeFolders, hasStudySetSyllabus } from '../services/schemaCapabilities';
 import { logger } from '../utils/logger';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 
@@ -108,6 +121,28 @@ const handlePublicError = (err: unknown, res: { status: (code: number) => { json
     return true;
   }
   return false;
+};
+
+/**
+ * A syllabus write that reached a database without 20260918150000.
+ *
+ * 503 with the filename rather than a 500 or a cheerful 200: the fix is a
+ * hand-applied migration, not a client retry, and the operator reading the log
+ * needs the name of the file to apply.
+ */
+const handleSyllabusError = (
+  err: unknown,
+  res: { status: (code: number) => { json: (body: unknown) => void } }
+): boolean => {
+  if (err instanceof StudySetSyllabusMissingError) {
+    res.status(503).json({
+      success: false,
+      error: err.message,
+      migration: STUDY_SET_SYLLABUS_MIGRATION,
+    });
+    return true;
+  }
+  return handlePublicError(err, res);
 };
 
 // ---------------------------------------------------------------------------
@@ -575,6 +610,132 @@ router.post(
         await refundFeatureAiCredit(userId, 'generate_questions').catch(() => undefined);
       }
       if (handlePublicError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+// ---------- Syllabus ("Sync with your class") -------------------------------
+// 20260918150000 is hand-applied. The READ answers 200 with `supported: false`
+// so a set room renders without the card rather than erroring; the WRITE
+// answers 503 naming the file. See services/studySetSyllabus.ts for the credit
+// rule — this is the only route in the app that spends an AI use before it
+// stores anything, which is why the gate below sits ABOVE the meter.
+
+/** `supported`, the linked note and the stored schedule. Charges nothing. */
+router.get(
+  '/:setId/syllabus',
+  authMiddleware,
+  validateStudySetId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getStudySetsService(dataLayer).getSyllabus(
+        userId,
+        String(req.params.setId)
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      if (handleSyllabusError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+/**
+ * Refuse an unapplied migration BEFORE the AI meter runs.
+ *
+ * Written as its own middleware rather than a check at the top of the handler
+ * because `aiRateLimitForFeature` charges on the way IN. A capability check
+ * inside the handler would run after the credit was taken, and the refund path
+ * for "the migration is not applied" would then depend on a catch block — a
+ * student would be one dropped refund away from paying for a 503. Ordering the
+ * gate first makes the charge impossible instead of recoverable.
+ */
+const requireSyllabusSchema = asyncHandler(
+  async (req: AuthenticatedRequest, res: Response, next: (err?: unknown) => void) => {
+    if (await hasStudySetSyllabus(dataLayer.getClient())) {
+      next();
+      return;
+    }
+    res.status(503).json({
+      success: false,
+      error: SYLLABUS_UNSUPPORTED_MESSAGE,
+      migration: STUDY_SET_SYLLABUS_MIGRATION,
+    });
+  }
+);
+
+/**
+ * Upload a syllabus: file in, schedule out. ONE AI use.
+ *
+ * base64 in the JSON body, not multipart — the shape every other document
+ * upload in this API takes (`upload-pdf`, `extract-document-text`), so the
+ * clients reuse their existing encode path and the body-size limits already
+ * configured in server.ts apply unchanged.
+ */
+router.post(
+  '/:setId/syllabus',
+  authMiddleware,
+  validateStudySetId,
+  handleValidationErrors,
+  uploadBurstRateLimit,
+  requireSyllabusSchema,
+  requirePermission('ai'),
+  aiRateLimitForFeature('generate_questions'),
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const setId = String(req.params.setId);
+    const { fileName, base64Data } = (req.body || {}) as Record<string, unknown>;
+    if (!fileName || !base64Data) {
+      // Refused before any AI work: give the reserved credit back.
+      await refundFeatureAiCredit(userId, 'generate_questions').catch(() => undefined);
+      res.status(400).json({ success: false, error: 'fileName and base64Data are required.' });
+      return;
+    }
+    try {
+      const data = await getStudySetSyllabusService(dataLayer).upload(userId, setId, {
+        fileName: String(fileName),
+        base64Data: String(base64Data),
+      });
+      await applyGlobalUsageHeaders(res, userId);
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      // Both refund cases: a PublicError is a refusal BEFORE the model ran (bad
+      // file, too big, no readable text), and SyllabusGenerationFailedError is
+      // every provider exhausted — no answer came back. A model that ANSWERED
+      // and found no schedule is not here: it is a 201 with `summary: null`,
+      // and it is charged, because the work was done.
+      if (err instanceof PublicError || err instanceof SyllabusGenerationFailedError) {
+        await refundFeatureAiCredit(userId, 'generate_questions').catch(() => undefined);
+      }
+      if (err instanceof SyllabusGenerationFailedError) {
+        res.status(503).json({ success: false, error: err.message });
+        return;
+      }
+      if (handleSyllabusError(err, res)) return;
+      throw err;
+    }
+  })
+);
+
+/** Undo: unlink the syllabus and delete the note it created. Charges nothing. */
+router.delete(
+  '/:setId/syllabus',
+  authMiddleware,
+  validateStudySetId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      await getStudySetSyllabusService(dataLayer).clear(userId, String(req.params.setId));
+      res.json({ success: true });
+    } catch (err) {
+      if (handleSyllabusError(err, res)) return;
       throw err;
     }
   })
