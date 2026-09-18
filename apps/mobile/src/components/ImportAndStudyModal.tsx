@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { appAlert } from './ui/appDialog';
+import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { getNoteStudyContent } from '@lantern/shared';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
@@ -17,6 +18,13 @@ import * as notesApi from '../services/notes';
 import { fetchAiHealth } from '../services/api';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
+import {
+  WORD_DOOR_LABEL,
+  importWordDocument,
+  pickWordDocument,
+  wordDoorState,
+} from '../utils/wordImport';
+import { useSyncStatus } from '../hooks/useSync';
 import { useAuthStore } from '../stores/authStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useStudyGoalsStore } from '../stores/studyGoalsStore';
@@ -69,6 +77,8 @@ export default function ImportAndStudyModal({
   const [generateCards, setGenerateCards] = useState(true);
   const [generateQuiz, setGenerateQuiz] = useState(true);
   const [handwritingOcrOff, setHandwritingOcrOff] = useState(false);
+  const { isOnline } = useSyncStatus();
+  const wordDoor = wordDoorState(isOnline);
 
   useEffect(() => {
     if (!visible) return;
@@ -220,6 +230,46 @@ export default function ImportAndStudyModal({
     }
   };
 
+  /**
+   * A Word document (.docx).
+   *
+   * It goes through `createNote` — the SAME path the paste box below uses —
+   * because the server hands back text rather than a stored file: a Word
+   * document has no page model and no preview, so there is nothing to attach.
+   * Filing into the course/set and the flashcard + quiz run therefore come free
+   * from the existing path instead of being re-implemented here.
+   */
+  const handlePickWordDocument = async () => {
+    let picked;
+    try {
+      picked = await pickWordDocument(DocumentPicker.getDocumentAsync);
+    } catch (e: unknown) {
+      // A legacy .doc or an oversized file, refused before anything uploaded.
+      setError(e instanceof Error ? e.message : 'That file cannot be imported.');
+      return;
+    }
+    if (!picked) return;
+
+    setStep('processing');
+    setError(null);
+    try {
+      const note = await importWordDocument({
+        file: picked,
+        extractDocumentText: notesApi.extractDocumentTextViaApi,
+        createNote: (payload) =>
+          useNotesStore.getState().createNote({
+            ...payload,
+            ...(courseId ? { courseId } : {}),
+            ...(studySetId ? { studySetId } : {}),
+          }),
+      });
+      enrichNote(note);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Word document import failed');
+      setStep('input');
+    }
+  };
+
   const importPhotos = async (assets: ImagePicker.ImagePickerAsset[]) => {
     if (!assets.length) return;
     setStep('processing');
@@ -328,7 +378,8 @@ export default function ImportAndStudyModal({
             {step === 'input' ? (
               <>
                 <Text className="text-sm text-lantern-text-secondary mb-3">
-                  Photograph handwritten pages, or paste lecture notes, to create study materials.
+                  Photograph handwritten pages, bring in a Word document, or paste lecture notes,
+                  to create study materials.
                 </Text>
                 <Text className="text-xs text-lantern-text-secondary mb-3">
                   {formatMaxNoteUploadLabel()}
@@ -349,6 +400,34 @@ export default function ImportAndStudyModal({
                     <Text className="text-xs text-lantern-text-secondary">
                       Camera or library — text is read off the photo
                     </Text>
+                  </View>
+                </Pressable>
+
+                {/* The Word door. Disabled — visibly, with the reason under it
+                    — when there is no connection, because the document is
+                    parsed on the server: offline the picker would open, the
+                    student would wait through the read, and the request would
+                    die with a generic network message after the work. */}
+                <Pressable
+                  onPress={() => {
+                    if (wordDoor.disabled) return;
+                    void handlePickWordDocument();
+                  }}
+                  disabled={wordDoor.disabled}
+                  accessibilityRole="button"
+                  accessibilityLabel={WORD_DOOR_LABEL}
+                  accessibilityHint={wordDoor.hint}
+                  accessibilityState={{ disabled: wordDoor.disabled }}
+                  className={`flex-row items-center gap-3 border-2 border-dashed border-lantern-border rounded-xl px-3 py-3 mb-3 ${
+                    wordDoor.disabled ? 'opacity-50' : ''
+                  }`}
+                >
+                  <AppIcon name="document" size={22} color={brand.text} />
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-lantern-text">
+                      {WORD_DOOR_LABEL}
+                    </Text>
+                    <Text className="text-xs text-lantern-text-secondary">{wordDoor.hint}</Text>
                   </View>
                 </Pressable>
 

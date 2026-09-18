@@ -26,7 +26,12 @@ import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
 import { AIDisclaimer } from './AIDisclaimer';
-import { uploadNotePdfViaApi, uploadPresentationViaApi } from '../services/notes';
+import {
+  extractDocumentTextViaApi,
+  uploadNotePdfViaApi,
+  uploadPresentationViaApi,
+} from '../services/notes';
+import { DOCX_MIME } from '@lantern/shared/utils/noteUpload';
 import type { AIGeneratedQuestion } from '../services/ai';
 import { AppIcon } from './ui/AppIcon';
 
@@ -71,6 +76,10 @@ export default function AIGenerateQuestionsModal({
           'application/pdf',
           'application/vnd.ms-powerpoint',
           'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          // A Word document is accepted wherever a PDF is. It takes a different
+          // road: the server returns its TEXT rather than storing it, so the
+          // text goes straight into the box below instead of through a note.
+          DOCX_MIME,
         ],
         copyToCacheDirectory: true,
       });
@@ -79,9 +88,24 @@ export default function AIGenerateQuestionsModal({
       const asset = result.assets[0];
       const name = asset.name || 'upload.pdf';
       const isPdf = /\.pdf$/i.test(name) || asset.mimeType === 'application/pdf';
+      const isDocument = /\.docx$/i.test(name) || asset.mimeType === DOCX_MIME;
 
       setIsUploading(true);
       setAiError(null);
+
+      if (isDocument) {
+        const extracted = await extractDocumentTextViaApi(asset.uri, name);
+        if (extracted.text.trim().length < 50) {
+          appAlert(
+            'Not enough text',
+            'Lantern could not read enough text from that document. If it is mostly pictures, upload it as photos or a PDF instead.'
+          );
+          return;
+        }
+        setNotes(extracted.text.slice(0, 8000));
+        return;
+      }
+
       const uploaded = isPdf
         ? await uploadNotePdfViaApi(asset.uri, name)
         : await uploadPresentationViaApi(asset.uri, name);
@@ -109,11 +133,11 @@ export default function AIGenerateQuestionsModal({
 
   const handleGenerate = async () => {
     if (!notes.trim()) {
-      appAlert('Missing Notes', 'Please paste some notes or upload a PDF/PowerPoint.');
+      appAlert('Missing Notes', 'Please paste some notes or upload a PDF, PowerPoint or Word document.');
       return;
     }
     if (notes.trim().length < 50) {
-      appAlert('More notes needed', 'Paste at least 50 characters, or upload a PDF/slides file.');
+      appAlert('More notes needed', 'Paste at least 50 characters, or upload a PDF, slides or a Word document.');
       return;
     }
 
@@ -190,7 +214,7 @@ export default function AIGenerateQuestionsModal({
                       <AppIcon name="document-attach" size={16} color={colors.primaryText} />
                     )}
                     <Text style={[styles.uploadChipText, { color: colors.primaryText }]}>
-                      {isUploading ? 'Uploading…' : 'PDF / PPT'}
+                      {isUploading ? 'Uploading…' : 'PDF / PPT / Word'}
                     </Text>
                   </TouchableOpacity>
                 </View>

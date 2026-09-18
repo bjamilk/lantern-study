@@ -55,10 +55,18 @@ import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
 import {
   createNoteFromYoutube,
+  extractDocumentTextViaApi,
   uploadNotePdfViaApi,
   uploadPresentationViaApi,
   uploadNoteImagesViaApi,
 } from '../../services/notes';
+import {
+  WORD_DOOR_LABEL,
+  importWordDocument,
+  pickWordDocument,
+  wordDoorState,
+} from '../../utils/wordImport';
+import { useSyncStatus } from '../../hooks/useSync';
 import { trackNoteCreated } from '../../services/productAnalytics';
 import {
   ActionSheet,
@@ -136,7 +144,12 @@ type PendingImport =
       uri: string;
       name: string;
       size: number;
-      mode: 'pdf' | 'presentation';
+      /**
+       * `document` is a Word file. It shares this staging card with the two
+       * uploads but not their ending: the server returns TEXT for it, and the
+       * note is created from that text — nothing is stored.
+       */
+      mode: 'pdf' | 'presentation' | 'document';
     }
   | {
       mode: 'photos';
@@ -396,6 +409,8 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
   const [refreshing, setRefreshing] = useState(false);
   const [importingFile, setImportingFile] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const { isOnline } = useSyncStatus();
+  const wordDoor = wordDoorState(isOnline);
   /** The import menu; the four entry points used to sit inline above the list. */
   const [moreOpen, setMoreOpen] = useState(false);
   const [moveKindOpen, setMoveKindOpen] = useState(false);
@@ -957,6 +972,22 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
     }
   };
 
+  /**
+   * The Word (.docx) door. The picker asks for the docx mime alone, and a
+   * legacy `.doc` or an oversized file is refused here — before the file is
+   * read into memory — with a sentence the student can act on.
+   */
+  const handlePickWordDocument = async () => {
+    try {
+      const picked = await pickWordDocument(DocumentPicker.getDocumentAsync);
+      if (!picked) return;
+      setPendingImport({ ...picked, mode: 'document' });
+      setError(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not open that document');
+    }
+  };
+
   const mapImageAssets = (assets: ImagePicker.ImagePickerAsset[]): PendingPhotoAsset[] =>
     assets.map((asset, index) => ({
       uri: asset.uri,
@@ -1037,6 +1068,17 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       icon: 'easel',
       section: `From a file · ${formatMaxNoteUploadLabel()}`,
       onPress: () => void handlePickFile('presentation'),
+    },
+    {
+      label: WORD_DOOR_LABEL,
+      icon: 'document',
+      section: `From a file · ${formatMaxNoteUploadLabel()}`,
+      // Disabled, visibly and with the reason, when there is no connection: a
+      // Word document is read on the server, so offline the picker would open
+      // and the request would die after the upload with a generic message.
+      disabled: wordDoor.disabled,
+      hint: wordDoor.disabled ? wordDoor.hint : 'Text is read out of the document',
+      onPress: () => void handlePickWordDocument(),
     },
     {
       label: 'Import photos',
@@ -1130,6 +1172,23 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
               selectedFolderId || undefined,
               defaultPhotoNoteTitle()
             )
+          : pendingImport.mode === 'document'
+          ? // Not an upload: the server returns the document's text and the
+            // note is created from it, through the same `createNote` the paste
+            // path uses. Nothing is stored, so there is no attachment to wait
+            // for and no OCR to poll.
+            {
+              note: await importWordDocument({
+                file: pendingImport,
+                extractDocumentText: extractDocumentTextViaApi,
+                createNote: (payload) =>
+                  createNote({
+                    ...payload,
+                    folderId: selectedFolderId || undefined,
+                    courseId: defaultCourseId,
+                  }),
+              }),
+            }
           : pendingImport.mode === 'pdf'
           ? await uploadNotePdfViaApi(
               pendingImport.uri,
@@ -1529,7 +1588,9 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                 onPress={() => void handleConfirmImport()}
                 className="flex-1"
               >
-                Upload
+                {/* A Word document is not uploaded anywhere — its text is read
+                    and a note is made — so the button does not say Upload. */}
+                {pendingImport.mode === 'document' ? 'Import' : 'Upload'}
               </Button>
               <Button
                 size="sm"
