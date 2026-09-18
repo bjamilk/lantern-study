@@ -125,7 +125,7 @@ export function initializeWorkerServices(layer: DataLayer): void {
 async function recordInference(
   userId: string | undefined,
   feature: string,
-  result: { provider?: string; model?: string },
+  result: { provider?: string; model?: string; tutorStyle?: string },
 ): Promise<void> {
   if (!userId || !dataLayer) return;
   await logAIInference(dataLayer.getClient(), {
@@ -133,6 +133,8 @@ async function recordInference(
     feature,
     provider: result.provider,
     model: result.model,
+    // Companion turns only; one of four fixed ids, never the fragment (F2).
+    tutorStyle: result.tutorStyle,
   });
 }
 
@@ -453,12 +455,12 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       }>;
       const trimmed = String(message).trim();
       await progress.stage("generating");
-      const { reply, actions, provider, citations, guidedStep } = await companionChat(
-        trimmed,
-        history,
-        { ...trustedContext, noteId: effectiveNoteId || undefined },
-      );
-      await recordInference(userId, "companion-message", { provider });
+      const { reply, actions, provider, citations, guidedStep, tutorStyle } =
+        await companionChat(trimmed, history, {
+          ...trustedContext,
+          noteId: effectiveNoteId || undefined,
+        });
+      await recordInference(userId, "companion-message", { provider, tutorStyle });
 
       await progress.stage("saving");
       progress.ref({ type: "conversation", id: conversation.id });

@@ -3,6 +3,7 @@ import {
   normalizeUserSettings,
   type UserSettingsPatch,
 } from '@lantern/shared/settings';
+import { isTutorStyleId } from '@lantern/shared/ai';
 
 /**
  * Privileged settings keys that must never be writable by end users.
@@ -35,6 +36,8 @@ const SETTINGS_CATEGORY_KEYS = [
   // surface another device already recorded.
   'onboardingVisited',
   'flashcardGeneration',
+  // NOTE: `tutorStyle` is deliberately NOT here. This list is for CATEGORY
+  // objects; the tutor style is a scalar and is read separately below.
 ] as const;
 
 export function stripPrivilegedSettings(
@@ -84,6 +87,17 @@ export function toSettingsPatch(
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       (patch as Record<string, unknown>)[key] = value;
     }
+  }
+
+  // The one SCALAR preference (F2): which tutor style the companion answers in.
+  // It cannot go through the category loop above — that requires an object —
+  // and it is read by a strict four-id allowlist rather than by type, so a
+  // string of any other shape is dropped here rather than stored. A nested
+  // object, an array or a privileged key name under this key is not a string
+  // and never reaches the patch, so this key cannot smuggle anything.
+  const rawTutorStyle = safe.tutorStyle;
+  if (isTutorStyleId(rawTutorStyle)) {
+    patch.tutorStyle = rawTutorStyle;
   }
 
   // Legacy flat theme (pre-nested schema).

@@ -47,6 +47,12 @@
  *   same applies to photos: only attachment ids are believed, and the
  *   transcripts are read back out of the table, so a forged `extractedText`
  *   cannot reach the prompt.
+ * - `context.tutorStyle` (F2) is a UI choice, not a claim about the student's
+ *   data, so it is honoured — but only through `normalizeTutorStyleId`, a
+ *   four-id allowlist, and the fragment it selects is appended AFTER every
+ *   safety, honesty and grounding rule. A request that omits it falls back to
+ *   the student's stored `settings.tutorStyle`. A style costs no extra credit:
+ *   it is a different prompt, not a different model or a second call.
  * - `filterCompanionActions` in `services/aiService.ts` allowlists the action
  *   types a reply may contain. Model output therefore cannot name an action the
  *   server did not already intend to offer, and takes no privileged action of
@@ -88,6 +94,7 @@ import { authMiddleware, requirePermission } from '../middleware/auth';
 import { companionChat, summarizeGroupChat, CompanionContext } from '../services/aiService';
 import type { DataLayer } from '../services/data';
 import { logAIInference } from '../services/aiInferenceLog';
+import { logger } from '../utils/logger';
 import { clientErrorMessage } from '../utils/safeError';
 import { handleValidationErrors, validateAICompanionMessage } from '../middleware/validation';
 import { runSyncOrEnqueue } from '../queue/enqueue';
@@ -705,17 +712,21 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           role: 'user' | 'assistant';
           content: string;
         }>;
-        const { reply, actions, provider, citations, guidedStep } = await companionChat(
-          message.trim(),
-          history,
-          { ...trustedContext, noteId: effectiveNoteId || undefined }
-        );
+        const { reply, actions, provider, citations, guidedStep, tutorStyle } =
+          await companionChat(message.trim(), history, {
+            ...trustedContext,
+            noteId: effectiveNoteId || undefined,
+          });
 
         await logAIInference(dataLayer.getClient(), {
           userId,
           feature: 'companion-message',
           provider,
           requestId: (req as any).requestId,
+          // The id the reply was actually written in, never the fragment.
+          // Costs nothing extra: a style is a different prompt, not a
+          // different model or a second call.
+          tutorStyle,
         });
 
         await persistCompanionExchange({
@@ -837,9 +848,26 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
       role: 'user' | 'assistant';
       content: string;
     }>;
-    const { reply, actions, citations, guidedStep } = await companionChat(message.trim(), history, {
-      ...trustedContext,
-      noteId: effectiveNoteId || undefined,
+    const { reply, actions, citations, guidedStep, tutorStyle } = await companionChat(
+      message.trim(),
+      history,
+      {
+        ...trustedContext,
+        noteId: effectiveNoteId || undefined,
+      }
+    );
+
+    // KNOWN ISSUE (tracked, found during F2): this path never called
+    // `logAIInference` — a streamed turn has always been absent from
+    // `ai_inference_log`, so provider mix and token estimates are measured off
+    // the blocking path alone. Not fixed here: starting to insert a row per
+    // stream is a behaviour change with a cost, and it belongs in whoever owns
+    // that table. The style id is logged structurally either way, so the
+    // analytics question this lane was asked to answer is answerable for both
+    // paths.
+    logger.info('AI inference tutor style', {
+      feature: 'companion-message-stream',
+      tutorStyle,
     });
 
     const inserted = await persistCompanionExchange({

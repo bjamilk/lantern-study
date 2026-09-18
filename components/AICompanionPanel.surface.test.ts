@@ -129,3 +129,38 @@ describe('the composer', () => {
     expect(PANEL).toContain('<AIDisclaimer compact />');
   });
 });
+
+describe('the tutor-style picker (F2)', () => {
+  it('sits in the header, beside the thread menu', () => {
+    const header = PANEL.slice(PANEL.indexOf('{/* Header.'), PANEL.indexOf('{/* Clear confirm'));
+    expect(header).toContain('<TutorStylePicker');
+    expect(header).toContain('value={tutorStyle}');
+    expect(header).toContain('onChange={handlePickTutorStyle}');
+  });
+
+  it('shows the style as a header chip, and only when one has been picked', () => {
+    // A chip over every thread is chrome that stops being read — the same
+    // problem wave 4 fixed in this row. The default style shows nothing.
+    expect(flat("{tutorStyle !== 'default' && (")).toBe(true);
+    expect(flat('Style: {tutorStyleLabel}')).toBe(true);
+  });
+
+  it('names the style under the greeting', () => {
+    expect(flat('{tutorStyleLabel} mode')).toBe(true);
+  });
+
+  it('reads the style from the account, not from component state', () => {
+    // A `useState` here is how the drawer and a docked rail end up on
+    // different styles: the settings blob is the single source.
+    expect(flat('const tutorStyle = currentTutorStyleId(currentUser?.settings);')).toBe(true);
+    expect(flat('setTutorStyle(styleId);')).toBe(true);
+  });
+
+  it('sends the style with every turn, so it applies from the NEXT message', () => {
+    const enriched = PANEL.slice(
+      PANEL.indexOf('const enrichedContext'),
+      PANEL.indexOf('const guidedGoals')
+    );
+    expect(enriched).toContain('tutorStyle,');
+  });
+});

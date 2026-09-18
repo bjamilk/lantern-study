@@ -38,6 +38,7 @@ import {
   normalizeGuidedSessionContext,
   type CompanionContext,
 } from './aiService';
+import { isTutorStyleId, normalizeTutorStyleId } from '@lantern/shared/ai';
 import {
   WEAK_TOPIC_SESSION_LIMIT,
   buildTagBreakdown,
@@ -215,6 +216,19 @@ export async function buildTrustedCompanionContext(
     // entirely when malformed. A dropped session costs one block of prompt,
     // not a wrong answer.
     guided: normalizeGuidedSessionContext(clientContext.guided),
+    // The tutor style, request first and the stored preference second (F2).
+    //
+    // Same class of field as `mode`: a UI choice the client owns, allowlisted
+    // rather than trusted. The fallback is the student's OWN profile row, read
+    // here server-side — so a phone that has not synced its settings yet gets
+    // the style the account is on rather than silently dropping to `default`,
+    // and a request that names a style overrides it for that one turn without
+    // persisting anything.
+    tutorStyle: isTutorStyleId(clientContext.tutorStyle)
+      ? clientContext.tutorStyle
+      : normalizeTutorStyleId(
+          (profile?.settings as { tutorStyle?: unknown } | null)?.tutorStyle
+        ),
   };
 
   // --- Note scope -----------------------------------------------------------
