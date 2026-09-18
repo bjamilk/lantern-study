@@ -17,6 +17,7 @@ import { applyJsonXhrHeaders } from '../utils/xhrHeaders';
 const API_BASE_URL = getApiBaseUrl();
 
 import {
+  DOCX_MIME,
   MAX_NOTE_UPLOAD_BYTES,
   assertNoteUploadSize,
 } from '@lantern/shared/utils/noteUpload';
@@ -1368,9 +1369,13 @@ export async function uploadPresentationViaApi(
   });
 }
 
-/** The one mime a .docx may declare, and the one the server will accept. */
-export const DOCX_CONTENT_TYPE =
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+/**
+ * The one mime a .docx may declare, and the one the server will accept. Spelled
+ * in `@lantern/shared/utils/noteUpload` because the phone's document picker
+ * asks for the same string; kept under this name so existing callers do not
+ * move.
+ */
+export const DOCX_CONTENT_TYPE = DOCX_MIME;
 
 /**
  * Read the text out of a Word document. Creates nothing — the caller makes an
