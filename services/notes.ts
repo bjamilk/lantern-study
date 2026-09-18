@@ -898,6 +898,130 @@ export async function uploadLectureAudioViaSignedUrl(
   };
 }
 
+/* --------------------------------------------- segmented lecture audio ----
+ * One closed five-minute piece of a lecture: prepare, PUT, transcribe.
+ *
+ * Deliberately three small calls rather than one, because each of them is a
+ * place the lecture can survive a failure. `prepare` registers the segment on
+ * the note BEFORE the bytes leave the browser, so a tab that dies between the
+ * PUT and the transcribe leaves a row a reload can find. The PUT goes straight
+ * to storage, so a 5-minute clip never crosses the CF Pages proxy. And
+ * `transcribe` is idempotent on `noteId:sessionId:seq`, so any of the three can
+ * be retried without a second charge.
+ */
+
+export interface LectureSegmentUploadTicket {
+  storagePath: string;
+  signedUrl: string;
+  token: string;
+  bucket: string;
+  mimeType: string;
+  fileName: string;
+  attachmentId: string | null;
+  /** The server already has this segment's words. Skip the upload entirely. */
+  alreadyTranscribed: boolean;
+}
+
+export async function prepareLectureSegmentUpload(input: {
+  noteId: string;
+  sessionId: string;
+  seq: number;
+  startOffsetMs: number;
+  durationMs: number;
+  mimeType: string;
+  byteLength: number;
+  signal?: AbortSignal;
+}): Promise<LectureSegmentUploadTicket> {
+  return notesLongRequest<LectureSegmentUploadTicket>('/lecture-segments/prepare', {
+    body: {
+      noteId: input.noteId,
+      mimeType: input.mimeType,
+      byteLength: input.byteLength,
+      lectureSegment: {
+        sessionId: input.sessionId,
+        seq: input.seq,
+        startOffsetMs: input.startOffsetMs,
+        durationMs: input.durationMs,
+      },
+    },
+    processingLabel: 'Saving this part of the lecture…',
+    timeoutMs: 60_000,
+    signal: input.signal,
+  });
+}
+
+/** PUT the closed segment to the signed URL, falling back to the SDK helper. */
+export async function uploadLectureSegment(
+  blob: Blob,
+  ticket: LectureSegmentUploadTicket,
+  signal?: AbortSignal
+): Promise<void> {
+  if (ticket.signedUrl) {
+    const response = await fetch(ticket.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': ticket.mimeType || 'audio/webm', 'x-upsert': 'true' },
+      body: blob,
+      signal,
+    });
+    if (response.ok) return;
+    const detail = (await response.text().catch(() => '')).slice(0, 200);
+    console.warn('[uploadLectureSegment] signed PUT failed', response.status, detail);
+  }
+  const { error } = await supabase.storage
+    .from(ticket.bucket || 'note-files')
+    .uploadToSignedUrl(ticket.storagePath, ticket.token, blob, {
+      contentType: ticket.mimeType || 'audio/webm',
+      upsert: true,
+    } as { contentType: string; upsert: boolean });
+  if (error) throw new Error(error.message || 'Could not upload this part of the lecture.');
+}
+
+export interface LectureSegmentTranscribeResult {
+  transcript: string;
+  /** The whole ordered transcript region of the note after this write. */
+  transcriptText?: string;
+  segment?: { seq: number; startOffsetMs: number; replayed: boolean };
+  note?: StudyNote;
+  persistWarning?: string;
+}
+
+export async function transcribeLectureSegment(input: {
+  noteId: string;
+  sessionId: string;
+  seq: number;
+  startOffsetMs: number;
+  durationMs: number;
+  storagePath: string;
+  mimeType: string;
+  fileName: string;
+  byteLength: number;
+  language?: string;
+  translateTo?: string;
+  signal?: AbortSignal;
+}): Promise<LectureSegmentTranscribeResult> {
+  return notesLongRequest<LectureSegmentTranscribeResult>('/transcribe-audio', {
+    body: {
+      storagePath: input.storagePath,
+      mimeType: input.mimeType,
+      noteId: input.noteId,
+      fileName: input.fileName,
+      durationMs: input.durationMs,
+      clientByteLength: input.byteLength,
+      language: input.language,
+      translateTo: input.translateTo,
+      lectureSegment: {
+        sessionId: input.sessionId,
+        seq: input.seq,
+        startOffsetMs: input.startOffsetMs,
+        durationMs: input.durationMs,
+      },
+    },
+    processingLabel: 'Transcribing this part…',
+    timeoutMs: 120_000,
+    signal: input.signal,
+  });
+}
+
 export async function transcribeAudioForNote(
   audioBase64: string,
   options?: {

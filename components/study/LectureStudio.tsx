@@ -63,6 +63,8 @@ import {
 import { LectureLevelMeter } from './LectureLevelMeter';
 import { LecturePreCheckPanel } from './LecturePreCheckPanel';
 import { LectureRecorderSettings } from './LectureRecorderSettings';
+import { LectureAudioSegments, LectureTranscriptSegments } from './LectureSegmentList';
+import { resolveLectureResume, lectureSegmentRows } from '@lantern/shared/utils/lectureSegments';
 
 interface LectureStudioProps {
   courseId: string;
@@ -115,6 +117,10 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   const discardRecording = useLectureRecordingStore((s) => s.discard);
   const cancelTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
+  const segments = useLectureRecordingStore((s) => s.segments);
+  const segmentsNoteId = useLectureRecordingStore((s) => s.transcriptNoteId);
+  const retrySegment = useLectureRecordingStore((s) => s.retrySegment);
+  const hydrateFromNote = useLectureRecordingStore((s) => s.hydrateFromNote);
 
   const decision = useMemo(
     () =>
@@ -298,7 +304,60 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   useEffect(() => {
     if (recording) setEditingNotes(true);
   }, [recording]);
-  const busy = status === 'uploading' || status === 'transcribing';
+
+  /**
+   * Read the note's own segment rows whenever a lecture is opened and nothing
+   * is running. This is the recovery path: the rows were written BEFORE their
+   * audio was transcribed, so a tab that died mid-lecture left a trail here
+   * that the local blob could never have left.
+   */
+  useEffect(() => {
+    if (status !== 'idle' || !activeNote?.id) return;
+    hydrateFromNote(activeNote.id, activeNote.attachments as Array<Record<string, unknown>>);
+  }, [status, activeNote?.id, activeNote?.attachments, hydrateFromNote]);
+
+  /** An interrupted take: offer to carry on, or just to finish transcribing. */
+  const recovery = useMemo(() => {
+    if (status !== 'idle' || !activeNote) return null;
+    const decision = resolveLectureResume({
+      rows: lectureSegmentRows(
+        (activeNote.attachments ?? []) as Parameters<typeof lectureSegmentRows>[0]
+      ),
+    });
+    return decision.action === 'recover' ? decision : null;
+  }, [status, activeNote?.id, activeNote?.attachments]);
+
+  const segmentsForNote = segmentsNoteId === activeNote?.id ? segments : [];
+  const failedSegments = segmentsForNote.filter((row) => row.status === 'failed');
+
+  const handleResumeTake = async () => {
+    if (!recovery || !activeNote) return;
+    setConsented(true);
+    setStarting(true);
+    try {
+      await startRecording(activeNote.id, titleRef.current || activeNote.title || '', {
+        language: languages.spokenLanguage,
+        translateTo: languages.transcribeTo,
+        deviceId: preCheck.selectedDeviceId,
+        resume: {
+          sessionId: recovery.sessionId,
+          nextSeq: recovery.nextSeq,
+          recordedMs: recovery.recordedMs,
+        },
+      });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not carry on.', 'error');
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const handleFinishTake = () => {
+    segmentsForNote
+      .filter((row) => row.status !== 'done')
+      .forEach((row) => retrySegment(row.seq));
+  };
+  const busy = status === 'saving' || status === 'uploading' || status === 'transcribing';
   const paused = recording && Boolean(pausedAt);
 
   const handleNotesChange = (next: string) => {
@@ -566,7 +625,17 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
             {recording || busy ? formatLectureClock(elapsedMs) : '0:00'}
           </span>
           <span className="text-caption text-lantern-text-secondary">
-            {busy ? (status === 'uploading' ? 'Uploading…' : 'Transcribing…') : paused ? 'Paused' : recording ? 'Recording' : 'Ready'}
+            {status === 'saving'
+              ? 'Saving your recording…'
+              : busy
+                ? status === 'uploading'
+                  ? 'Uploading…'
+                  : 'Transcribing…'
+                : paused
+                  ? 'Paused'
+                  : recording
+                    ? 'Recording'
+                    : 'Ready'}
           </span>
         </div>
         {showConsent ? null : recording ? (
@@ -740,18 +809,59 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
             </div>
           ) : null}
 
+          {/*
+            A lecture this device did not finish. Both doors are open and both
+            are honest: the audio is already saved either way, so "Carry on"
+            records more into the SAME take (the stamps stay true to the
+            lecture) and "Finish" only asks for the words of what is already
+            there. Neither re-records anything and neither charges twice.
+          */}
+          {recovery ? (
+            <div className="shrink-0 border-b border-lantern-border px-3 py-2">
+              <p className="text-body text-lantern-text">
+                This lecture was interrupted. {recovery.untranscribed} part
+                {recovery.untranscribed === 1 ? '' : 's'} recorded but not transcribed — the audio is
+                saved.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => void handleResumeTake()} loading={starting}>
+                  Carry on recording
+                </Button>
+                <Button size="sm" variant="secondary" onClick={handleFinishTake}>
+                  Finish transcribing
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
           {!hasEnhancedTab && enhanceControls ? (
             <div className="shrink-0 border-b border-lantern-border px-3 py-2">{enhanceControls}</div>
           ) : null}
 
+          {/*
+            The transcript during class. The Transcript TAB is unreachable while
+            a take runs — nothing may pull a typing student off My Notes — so the
+            growing list lives here, above the tabs, where it can be read without
+            leaving the notes.
+          */}
           {recording || busy ? (
             <div className="shrink-0 border-b border-lantern-border p-3 max-h-[30%] overflow-y-auto">
-              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">Live transcript</h2>
-              {liveTranscript ? (
-                <p className="text-body whitespace-pre-wrap">{liveTranscript}</p>
+              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">
+                Live transcript
+              </h2>
+              {segmentsForNote.length || recording ? (
+                <LectureTranscriptSegments
+                  segments={segmentsForNote}
+                  liveCaptions={displayLectureTranscript({
+                    committed: committedTranscript,
+                    interim: interimTranscript,
+                  })}
+                  recording={recording}
+                  onRetry={retrySegment}
+                />
               ) : (
                 <p className="text-body text-lantern-text-tertiary">
-                  Listening… captions appear in a few seconds.
+                  Saving your recording… the last part is still on its way.
                 </p>
               )}
             </div>
@@ -823,7 +933,9 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
               </TabPanel>
 
               <TabPanel value="transcript" className="p-3">
-                {transcriptLines.length ? (
+                {segmentsForNote.length ? (
+                  <LectureTranscriptSegments segments={segmentsForNote} onRetry={retrySegment} />
+                ) : transcriptLines.length ? (
                   <ol className="space-y-2">
                     {transcriptLines.map((line, index) => (
                       <li key={`${line.time ?? ''}-${index}`} className="flex gap-3">
@@ -850,7 +962,14 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
               </TabPanel>
 
               <TabPanel value="audio">
-                {activeNote && audioRow ? (
+                {activeNote && segmentsForNote.length ? (
+                  <LectureAudioSegments
+                    noteId={activeNote.id}
+                    segments={segmentsForNote}
+                    attachments={activeNote.attachments}
+                  />
+                ) : activeNote && audioRow ? (
+                  /* A lecture recorded before segments existed: one whole take. */
                   <LectureAudioPlayer noteId={activeNote.id} attachment={audioRow} />
                 ) : (
                   <p className="p-3 text-body text-lantern-text-tertiary">
