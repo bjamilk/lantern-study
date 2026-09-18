@@ -109,6 +109,7 @@ import {
   chargeAiCreditsDetailed,
   refundAiCredits,
   refundFeatureAiCredit,
+  AI_COST_HEADER,
   NOTE_OCR_CREDIT_COST,
 } from '../middleware/aiRateLimit';
 import {
@@ -215,12 +216,27 @@ import {
   MIN_NOTE_STUDY_CONTENT_CHARS,
 } from '@lantern/shared/utils/noteStudyContent';
 import {
+  extractSmartNotesSection,
   parseSmartNoteSources,
+  stripSmartNotesSection,
   upsertSmartNotesSection,
   type SmartNoteSourceId,
   SMART_NOTES_CONTEXT_MAX_CHARS,
   SMART_NOTES_SKILL_HINT_MAX_CHARS,
 } from '@lantern/shared/utils/smartNotes';
+import {
+  insertLectureSegmentLine,
+  lectureSegmentCreditCost,
+  lectureSegmentFileName,
+  lectureSegmentRows,
+  priorRecordedMs,
+  type LectureSegmentRow,
+} from '@lantern/shared/utils/lectureSegments';
+import {
+  composeLectureNoteBody,
+  lectureNoteParts,
+  splitLectureNoteBody,
+} from '@lantern/shared/learning';
 import {
   needsWhisperTranslation,
   whisperLanguageParam,
@@ -1813,6 +1829,276 @@ router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (r
   });
 }));
 
+/* ------------------------------------------------- segmented recording ----
+ * A lecture is no longer one file that appears after Stop.
+ *
+ * The recorder closes a segment every five minutes on the same microphone
+ * stream (see `@lantern/shared/utils/lectureSegments` for why a
+ * `MediaRecorder` timeslice cannot do this), uploads it at once, and asks for
+ * it to be transcribed while the lecture carries on. So a crash, a closed lid
+ * or a killed app now costs at most the piece still open instead of the whole
+ * take, and the transcript grows during the class.
+ *
+ * Three rules hold across the two handlers below.
+ *
+ * 1. NO NEW TABLE, NO NEW COLUMN. A segment is a `note_attachments` row of
+ *    type `audio` carrying a `lectureSegment` block in its existing JSON
+ *    `metadata`. That is why this lane ships with no migration: the Audio tab,
+ *    the re-signing player and the delete-all path already understand audio
+ *    attachments, and a row without the block is the old single-take recording,
+ *    which keeps working untouched.
+ *
+ * 2. THE PRICE IS THE RUNNING TOTAL. `lectureSegmentCreditCost` charges the
+ *    difference between what the take has cost so far and what it costs
+ *    including this segment, from the durations the SERVER holds — never from a
+ *    prior figure the client sends, which is the number that decides whether a
+ *    new 15-minute block opens. A 47-minute lecture in ten segments costs the
+ *    4 AI uses it costs in one take, and seven of those segments are free.
+ *
+ * 3. THE SAME SEGMENT TWICE IS FREE. `noteId:sessionId:seq` identifies a
+ *    segment — not its storage path and not its attachment id, because a retry
+ *    after a failed upload writes a different object for the same segment. A
+ *    request for a segment already transcribed answers with the text it already
+ *    has, reserves nothing, calls no provider and writes no second copy into the
+ *    note.
+ */
+
+/** The shape a client must send to be treated as a segment. */
+export interface LectureSegmentRequest {
+  sessionId: string;
+  seq: number;
+  startOffsetMs: number;
+  durationMs: number;
+}
+
+/**
+ * Read a segment request off a body, or `null` when this is an ordinary take.
+ *
+ * Deliberately all-or-nothing: a half-formed block is NOT quietly treated as a
+ * segment, because the segment path prices differently. A malformed one falls
+ * through to the whole-take limiter, which charges the full per-15-minute price
+ * — the safe direction to fail in.
+ */
+export function lectureSegmentFromRequest(req: { body?: unknown }): LectureSegmentRequest | null {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const raw = body.lectureSegment;
+  if (!raw || typeof raw !== 'object') return null;
+  const meta = raw as Record<string, unknown>;
+  const sessionId = typeof meta.sessionId === 'string' ? meta.sessionId.trim() : '';
+  const seq = Number(meta.seq);
+  const startOffsetMs = Number(meta.startOffsetMs);
+  const durationMs = Number(meta.durationMs);
+  if (!sessionId || sessionId.length > 64) return null;
+  if (!Number.isFinite(seq) || seq < 1 || seq > MAX_LECTURE_SEGMENTS) return null;
+  if (!Number.isFinite(startOffsetMs) || startOffsetMs < 0) return null;
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return null;
+  return {
+    sessionId,
+    seq: Math.floor(seq),
+    startOffsetMs: Math.floor(startOffsetMs),
+    durationMs: Math.floor(durationMs),
+  };
+}
+
+/**
+ * The most segments one take may have.
+ *
+ * Three hours at five minutes each is 36, so this is an order of magnitude of
+ * headroom rather than a limit anyone meets. It exists because `seq` indexes an
+ * unbounded read of the note's attachments, and an unbounded integer from a
+ * request body has no business reaching a query.
+ */
+export const MAX_LECTURE_SEGMENTS = 512;
+
+/** Everything the segment path resolved before any credit was reserved. */
+interface LectureSegmentContext {
+  request: LectureSegmentRequest;
+  noteId: string;
+  /** The row for this exact segment, when the note already has one. */
+  existing: ReturnType<typeof lectureSegmentRows>[number] | null;
+  /** Recorded milliseconds banked by EARLIER segments of the same take. */
+  priorMs: number;
+  /** The length this segment is priced at: the claim, floored by its bytes. */
+  chargedDurationMs: number;
+  /** True when the answer is the text the note already holds. */
+  replay: boolean;
+}
+
+function segmentContextOf(res: Response): LectureSegmentContext | null {
+  const value = (res.locals as Record<string, unknown>).lectureSegment;
+  return (value as LectureSegmentContext | undefined) ?? null;
+}
+
+/**
+ * Mint an upload URL for one segment and register it as PENDING.
+ *
+ * Registering BEFORE the audio is transcribed is what makes a crash
+ * survivable: the row names an object that is already safe in storage, so a
+ * reload reads the note's own attachments and can offer "carry on" or "finish
+ * transcribing" instead of mourning a blob that only ever existed in a tab. The
+ * storage key is built server-side from the authenticated user id, exactly like
+ * every other upload path here — the client names a segment, never a path.
+ *
+ * Idempotent on `noteId:sessionId:seq`: re-preparing the same segment (a
+ * retried upload) updates the row in place rather than growing a second one.
+ */
+router.post('/lecture-segments/prepare', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const requestId = (req as { requestId?: string }).requestId;
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const noteId = typeof body.noteId === 'string' ? body.noteId.trim() : '';
+  const segment = lectureSegmentFromRequest({ body });
+
+  if (!noteId || !segment) {
+    res.status(400).json({
+      success: false,
+      error: 'A recording segment needs a note and its place in the lecture.',
+      message: 'A recording segment needs a note and its place in the lecture.',
+    });
+    return;
+  }
+
+  let canEdit = false;
+  try {
+    canEdit = await dataLayer.notes.canEditNote(userId, noteId);
+  } catch (error) {
+    logger.warn('lecture-segments/prepare canEditNote failed', {
+      requestId,
+      userId,
+      noteId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    res.status(400).json({
+      success: false,
+      error: 'Could not verify note edit access. Check the note id and try again.',
+      message: 'Could not verify note edit access. Check the note id and try again.',
+    });
+    return;
+  }
+  if (!canEdit) {
+    res.status(403).json({
+      success: false,
+      error: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+      message: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+    });
+    return;
+  }
+
+  const byteLength = Number(body.byteLength);
+  if (Number.isFinite(byteLength) && byteLength > MAX_LECTURE_AUDIO_BYTES) {
+    res.status(413).json({
+      success: false,
+      error: 'That segment is too large to upload. Record in shorter segments.',
+      message: 'That segment is too large to upload. Record in shorter segments.',
+    });
+    return;
+  }
+
+  const meta = resolveLectureMimeFromDeclared(body.mimeType);
+  const normalizedMime = meta.mimeType === 'audio/x-m4a' ? 'audio/mp4' : meta.mimeType;
+  if (!ALLOWED_LECTURE_AUDIO_TYPES.has(meta.mimeType) && !ALLOWED_LECTURE_AUDIO_TYPES.has(normalizedMime)) {
+    res.status(400).json({
+      success: false,
+      error: 'Unsupported audio type. Use webm, mp4/m4a, ogg, or wav.',
+      message: 'Unsupported audio type. Use webm, mp4/m4a, ogg, or wav.',
+    });
+    return;
+  }
+
+  const fileName = lectureSegmentFileName(noteId, segment.seq, meta.extension);
+  const storagePath = buildNoteStoragePath(userId, fileName);
+
+  let signed: { path: string; signedUrl: string; token: string };
+  try {
+    signed = await dataLayer.notes.createSignedNoteFileUploadUrl(storagePath);
+  } catch (error) {
+    logger.error('lecture-segments/prepare could not sign', {
+      requestId,
+      userId,
+      noteId,
+      storagePath,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    res.status(502).json({
+      success: false,
+      error: 'Could not prepare the segment upload. Please try again.',
+      message: clientErrorMessage(error, 'Could not prepare the segment upload. Please try again.'),
+    });
+    return;
+  }
+
+  const segmentMetadata = {
+    storagePath: signed.path,
+    contentType: normalizedMime,
+    mimeType: normalizedMime,
+    lectureSegment: {
+      sessionId: segment.sessionId,
+      seq: segment.seq,
+      startOffsetMs: segment.startOffsetMs,
+      durationMs: segment.durationMs,
+      status: 'pending' as const,
+    },
+  };
+
+  // The registration is best-effort in ONE direction only: a failure here
+  // costs the crash-resilience for this segment, not the recording. The client
+  // still holds the blob and still uploads and transcribes it, so the lecture
+  // is never blocked on a row write.
+  let attachmentId: string | undefined;
+  let alreadyTranscribed = false;
+  try {
+    const attachments = await dataLayer.notes.getNoteAttachments(noteId);
+    const existing = lectureSegmentRows(attachments).find(
+      (row: LectureSegmentRow) => row.sessionId === segment.sessionId && row.seq === segment.seq
+    );
+    if (existing && existing.status === 'done' && existing.transcript) {
+      // This segment is already transcribed. Re-preparing it must NOT write
+      // `pending` over that: the status is what a reload reads to decide there
+      // is work outstanding, and downgrading it would offer to pay for a
+      // segment already paid for. The client is told instead, so it can skip
+      // the upload entirely.
+      attachmentId = existing.attachmentId;
+      alreadyTranscribed = true;
+    } else if (existing?.attachmentId) {
+      const updated = await dataLayer.notes.updateNoteAttachment(existing.attachmentId, {
+        metadata: segmentMetadata,
+      });
+      attachmentId = updated?.id;
+    } else {
+      const created = await dataLayer.notes.addNoteAttachment(noteId, {
+        type: 'audio',
+        fileName,
+        metadata: segmentMetadata,
+      });
+      attachmentId = created?.id;
+    }
+  } catch (error) {
+    logger.warn('lecture-segments/prepare could not register the segment', {
+      requestId,
+      userId,
+      noteId,
+      seq: segment.seq,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  res.json({
+    success: true,
+    data: {
+      storagePath: signed.path,
+      signedUrl: signed.signedUrl,
+      token: signed.token,
+      bucket: 'note-files',
+      mimeType: normalizedMime,
+      fileName,
+      attachmentId: attachmentId ?? null,
+      /** True when this segment is already transcribed: skip the upload. */
+      alreadyTranscribed,
+    },
+  });
+}));
+
 /**
  * Transcription is priced by how long the recording is: 1 AI use per 15
  * minutes, or part of one (founder decision, 2026-09-07). The cost is reserved
@@ -1947,8 +2233,112 @@ export function voiceAskRejection(req: { body?: unknown }): string | null {
  * duration guard runs BEFORE either limiter, so a refused clip does not spend
  * one of the day's questions on its way to a 400.
  */
+/**
+ * The segment gate: resolve, then price, then reserve — in that order.
+ *
+ * Everything that decides the price is read from the note's OWN rows, which is
+ * why this cannot be a synchronous `getCost` handed to `aiRateLimitWithCost`.
+ * Three answers come out of it:
+ *
+ *  - A segment already transcribed → no reservation at all, and the handler
+ *    replays the text it has. This is what makes a re-sent segment free.
+ *  - A segment inside a 15-minute block the take has already paid for → no
+ *    reservation. Most segments are this, and going through
+ *    `aiRateLimitWithCost` would be wrong twice over: it floors every charge at
+ *    1, and it would refuse a free segment to a student who has run out
+ *    mid-lecture.
+ *  - A segment that opens a new block → the ordinary variable-cost limiter for
+ *    exactly that difference, with its refund-on-failure hook intact.
+ *
+ * Access is checked HERE rather than only in the handler, because reading the
+ * note's segments to price the request is itself a read of the note.
+ */
+async function lectureSegmentLimiter(
+  segment: LectureSegmentRequest,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const userId = (req as unknown as { user?: { id?: string } }).user?.id;
+  if (!userId) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const noteId = typeof body.noteId === 'string' ? body.noteId.trim() : '';
+  if (!noteId) {
+    res.status(400).json({ error: 'A recording segment needs the note it belongs to.' });
+    return;
+  }
+
+  let canEdit = false;
+  try {
+    canEdit = await dataLayer.notes.canEditNote(userId, noteId);
+  } catch {
+    res.status(400).json({ error: 'Could not verify note edit access. Check the note id and try again.' });
+    return;
+  }
+  if (!canEdit) {
+    res.status(403).json({
+      success: false,
+      error: 'You do not have permission to edit this note. Ask the owner to grant editor access.',
+    });
+    return;
+  }
+
+  let rows: ReturnType<typeof lectureSegmentRows> = [];
+  try {
+    rows = lectureSegmentRows(await dataLayer.notes.getNoteAttachments(noteId));
+  } catch (error) {
+    logger.warn('transcribe-audio could not read the take’s segments', {
+      requestId: (req as { requestId?: string }).requestId,
+      userId,
+      noteId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    res.status(502).json({ error: 'Could not read this lecture. Please try again.' });
+    return;
+  }
+
+  const existing =
+    rows.find(
+      (row: LectureSegmentRow) => row.sessionId === segment.sessionId && row.seq === segment.seq
+    ) ?? null;
+  const replay = Boolean(existing && existing.status === 'done' && existing.transcript);
+
+  // The claimed length, floored by the bytes actually being submitted — the
+  // same defence the whole-take path uses. Understating a segment's length is
+  // the only way a client could try to buy a lecture cheaply.
+  const chargedDurationMs = Math.max(segment.durationMs, lectureDurationFloorMs(body));
+  const priorMs = priorRecordedMs(rows, segment.sessionId, segment.seq);
+  const context: LectureSegmentContext = {
+    request: segment,
+    noteId,
+    existing,
+    priorMs,
+    chargedDurationMs,
+    replay,
+  };
+  (res.locals as Record<string, unknown>).lectureSegment = context;
+
+  const cost = replay ? 0 : lectureSegmentCreditCost(priorMs, chargedDurationMs);
+  if (cost <= 0) {
+    res.setHeader(AI_COST_HEADER, '0');
+    next();
+    return;
+  }
+  void aiRateLimitWithCost(() => cost, {
+    label: 'Transcribing this part of the lecture',
+  })(req, res, next);
+}
+
 export function transcribeAudioLimiter(req: Request, res: Response, next: NextFunction): void {
   if (!isVoiceAskRequest(req)) {
+    const segment = lectureSegmentFromRequest(req);
+    if (segment) {
+      void lectureSegmentLimiter(segment, req, res, next);
+      return;
+    }
     void aiRateLimitWithCost(lectureTranscriptionCostFromRequest, {
       label: 'Transcribing this recording',
     })(req, res, next);
@@ -1985,6 +2375,39 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
     language: whisperLanguageParam(spokenLanguage),
     translate: needsWhisperTranslation(spokenLanguage, translateTo),
   };
+  const segmentContext = segmentContextOf(res);
+
+  /**
+   * The same segment, sent twice.
+   *
+   * A flaky connection retries; a resumed lecture re-offers what it could not
+   * confirm. Either way the answer is the text the note already holds — no
+   * provider call, no second copy in the body, and the limiter above reserved
+   * nothing to give back. Answered BEFORE the audio is even looked at, because
+   * a replay does not need any.
+   */
+  if (segmentContext?.replay && segmentContext.existing) {
+    const note = await dataLayer.notes.getNote(segmentContext.noteId, userId);
+    res.json({
+      success: true,
+      data: {
+        transcript: segmentContext.existing.transcript,
+        provider: 'replay',
+        segment: {
+          sessionId: segmentContext.request.sessionId,
+          seq: segmentContext.request.seq,
+          startOffsetMs: segmentContext.request.startOffsetMs,
+          durationMs: segmentContext.request.durationMs,
+          status: 'done' as const,
+          attachmentId: segmentContext.existing.attachmentId ?? null,
+          replayed: true,
+        },
+        transcriptText: lectureNoteParts({ body: note.body ?? '' }).transcript,
+      },
+    });
+    return;
+  }
+
   const hasBase64 = typeof audioBase64 === 'string' && audioBase64.length > 0;
   const hasStoragePath = typeof storagePath === 'string' && storagePath.length > 0;
   if (!hasBase64 && !hasStoragePath) {
@@ -2057,16 +2480,48 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   // client can still show it if note write races with autosave.
   let updatedNote: Awaited<ReturnType<typeof dataLayer.notes.updateNote>> | undefined;
   let attachmentFileUrl: string | undefined;
+  /** The whole ordered transcript region after this write, for the segment path. */
+  let transcriptText: string | undefined;
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const note = await dataLayer.notes.getNote(noteId, userId);
-      const preferredBody =
-        attempt === 0 && typeof currentBody === 'string' ? currentBody : (note.body || '');
-      const alreadyHasTranscript =
-        Boolean(result.transcript) && preferredBody.includes(result.transcript);
-      const mergedBody = alreadyHasTranscript
-        ? preferredBody
-        : [preferredBody, result.transcript].filter(Boolean).join('\n\n');
+      let mergedBody: string;
+      if (segmentContext) {
+        /**
+         * A segment is written INTO the transcript, in recorded order.
+         *
+         * The note's stored body is the only input — never the client's
+         * `currentBody`, which on both clients is the TYPED half alone and
+         * would delete every segment written so far. The generated Smart Notes
+         * section is lifted off and put back for the same reason: it lives at
+         * the end of the body, after the transcript heading, so splitting
+         * without it would read it back as part of the lecture.
+         *
+         * `insertLectureSegmentLine` is what makes a RETRY safe: segment 3
+         * re-transcribed after 4 and 5 lands between them, and a segment that
+         * is somehow written twice replaces its own line instead of doubling it.
+         */
+        const stored = note.body || '';
+        const enhanced = (extractSmartNotesSection(stored) ?? '').trim();
+        const base = stripSmartNotesSection(stored);
+        const split = splitLectureNoteBody(base);
+        const nextTranscript = insertLectureSegmentLine(
+          split.transcript,
+          segmentContext.request.startOffsetMs,
+          result.transcript
+        );
+        transcriptText = nextTranscript;
+        const composed = composeLectureNoteBody(split.typed, nextTranscript);
+        mergedBody = enhanced ? upsertSmartNotesSection(composed, enhanced) : composed;
+      } else {
+        const preferredBody =
+          attempt === 0 && typeof currentBody === 'string' ? currentBody : (note.body || '');
+        const alreadyHasTranscript =
+          Boolean(result.transcript) && preferredBody.includes(result.transcript);
+        mergedBody = alreadyHasTranscript
+          ? preferredBody
+          : [preferredBody, result.transcript].filter(Boolean).join('\n\n');
+      }
       try {
         updatedNote = await dataLayer.notes.updateNote(
           userId,
@@ -2088,18 +2543,59 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
       }
     }
 
-    await dataLayer.notes.addNoteAttachment(noteId, {
-      type: 'audio',
-      fileName: fileName || 'lecture-recording.webm',
-      fileUrl: attachmentFileUrl,
-      extractedText: result.transcript,
-      metadata: {
-        provider: result.provider,
-        mimeType: result.sniffedMimeType || mimeType || null,
-        storagePath: hasStoragePath ? String(storagePath) : null,
-        byteLength: result.byteLength,
-      },
-    });
+    const audioMetadata = {
+      provider: result.provider,
+      mimeType: result.sniffedMimeType || mimeType || null,
+      storagePath: hasStoragePath ? String(storagePath) : null,
+      byteLength: result.byteLength,
+    };
+
+    if (segmentContext) {
+      /**
+       * One row per segment, updated in place.
+       *
+       * The row usually exists already — `/lecture-segments/prepare` wrote it
+       * as `pending` before the audio was even uploaded, which is what a reload
+       * reads to find a lecture it did not finish. It is created here only when
+       * that registration failed, so a segment is never silently absent from
+       * the Audio files tab just because one write did not land.
+       */
+      const segmentMetadata = {
+        ...audioMetadata,
+        lectureSegment: {
+          sessionId: segmentContext.request.sessionId,
+          seq: segmentContext.request.seq,
+          startOffsetMs: segmentContext.request.startOffsetMs,
+          durationMs: segmentContext.request.durationMs,
+          status: 'done' as const,
+        },
+      };
+      const segmentFileName =
+        segmentContext.existing?.fileName ||
+        lectureSegmentFileName(noteId, segmentContext.request.seq);
+      if (segmentContext.existing?.attachmentId) {
+        await dataLayer.notes.updateNoteAttachment(segmentContext.existing.attachmentId, {
+          metadata: segmentMetadata,
+          extractedText: result.transcript,
+        });
+      } else {
+        await dataLayer.notes.addNoteAttachment(noteId, {
+          type: 'audio',
+          fileName: segmentFileName,
+          fileUrl: attachmentFileUrl,
+          extractedText: result.transcript,
+          metadata: segmentMetadata,
+        });
+      }
+    } else {
+      await dataLayer.notes.addNoteAttachment(noteId, {
+        type: 'audio',
+        fileName: fileName || 'lecture-recording.webm',
+        fileUrl: attachmentFileUrl,
+        extractedText: result.transcript,
+        metadata: audioMetadata,
+      });
+    }
   } catch (error) {
     logger.warn('Transcript persist failed after successful Whisper', {
       noteId,
@@ -2118,7 +2614,26 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
     return;
   }
 
-  res.json({ success: true, data: { ...result, note: updatedNote } });
+  res.json({
+    success: true,
+    data: {
+      ...result,
+      note: updatedNote,
+      ...(segmentContext
+        ? {
+            transcriptText,
+            segment: {
+              sessionId: segmentContext.request.sessionId,
+              seq: segmentContext.request.seq,
+              startOffsetMs: segmentContext.request.startOffsetMs,
+              durationMs: segmentContext.request.durationMs,
+              status: 'done' as const,
+              replayed: false,
+            },
+          }
+        : {}),
+    },
+  });
 }));
 
 /* ------------------------------------------------------ youtube import ----
