@@ -61,6 +61,21 @@ describe('study set nested paths', () => {
     expect(workspaceActivityFromPath('calendar')).toBe('plan');
     expect(workspaceActivityFromPath('read')).toBe('walkthrough');
     expect(workspaceActivityFromPath('quiz')).toBe('quiz');
+    expect(workspaceActivityFromPath('materials')).toBe('materials');
+    // The hub's All tab opens the same pane as its Quiz tab; the tab itself is
+    // read from the path, so `quiz` and `test` keep their old meaning.
+    expect(workspaceActivityFromPath('practice')).toBe('quiz');
+  });
+
+  it('round-trips the two Wave 3 pages', () => {
+    expect(buildStudySetPath({ studySetId: 's', activity: 'materials' })).toBe(
+      '/study/sets/s/materials'
+    );
+    expect(buildStudySetPath({ studySetId: 's', activity: 'practice' })).toBe(
+      '/study/sets/s/practice'
+    );
+    expect(parseStudySetPath('/study/sets/s/materials')?.activity).toBe('materials');
+    expect(parseStudySetPath('/study/sets/s/practice')?.activity).toBe('practice');
   });
 
   it('sorts last-opened first when sorting by last accessed', () => {
@@ -120,7 +135,7 @@ describe('set room focus', () => {
     // A tool added to STUDY_SET_PATH_ACTIVITIES without a decision here would
     // silently inherit "focus", which is the safe default — but the assertion
     // exists so the two lists are read together.
-    const browsing = new Set(['home', 'add', 'notes']);
+    const browsing = new Set(['home', 'add', 'notes', 'materials']);
     for (const activity of STUDY_SET_PATH_ACTIVITIES) {
       expect(isSetRoomFocusPath({ activity })).toBe(!browsing.has(activity));
     }

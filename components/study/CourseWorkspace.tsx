@@ -118,6 +118,8 @@ import CreateStudySetModal from './CreateStudySetModal';
 import { StudySetSettingsModal } from './StudySetSettingsModal';
 import { StudySetTimer } from './StudySetTimer';
 import { StudySetUpload } from './StudySetUpload';
+import { SetMaterialsPage } from './SetMaterialsPage';
+import { PracticeHub, practiceTabForActivity, practiceTabLabel } from './PracticeHub';
 import { CreateFromSource } from './CreateFromSource';
 import { NoteRoomRow } from './NoteRoomRow';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
@@ -139,6 +141,7 @@ import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { useAcademicStore } from '../../stores/academicStore';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { CoursePicker } from '../academic/CoursePicker';
+import { FolderNameModal } from '../ui/FolderNameModal';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useTestStore } from '../../stores/testStore';
@@ -215,9 +218,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const setsLoadError = useStudySetStore((s) => s.loadError);
   const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
   const courseId = studySet?.courseId || courseIdProp || '';
-  type RoomActivity = WorkspaceActivityId | 'home' | 'add';
+  type RoomActivity = WorkspaceActivityId | 'home' | 'add' | 'materials';
 
   const storeNotes = useNotesStore((s) => s.notes);
+  // NOTE folders (materials live in these), NOT the study-set folders below.
+  const noteFolders = useNotesStore((s) => s.folders);
   const selectedNote = useNotesStore((s) => s.selectedNote);
   const loadNote = useNotesStore((s) => s.loadNote);
   const decks = useFlashcardStore((s) => s.decks);
@@ -249,6 +254,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [planGenerating, setPlanGenerating] = useState(false);
   const [quizQuestionCount, setQuizQuestionCount] = useState(10);
   const [importSource, setImportSource] = useState<StudyUploadSource | null>(null);
+  // Files the Upload Materials page's dropzone handed over, waiting for the
+  // modal to consume them once. Cleared by the modal, not by this component,
+  // so a re-render cannot re-upload them.
+  const [importFiles, setImportFiles] = useState<File[] | null>(null);
+  // Which folder the Materials page is looking inside; null is the whole set.
+  const [materialFolderId, setMaterialFolderId] = useState<string | null>(null);
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [createKind, setCreateKind] = useState<CreateFromSourceKind | null>(null);
   const [createOptions, setCreateOptions] = useState<CreateFromSourceOptions | null>(null);
   const [testPreset, setTestPreset] = useState<(typeof TEST_SITTING_PRESETS)[number]['id'] | null>(null);
@@ -491,6 +503,27 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     () => (studySetId ? materialsForStudySet(decks, studySetId) : materialsForCourse(decks, courseId)),
     [decks, courseId, studySetId]
   );
+
+  /**
+   * The folders the Materials page files this set's materials into.
+   *
+   * NOTE folders, not the study-set folders in `useStudySetStore` — those
+   * group SETS, and a material filed into one would mean nothing. Both lists
+   * are called `folders`, which is exactly how the wrong one gets picked.
+   *
+   * Only folders that actually hold one of THIS set's materials are drawn: the
+   * account's whole folder tree on a set's page would be a list of empty
+   * boxes, and the count beside each one is the point of the card.
+   */
+  const materialFolders = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const note of notes) {
+      if (note.folderId) counts.set(note.folderId, (counts.get(note.folderId) ?? 0) + 1);
+    }
+    return noteFolders
+      .filter((folder) => counts.has(folder.id))
+      .map((folder) => ({ id: folder.id, name: folder.name, count: counts.get(folder.id) ?? 0 }));
+  }, [noteFolders, notes]);
   /**
    * The ⋮ on an in-set deck tile. Same entries and same owner rule as the
    * Library deck card: the cover route refuses anyone but the owner, and
@@ -780,15 +813,40 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
    * Course rooms are deliberately excluded — they still need the activity chip
    * strip and the Materials column, neither of which a set room draws any more.
    * `focusActivity` is the same answer narrowed to a studio id, so the bar can
-   * take a `WorkspaceActivityId` without a cast: `home` and `add` are not FOCUS
-   * by definition, and TypeScript should get to see that rather than be told.
+   * take a `WorkspaceActivityId` without a cast: `home`, `add` and `materials`
+   * are not FOCUS by definition, and TypeScript should get to see that rather
+   * than be told.
    *
    * Declared HERE, above `openSetChat`, because the companion rail's remembered
    * state is per surface and this is which surface we are on.
    */
   const focusMode = Boolean(studySetId) && isSetRoomFocus(activity, routePath);
   const focusActivity: WorkspaceActivityId | null =
-    focusMode && activity !== 'home' && activity !== 'add' ? activity : null;
+    focusMode && activity !== 'home' && activity !== 'add' && activity !== 'materials'
+      ? activity
+      : null;
+
+  /**
+   * What the focus bar calls the pane when the Practice hub is what is open.
+   *
+   * The hub is three tabs over the `quiz` pane, so `focusActivity` is `quiz`
+   * on all three and the bar would read "Quiz ▾" over a list of tests, or over
+   * All. Only the WORD is overridden — the icon and the tool menu still come
+   * from the activity, because the tool really is the quiz studio.
+   *
+   * Null on every other route, and null once a quiz is actually open: the
+   * conditions mirror the hub's own render arm exactly, so the bar cannot say
+   * "Practice" over a running quiz.
+   */
+  const practiceHubOpen = Boolean(
+    studySetId &&
+      !routePath?.createNew &&
+      ((activity === 'quiz' && !routePath?.quizId && !quizSeed && !quizLive) ||
+        (activity === 'test' && !routePath?.testId))
+  );
+  const practiceHubTabLabel = practiceHubOpen
+    ? practiceTabLabel(practiceTabForActivity(routePath?.activity))
+    : null;
 
   /**
    * How much room the AI companion gets, measured off the row below rather than
@@ -1532,7 +1590,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             }),
         },
         { id: 'plan', label: 'Full study plan', onSelect: () => go('plan') },
-        { id: 'materials', label: 'All materials', onSelect: () => onOpenLibrary() },
+        {
+          id: 'materials',
+          label: 'All materials',
+          // Inside a SET this is the set's own Materials page; a course room
+          // has no such page and still goes to the account-wide Library.
+          onSelect: () => (studySetId ? go('materials') : onOpenLibrary()),
+        },
         {
           id: 'all-sets',
           label: 'All study sets',
@@ -1590,6 +1654,56 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
   const quizRows = courseTests.filter((row) => studyTestDoor(row) === 'quiz');
   const testRows = courseTests.filter((row) => studyTestDoor(row) === 'test');
+
+  /**
+   * The Practice hub — ONE frame over the quiz and test libraries.
+   *
+   * Both the `quiz` and the `test` arms below render this, so `/quiz` and
+   * `/test` keep meaning exactly what they meant and simply open the hub on
+   * their own tab; `/practice` is the All tab. The tab is read off the PATH,
+   * never off local state, so Back moves between tabs and a tab can be shared.
+   */
+  const renderPracticeHub = () => {
+    const tab = practiceTabForActivity(routePath?.activity);
+    return (
+      <PracticeHub
+        setLabel={label}
+        tab={tab}
+        onTabChange={(next) =>
+          go(next === 'all' ? 'practice' : next === 'tests' ? 'test' : 'quiz')
+        }
+        quizzes={quizRows.map((test) => ({
+          id: test.id,
+          title: test.title || 'Quiz',
+          preview: test.preview,
+          feature: 'tests' as const,
+          icon: 'help-circle' as const,
+        }))}
+        tests={testRows.map((test) => ({
+          id: test.id,
+          title: test.title || 'Test',
+          preview: test.preview,
+          feature: 'tests' as const,
+          icon: 'clipboard' as const,
+        }))}
+        onOpen={(which, id) => {
+          if (which === 'tests') onOpenTest(id);
+          else go('quiz', { quizId: id });
+        }}
+        onCreate={(kind) => {
+          if (kind === 'cards') {
+            go('cards', { createNew: true });
+            return;
+          }
+          if (kind === 'test' && !studySetId) {
+            onNewTest();
+            return;
+          }
+          go(kind, { createNew: true });
+        }}
+      />
+    );
+  };
   const notesRoomOpen =
     activity === 'notes' &&
     Boolean(studioNote && noteInRoom(studioNote) && !isCalendarNote(studioNote) && !isEssayNote(studioNote) && !isLectureNote(studioNote) && !isLessonNote(studioNote) && !isRecapNote(studioNote));
@@ -1726,6 +1840,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               tileHue={studySet?.tileHue}
               tileGlyph={studySet?.tileGlyph}
               activity={focusActivity}
+              // The Practice hub is three tabs over the `quiz` pane, so the
+              // bar would say "Quiz" on all three. Only the WORD is overridden:
+              // the icon and the tool menu still come from the activity.
+              {...(practiceHubTabLabel ? { label: practiceHubTabLabel } : {})}
               onBack={() => go('home')}
               onActivity={handleActivity}
               onOpenSettings={() => setSettingsOpen(true)}
@@ -1993,6 +2111,38 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 setImportOpen(true);
               }}
               onRecord={() => go('lecture', { createNew: true })}
+              onFiles={(files) => {
+                // Straight into the modal's own handlers — see `initialFiles`.
+                setImportFiles(files);
+                setImportSource(null);
+                setImportOpen(true);
+              }}
+              onNoMaterial={() => go('notes', { createNew: true })}
+              onCopyLink={() =>
+                void shareStudySet({
+                  setId: studySetId,
+                  title: label,
+                  visibility: studySet?.visibility,
+                })
+              }
+            />
+          ) : activity === 'materials' && studySetId ? (
+            <SetMaterialsPage
+              setLabel={label}
+              notes={homeMaterials}
+              decks={courseDecks.map((deck) => ({ id: deck.id, name: deck.name }))}
+              folders={materialFolders}
+              folderId={materialFolderId}
+              onSelectFolder={setMaterialFolderId}
+              onOpenNote={(noteId) => {
+                void openNote(noteId);
+                go('notes', { noteId });
+              }}
+              onOpenDeck={(deckId) => go('cards', { deckId })}
+              onUpload={() => go('add')}
+              onCreateFolder={() => setFolderModalOpen(true)}
+              folderOfNote={(note) => note.folderId ?? null}
+              renderNoteMenu={renderNoteRowMenu}
             />
           ) : activity === 'home' && studySetId ? (
             <StudySetHome
@@ -2066,7 +2216,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 if (deck) onSelectDeck(deck);
               }}
               onOpenPlan={() => go('plan')}
-              onOpenLibrary={onOpenLibrary}
+              onOpenLibrary={studySetId ? () => go('materials') : onOpenLibrary}
               header={setHeader}
               onGenerateFromTopic={(brief) => void handleCreateFromTopic(brief, 'materials')}
               footer={
@@ -2109,25 +2259,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           ) : activity === 'quiz' && routePath?.createNew && studySetId ? (
             renderWizard('quiz')
           ) : activity === 'quiz' && studySetId && !routePath?.quizId && !quizSeed && !quizLive ? (
-            <StudySetArtifactLibrary
-              title="Quizzes"
-              empty="Make a quiz from materials or flashcards in this set."
-              createLabel="+ New"
-              folders={folders.map((folder) => ({ id: folder.id, title: folder.title }))}
-              onOpenFolder={() => {
-                openPicker();
-                navigateTo(AppMode.STUDY_HUB);
-              }}
-              onCreate={() => go('quiz', { createNew: true })}
-              onOpen={(quizId) => go('quiz', { quizId })}
-              items={quizRows.map((test) => ({
-                id: test.id,
-                title: test.title || 'Quiz',
-                preview: test.preview,
-                feature: 'tests' as const,
-                icon: 'help-circle' as const,
-              }))}
-            />
+            renderPracticeHub()
           ) : activity === 'quiz' ? (
             <AdaptiveQuiz
               courseId={courseId}
@@ -2486,12 +2618,17 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                       </div>
                     </div>
                   </div>
+                ) : studySetId ? (
+                  // The same hub the quiz door opens, on its Tests tab.
+                  renderPracticeHub()
                 ) : (
+                  // A COURSE room has no set path and so no hub: the tests
+                  // library stays exactly what it was there.
                   <StudySetArtifactLibrary
                     title="Test"
                     empty={scopedCopy('testsFromDecks', roomNoun)}
                     createLabel="+ New"
-                    onCreate={() => (studySetId ? go('test', { createNew: true }) : onNewTest())}
+                    onCreate={() => onNewTest()}
                     onOpen={(testId) => onOpenTest(testId)}
                     items={testRows.map((test) => ({
                       id: test.id,
@@ -2631,15 +2768,33 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId: created.id });
         }}
       />
+      <FolderNameModal
+        isOpen={folderModalOpen}
+        onClose={() => setFolderModalOpen(false)}
+        title="New folder"
+        placeholder="Folder name"
+        submitLabel="Create"
+        onSubmit={(name) => {
+          setFolderModalOpen(false);
+          void useNotesStore
+            .getState()
+            .createFolder(name)
+            .then(() => showToast('Folder created.', 'success'))
+            .catch(() => showToast('Could not create that folder.', 'error'));
+        }}
+      />
       {importOpen && (
         <ImportAndStudyModal
           isOpen={importOpen}
           courseId={courseId || undefined}
           studySetId={studySetId}
           source={importSource}
+          initialFiles={importFiles}
+          onInitialFilesConsumed={() => setImportFiles(null)}
           onClose={() => {
             setImportOpen(false);
             setImportSource(null);
+            setImportFiles(null);
           }}
           onComplete={() => {
             void reloadNotes()

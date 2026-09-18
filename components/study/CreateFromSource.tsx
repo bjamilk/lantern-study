@@ -108,6 +108,23 @@ const DEPTH_ICON: Record<TopicSkillLevel, AppIconName> = {
   exam: 'trophy',
 };
 
+/**
+ * The glyph on the illustration column's tile: the tool this run is making,
+ * drawn the way the rail and the artifact library already draw it, so the
+ * picture beside the question is not a second vocabulary.
+ */
+const KIND_ICON: Record<CreateFromSourceKind, AppIconName> = {
+  quiz: 'help-circle',
+  cards: 'layers',
+  recap: 'headphones',
+  lesson: 'school',
+  play: 'game-controller',
+  essay: 'document-text',
+  test: 'clipboard',
+  materials: 'document-text',
+  notes: 'document',
+};
+
 export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
   kind,
   notes,
@@ -146,6 +163,16 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
 
   const noun = CREATE_FROM_SOURCE_NOUN[kind];
   const sources = sourcesForKind(kind);
+  /**
+   * The two props every screen's frame takes. Spread, not a wrapper component
+   * declared in this body: a component defined during render is a new type on
+   * every render, so React would unmount and remount the whole screen on each
+   * keystroke — losing input focus and resetting the shell's step ref.
+   */
+  const shellChrome = {
+    art: { icon: KIND_ICON[kind], label: noun },
+    onExit: onCancel,
+  } as const;
   const steps = useMemo(() => wizardSteps(kind, source), [kind, source]);
   const index = wizardStepIndex(steps, stepId);
   const asksTypes = steps.some((step) => step.id === 'types');
@@ -247,6 +274,7 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
   if (stepId === 'materials') {
     return (
       <WizardShell
+        {...shellChrome}
         steps={steps}
         index={index}
         hint={notes.length === 0 ? undefined : 'Pick one to carry on.'}
@@ -275,6 +303,7 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
   if (stepId === 'decks') {
     return (
       <WizardShell
+        {...shellChrome}
         steps={steps}
         index={index}
         hint={`We write ${QUIZ_FROM_CARDS_COUNT} multiple-choice questions from the cards in the decks you pick.`}
@@ -323,6 +352,7 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
     const next = steps[index + 1];
     return (
       <WizardShell
+        {...shellChrome}
         steps={steps}
         index={index}
         hint={
@@ -359,6 +389,7 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
   if (stepId === 'depth') {
     return (
       <WizardShell
+        {...shellChrome}
         steps={steps}
         index={index}
         actions={
@@ -445,6 +476,7 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
     const next = steps[index + 1];
     return (
       <WizardShell
+        {...shellChrome}
         steps={steps}
         index={index}
         actions={
@@ -504,6 +536,7 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
     const next = steps[index + 1];
     return (
       <WizardShell
+        {...shellChrome}
         steps={steps}
         index={index}
         hint={
@@ -582,6 +615,7 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
   if (stepId === 'details') {
     return (
       <WizardShell
+        {...shellChrome}
         steps={steps}
         index={index}
         actions={
@@ -627,6 +661,7 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
   if (stepId === 'anki') {
     return (
       <WizardShell
+        {...shellChrome}
         steps={steps}
         index={index}
         hint="One card per line, term and definition separated by a tab."
@@ -653,13 +688,12 @@ export const CreateFromSource: React.FC<CreateFromSourceProps> = ({
 
   return (
     <WizardShell
+      {...shellChrome}
       steps={steps}
       index={0}
-      actions={
-        <Button variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
-      }
+      // No Cancel button here: the shell's Exit pill is the way out, and it is
+      // on EVERY screen — the old Cancel existed only on this one.
+      actions={null}
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {visible.map((id) => {

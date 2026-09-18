@@ -31,6 +31,7 @@ import {
 } from '@lantern/shared';
 import { createDeckWithCards } from '../services/apiEndpoints';
 import { parseCardExport } from './study/CreateFromSource';
+import { routeUploadFiles } from './study/uploadDoors';
 
 export type { ImportAndStudyResult } from '../hooks/useStudyGenerators';
 
@@ -50,6 +51,17 @@ interface ImportAndStudyModalProps {
   onRecordLecture?: () => void;
   /** Empty-set starter notes from a topic, subject and level. */
   onGenerateFromTopic?: (brief: TopicBrief) => Promise<void> | void;
+  /**
+   * Files the student already chose before this opened — the Upload Materials
+   * page's dropzone. They go straight into the SAME handlers the modal's own
+   * file inputs use, so the accepted types, the 25 MB limit, the progress bar
+   * and the generator pipeline are one implementation and not two.
+   *
+   * Consumed once per open. `onInitialFilesConsumed` lets the caller clear its
+   * own state so reopening the modal does not re-upload yesterday's file.
+   */
+  initialFiles?: File[] | null;
+  onInitialFilesConsumed?: () => void;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -65,6 +77,8 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   source = null,
   onRecordLecture,
   onGenerateFromTopic,
+  initialFiles = null,
+  onInitialFilesConsumed,
 }) => {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -425,6 +439,34 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       onRecordLecture();
     }
   }, [isOpen, source, onRecordLecture]);
+
+  /**
+   * Files handed over by the Upload Materials page's dropzone.
+   *
+   * The ref is what makes this run once: the effect's own `setStep` re-renders
+   * the modal, and without the guard the same File would be uploaded on every
+   * render for as long as the prop stayed set. `handlers` is deliberately NOT
+   * in the dependency list — they are recreated each render, and depending on
+   * them is the same infinite upload by another route.
+   */
+  const consumedFilesRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen) {
+      consumedFilesRef.current = false;
+      return;
+    }
+    if (consumedFilesRef.current) return;
+    const files = initialFiles ?? [];
+    if (files.length === 0) return;
+    consumedFilesRef.current = true;
+    onInitialFilesConsumed?.();
+    const routed = routeUploadFiles(files);
+    if (routed.kind === 'pdf') void handlePdf(routed.file);
+    else if (routed.kind === 'presentation') void handlePresentation(routed.file);
+    else if (routed.kind === 'images') void handlePhotos(routed.files);
+    else setError(routed.message);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see the note above.
+  }, [isOpen, initialFiles]);
 
   if (!isOpen) return null;
 

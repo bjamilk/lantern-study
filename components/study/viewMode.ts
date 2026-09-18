@@ -25,7 +25,14 @@ export type ViewMode = 'grid' | 'list';
 export const VIEW_MODES: readonly ViewMode[] = ['grid', 'list'];
 
 /** The surfaces that own a remembered view. One key each. */
-export type ViewSurface = 'setRoomMaterials' | 'setRoomLectures';
+export type ViewSurface =
+  | 'setRoomMaterials'
+  | 'setRoomLectures'
+  // The Wave 3 pages. Own keys, because the set home's eight-tile grid and the
+  // whole-set Materials page are browsed for different reasons — a student who
+  // wants rows on the archive page has not asked for rows on Home.
+  | 'setMaterialsPage'
+  | 'practiceHub';
 
 export type MaterialSortId = 'newest' | 'oldest' | 'alpha';
 

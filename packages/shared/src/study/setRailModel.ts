@@ -79,9 +79,9 @@ export interface SetRailMaterials {
   /** Every note in the set, folders and unfiled together. */
   total: number;
   /**
-   * `View all`. The Library has no per-set filter — its only scopes are course
-   * and topic — so "all the materials in this set" is the set's own Notes
-   * route, which is the screen that actually filters to the set.
+   * `View all`. The Library has no per-set filter — its only scopes are
+   * course and topic — so "all the materials in this set" is the set's own
+   * Materials page (Wave 3), which is the screen that filters to the set.
    */
   viewAllPath: string;
 }
@@ -250,9 +250,25 @@ export function buildSetRailModel(input: SetRailInput): SetRailModel {
     if (activity) primary.push(buildLink(activity, setId, activePathActivity));
   }
 
-  const practiceItems = PRACTICE_IDS.map((id) => byId.get(id))
-    .filter((activity): activity is WorkspaceActivity => Boolean(activity))
-    .map((activity) => buildLink(activity, setId, activePathActivity));
+  // The Practice HUB leads its own drawer. The drawer's header is a
+  // disclosure — it opens and closes the group — so it cannot also navigate
+  // without becoming a control that does two things; this row is the link, and
+  // it is what makes the hub reachable from the rail at all.
+  const practiceItems: SetRailLink[] = [
+    {
+      id: 'practice',
+      label: 'All practice',
+      icon: 'game-controller',
+      action: {
+        kind: 'path',
+        path: buildStudySetPath({ studySetId: setId, activity: 'practice' }),
+      },
+      active: activePathActivity === 'practice',
+    },
+    ...PRACTICE_IDS.map((id) => byId.get(id))
+      .filter((activity): activity is WorkspaceActivity => Boolean(activity))
+      .map((activity) => buildLink(activity, setId, activePathActivity)),
+  ];
 
   const notes = input.notes ?? [];
   const folders = input.folders ?? [];
@@ -308,7 +324,7 @@ export function buildSetRailModel(input: SetRailInput): SetRailModel {
       folders: folderNodes,
       unfiled: noteNodes(unfiled, setId, activeNoteId),
       total: notes.length,
-      viewAllPath: buildStudySetPath({ studySetId: setId, activity: 'notes' }),
+      viewAllPath: buildStudySetPath({ studySetId: setId, activity: 'materials' }),
     },
   };
 }

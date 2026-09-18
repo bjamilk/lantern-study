@@ -59,8 +59,11 @@ describe('buildSetRailModel', () => {
     ]);
   });
 
-  it('lists the practice drawer in the reference order', () => {
+  it('lists the practice drawer in the reference order, led by the hub', () => {
     expect(model().practice.items.map((row) => row.label)).toEqual([
+      // Wave 3: the hub itself, because the drawer's header is a disclosure
+      // and cannot also be the link to it.
+      'All practice',
       'Quiz',
       'Test',
       'Flashcards',
@@ -131,8 +134,10 @@ describe('buildSetRailModel', () => {
     expect(folder.notes[0].active).toBe(false);
   });
 
-  it('sends View all to the set-scoped notes list', () => {
-    expect(model().materials.viewAllPath).toBe('/study/sets/set-1/notes');
+  it('sends View all to the set-scoped Materials page', () => {
+    // Wave 3: the set's own Materials page, not its notes list and certainly
+    // not the account-wide Library, which has no per-set filter.
+    expect(model().materials.viewAllPath).toBe('/study/sets/set-1/materials');
   });
 
   it('survives a set with no notes or folders at all', () => {
