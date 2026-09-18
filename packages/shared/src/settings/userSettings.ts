@@ -10,6 +10,14 @@ import {
   normalizeTutorStyleId,
   type TutorStyleId,
 } from '../ai/tutorStyles';
+import {
+  DEFAULT_LECTURE_SPOKEN_LANGUAGE,
+  DEFAULT_LECTURE_TRANSCRIBE_TARGET,
+  normalizeLectureSpokenLanguage,
+  normalizeLectureTranscribeTarget,
+  type LectureSpokenLanguageId,
+  type LectureTranscribeTarget,
+} from '../utils/lectureAudio';
 
 export interface NotificationSettings {
   pushEnabled: boolean;
@@ -123,6 +131,25 @@ export interface FlashcardGenerationSettings {
   typeMix: FlashcardTypeMix;
 }
 
+/**
+ * How the lecture recorder should transcribe.
+ *
+ * Account-wide rather than per-device: a student who lectures in Yoruba
+ * lectures in Yoruba on the phone as well as the laptop. Both fields are read
+ * through an allowlist on every read and every patch, so a stored value from a
+ * newer build — or a smuggled object — resolves to the default rather than
+ * reaching Whisper.
+ *
+ * `transcribeTo` has exactly two values on purpose: Whisper's translate task
+ * translates into ENGLISH and nothing else, so there is no honest third option
+ * to offer. See `whisperLanguageParam` / `needsWhisperTranslation` in
+ * `utils/lectureAudio.ts`.
+ */
+export interface LectureSettings {
+  spokenLanguage: LectureSpokenLanguageId;
+  transcribeTo: LectureTranscribeTarget;
+}
+
 /** First-time / returning-user coach tips + getting-started checklist progress. */
 export interface FeatureTipsSettings {
   version: number;
@@ -159,6 +186,7 @@ export interface UserSettings {
   featureTips?: FeatureTipsSettings;
   onboardingVisited?: OnboardingVisitedSettings;
   flashcardGeneration?: FlashcardGenerationSettings;
+  lecture?: LectureSettings;
   /**
    * Which tutor style the companion answers in by default.
    *
@@ -270,6 +298,10 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     count: DEFAULT_FLASHCARD_GENERATION_OPTIONS.count,
     typeMix: DEFAULT_FLASHCARD_GENERATION_OPTIONS.typeMix,
   },
+  lecture: {
+    spokenLanguage: DEFAULT_LECTURE_SPOKEN_LANGUAGE,
+    transcribeTo: DEFAULT_LECTURE_TRANSCRIBE_TARGET,
+  },
   tutorStyle: DEFAULT_TUTOR_STYLE_ID,
   version: 1,
   updatedAt: new Date().toISOString(),
@@ -350,6 +382,9 @@ export function normalizeUserSettings(raw: unknown): UserSettings {
   );
   // Same reason as the two above: the deep merge would have carried a stored
   // string of any shape through. Four ids or `default`, nothing else.
+  // Same reason again: the deep merge would carry a stored language of any
+  // shape straight through to the Whisper request. Allowlist on every read.
+  merged.lecture = normalizeLectureSettings(record.lecture ?? merged.lecture);
   merged.tutorStyle = normalizeTutorStyleId(record.tutorStyle ?? merged.tutorStyle);
   return merged;
 }
@@ -359,6 +394,18 @@ export function normalizeUserSettings(raw: unknown): UserSettings {
  * rather than merged, so this key cannot be used to smuggle anything into the
  * settings blob.
  */
+/** Two allowlisted ids, whatever came in. Unknown sub-keys are dropped. */
+export function normalizeLectureSettings(raw: unknown): LectureSettings {
+  const record =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  return {
+    spokenLanguage: normalizeLectureSpokenLanguage(record.spokenLanguage),
+    transcribeTo: normalizeLectureTranscribeTarget(record.transcribeTo),
+  };
+}
+
 export function normalizeOnboardingVisited(raw: unknown): OnboardingVisitedSettings {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { library: false, marketplace: false, offline: false };
