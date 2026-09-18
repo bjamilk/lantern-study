@@ -28,6 +28,7 @@ vi.mock('../../hooks/useResolvedStorageUrl', () => ({
 
 import { SetRoomHeader } from './SetRoomHeader';
 import { UnitChipRow } from './UnitChipRow';
+import { RecentMaterials } from './RecentMaterials';
 
 const SET_ID = '8f1b0c2e-2222-4a2b-9c3d-000000000002';
 
@@ -108,5 +109,42 @@ describe('unit chip row', () => {
     expect(
       renderToStaticMarkup(<UnitChipRow units={[]} activeUnitId={null} onSelect={() => undefined} />)
     ).toBe('');
+  });
+});
+
+describe('recent materials grid', () => {
+  const notes = Array.from({ length: 10 }, (_, i) => ({
+    id: `n${i}`,
+    title: `Note ${i}`,
+    body: `Body of note ${i}`,
+    studySetId: SET_ID,
+    createdAt: new Date(2026, 8, i + 1).toISOString(),
+  })) as never[];
+
+  function grid() {
+    return renderToStaticMarkup(
+      <RecentMaterials notes={notes} onOpenNote={() => undefined} onViewAll={() => undefined} />
+    );
+  }
+
+  it('caps the grid at eight, newest first, and ends with View all materials', () => {
+    const html = grid();
+    expect(html).toContain('View all materials');
+    expect(html).toContain('Note 9');
+    // The two oldest are the ones the cap leaves out.
+    expect(html).not.toContain('>Note 0<');
+    expect(html).not.toContain('>Note 1<');
+  });
+
+  it('draws each card as a preview block over its type glyph and title', () => {
+    const html = grid();
+    expect(html).toContain('Body of note 9');
+    expect(html).toContain('min-h-[226px]');
+  });
+
+  it('offers the type filter, with All types as the default', () => {
+    const html = grid();
+    expect(html).toContain('All types');
+    expect(html).toContain('Filter materials by type');
   });
 });

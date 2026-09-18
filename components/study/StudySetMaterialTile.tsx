@@ -47,12 +47,16 @@ export const StudySetMaterialTile: React.FC<StudySetMaterialTileProps> = ({
       // `w-full` matters once the tile is wrapped for its menu: as a bare grid
       // child the button stretched to the column, but inside the relative
       // wrapper it is an inline-block that would otherwise shrink to its text.
-      className={`min-h-[11rem] w-full rounded-2xl border bg-lantern-surface text-left overflow-hidden hover:bg-lantern-background-secondary ${
+      // 233×226 as measured (2026-09-17): the preview block is the card's
+      // largest element and the label is a footer under it, which is what
+      // makes a wall of these scannable by their content rather than by
+      // their titles. `min-h` so a long title wraps rather than clips.
+      className={`min-h-[226px] w-full rounded-xl border bg-lantern-surface text-left overflow-hidden hover:bg-lantern-background-secondary ${
         selected ? 'border-lantern-text' : 'border-lantern-border'
       }`}
     >
       <div
-        className={`h-28 ${note.coverPath ? '' : 'px-3 py-3'} ${
+        className={`h-[164px] ${note.coverPath ? '' : 'px-3 py-3'} ${
           lecture ? FEATURE_TINT_BG.recording : 'bg-lantern-background-secondary'
         }`}
       >
@@ -74,7 +78,7 @@ export const StudySetMaterialTile: React.FC<StudySetMaterialTileProps> = ({
             <AppIcon name="mic" size={20} />
           </span>
         ) : (
-          <p className="text-caption text-lantern-text-secondary line-clamp-5">
+          <p className="text-caption text-lantern-text-secondary line-clamp-6">
             {preview || 'Untitled note'}
           </p>
         )}
@@ -89,7 +93,11 @@ export const StudySetMaterialTile: React.FC<StudySetMaterialTileProps> = ({
           size={16}
           className={lecture ? FEATURE_INK_TEXT.recording : FEATURE_INK_TEXT.notes}
         />
-        <span className="text-body font-semibold truncate">{note.title || 'Untitled note'}</span>
+        {/* The reference sets this title 13/20 in its tertiary ink. 13 is not
+            a step on Lantern's ladder and the tertiary is #A3A3A3 (2.6:1), so
+            the honest equivalent is the 14/20 body step in the body ink — same
+            role, same leading, legible. */}
+        <span className="text-body font-medium truncate">{note.title || 'Untitled note'}</span>
       </div>
     </button>
   );

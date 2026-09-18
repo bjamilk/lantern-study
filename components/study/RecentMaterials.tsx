@@ -124,12 +124,17 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
         <h2 className="text-title text-lantern-text">Recent materials</h2>
         <div className="flex flex-wrap items-center gap-2">
           {available.length > 1 ? (
-            <label className="inline-flex items-center gap-1.5">
+            // The measured filter: 97×32, white, 1px hairline, r12, with the
+            // 12px caret the native control already draws. A `<select>` rather
+            // than a menu button because it is a one-of-N choice, which is the
+            // control the platform gives a keyboard and a screen reader for
+            // free. 44px hit target from the pseudo-element, not from height.
+            <label className="relative inline-flex items-center gap-1.5">
               <span className="sr-only">Filter materials by type</span>
               <select
                 value={filter}
                 onChange={(event) => setFilter(event.target.value as MaterialFilter)}
-                className="min-h-[40px] rounded-full border border-lantern-border bg-lantern-surface px-3 text-caption text-lantern-text"
+                className="h-8 rounded-xl border border-lantern-border bg-lantern-surface px-2 text-body font-medium text-lantern-text after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
               >
                 {available.map((option) => (
                   <option key={option} value={option}>
@@ -145,7 +150,10 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
       </div>
 
       {view === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        // THREE columns at 233px each with a 12px gutter, as measured — it was
+        // four, which at this column width makes a 180px card whose preview
+        // block shows two lines and stops being a preview.
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((note) => (
             <StudySetMaterialTile
               key={note.id}
@@ -159,21 +167,21 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
               key={deck.id}
               type="button"
               onClick={() => onOpenDeck?.(deck.id)}
-              className="min-h-[11rem] overflow-hidden rounded-2xl border border-lantern-border bg-lantern-surface text-left hover:bg-lantern-background-secondary"
+              className="min-h-[226px] overflow-hidden rounded-xl border border-lantern-border bg-lantern-surface text-left hover:bg-lantern-background-secondary"
             >
-              <div className={`flex h-28 items-center justify-center ${FEATURE_TINT_BG.flashcards}`}>
+              <div className={`flex h-[164px] items-center justify-center ${FEATURE_TINT_BG.flashcards}`}>
                 <AppIcon name="layers" size={32} className="text-lantern-ink" />
               </div>
               <div className="flex items-center gap-2 px-3 py-2.5">
                 <AppIcon name="layers" size={16} className={FEATURE_INK_TEXT.flashcards} />
-                <span className="truncate text-body font-semibold">{deck.name}</span>
+                <span className="truncate text-body font-medium">{deck.name}</span>
               </div>
             </button>
           ))}
           <button
             type="button"
             onClick={onViewAll}
-            className="flex min-h-[11rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-lantern-border text-caption font-medium text-lantern-text-secondary hover:border-lantern-text-tertiary hover:text-lantern-text"
+            className="flex min-h-[226px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-lantern-border text-body font-medium text-lantern-text-secondary hover:border-lantern-text-tertiary hover:text-lantern-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
           >
             <AppIcon name="arrow-forward" size={20} />
             View all materials
