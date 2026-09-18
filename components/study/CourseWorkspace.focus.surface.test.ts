@@ -32,10 +32,12 @@ describe('the set room asks one predicate which state it is in', () => {
     expect(flat(ROOM)).toContain(
       'const focusMode = Boolean(studySetId) && isSetRoomFocus(activity, routePath);'
     );
-    // `home` and `add` are excluded by the predicate; narrowing here is what
-    // lets the bar take a WorkspaceActivityId without a cast.
+    // `home`, `add` and `materials` are excluded by the predicate; narrowing
+    // here is what lets the bar take a WorkspaceActivityId without a cast.
+    // `materials` joined them in Wave 3: the set's own materials list is
+    // browsing, exactly as `/notes` with nothing open is.
     expect(flat(ROOM)).toContain(
-      "focusMode && activity !== 'home' && activity !== 'add' ? activity : null"
+      "focusMode && activity !== 'home' && activity !== 'add' && activity !== 'materials' ? activity : null"
     );
   });
 

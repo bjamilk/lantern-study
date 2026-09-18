@@ -31,7 +31,11 @@ export type StudySetPathActivity =
   | 'plan'
   | 'calendar'
   | 'essay'
-  | 'read';
+  | 'read'
+  /** The set's own materials list — Wave 3's `/materials` page. */
+  | 'materials'
+  /** The Practice hub's "All" tab; `quiz` and `test` are its other two. */
+  | 'practice';
 
 export type StudySetCardSession = 'review' | 'cram' | 'learn';
 export type StudySetPlaySession = 'match';
@@ -58,6 +62,8 @@ export const STUDY_SET_PATH_ACTIVITIES: readonly StudySetPathActivity[] = [
   'calendar',
   'essay',
   'read',
+  'materials',
+  'practice',
 ];
 
 const ACTIVITY_SET = new Set<string>(STUDY_SET_PATH_ACTIVITIES);
@@ -68,11 +74,17 @@ export function isStudySetPathActivity(value: unknown): value is StudySetPathAct
 
 export function workspaceActivityFromPath(
   activity: StudySetPathActivity | undefined
-): WorkspaceActivityId | 'home' | 'add' {
+): WorkspaceActivityId | 'home' | 'add' | 'materials' {
   if (!activity || activity === 'home') return 'home';
   if (activity === 'add') return 'add';
+  if (activity === 'materials') return 'materials';
   if (activity === 'calendar') return 'plan';
   if (activity === 'read') return 'walkthrough';
+  // The Practice hub IS the quiz and test libraries under one set of tabs, so
+  // the room opens the same pane for all three; which TAB is showing is read
+  // from the path activity itself, not from this, because `quiz` and `test`
+  // must keep meaning exactly what they meant before the hub existed.
+  if (activity === 'practice') return 'quiz';
   return activity;
 }
 
@@ -109,10 +121,13 @@ export interface SetRoomFocusInput {
 }
 
 export function isSetRoomFocus(
-  activity: WorkspaceActivityId | 'home' | 'add' | null | undefined,
+  activity: WorkspaceActivityId | 'home' | 'add' | 'materials' | null | undefined,
   routePath?: SetRoomFocusInput | null
 ): boolean {
   if (!activity || activity === 'home' || activity === 'add') return false;
+  // A list of the set's materials is browsing, for the same reason `/notes`
+  // with nothing open is: the student has not chosen anything yet.
+  if (activity === 'materials') return false;
   if (activity === 'notes') return Boolean(routePath?.noteId || routePath?.createNew);
   return true;
 }

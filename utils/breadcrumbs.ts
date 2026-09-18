@@ -184,6 +184,8 @@ function studySetActivityLabel(activity?: StudySetPathActivity): string | null {
     calendar: 'Calendar',
     essay: 'Essay',
     read: 'Read',
+    materials: 'Materials',
+    practice: 'Practice',
   };
   return labels[activity] ?? null;
 }
