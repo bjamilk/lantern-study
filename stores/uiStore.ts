@@ -144,6 +144,28 @@ interface UIState {
     userId: string | null | undefined,
     remote: Partial<Record<VisitedSurface, boolean>>
   ) => void;
+
+  /**
+   * Which sets have had "Sync with your class" skipped, per user id.
+   *
+   * Shaped like `visitedSurfaces` and persisted beside it for the same
+   * reason: it is a fact about the ACCOUNT ("I do not have a syllabus for
+   * this set") rather than about this laptop, and finding the card back on
+   * the phone would be the same annoyance twice. Keyed by user so signing in
+   * as somebody else cannot hide their card.
+   *
+   * Set-keyed rather than a single flag because the answer genuinely differs
+   * per set: a student may have a syllabus for one course and none for the
+   * next. It is MONOTONIC in one direction only — nothing un-skips a set
+   * except uploading a syllabus, which makes the card moot anyway.
+   */
+  syncClassSkipped: Record<string, Record<string, boolean>>;
+  /** Hide the card for this set, for good. Returns true when it changed. */
+  markSyncClassSkipped: (
+    userId: string | null | undefined,
+    studySetId: string
+  ) => boolean;
+  isSyncClassSkipped: (userId: string | null | undefined, studySetId: string) => boolean;
   
   // Selected Chat
   selectedChat: ChatItem | null;
@@ -466,6 +488,23 @@ export const useUIStore = create<UIState>()(
         });
         return true;
       },
+      syncClassSkipped: {},
+      markSyncClassSkipped: (userId, studySetId) => {
+        if (!userId || !studySetId) return false;
+        const current = get().syncClassSkipped;
+        if (current[userId]?.[studySetId]) return false;
+        set({
+          syncClassSkipped: {
+            ...current,
+            [userId]: { ...current[userId], [studySetId]: true },
+          },
+        });
+        return true;
+      },
+      isSyncClassSkipped: (userId, studySetId) => {
+        if (!userId || !studySetId) return false;
+        return Boolean(get().syncClassSkipped[userId]?.[studySetId]);
+      },
       mergeVisitedSurfaces: (userId, remote) => {
         if (!userId) return;
         const current = get().visitedSurfaces;
@@ -719,6 +758,9 @@ export const useUIStore = create<UIState>()(
         // companion on the set home must not find it docked again tomorrow.
         companionRail: state.companionRail,
         visitedSurfaces: state.visitedSurfaces,
+        // Persisted with `visitedSurfaces` and for the same reason: a card a
+        // student dismissed must not come back on the next load.
+        syncClassSkipped: state.syncClassSkipped,
         // A sort a student chose on Monday is still the sort they want on
         // Tuesday; re-deriving it from nothing is what made the menu feel like
         // it forgot every reload.

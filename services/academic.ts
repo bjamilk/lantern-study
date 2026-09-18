@@ -10,6 +10,11 @@ import type {
   PracticeFolderListResponse,
   PracticeFolderWithCount,
 } from '@lantern/shared/study/practiceFolders';
+import {
+  readSyllabusSummary,
+  type StudySetSyllabusResponse,
+  type SyllabusUploadResponse,
+} from '@lantern/shared/study/syllabusSummary';
 import { mapUserFromApi } from '@lantern/shared/utils/apiMappers';
 import { getAuthHeaders, fetchMarketplaceCampuses } from './supabase';
 import { handleApiAuthFailure } from './sessionHandler';
@@ -271,6 +276,54 @@ export const fetchPracticeFolders = (setId: string): Promise<PracticeFolderListR
         : { supported: false, folders: [] }
     )
     .catch(() => ({ supported: false, folders: [] }));
+
+/**
+ * This set's syllabus, plus whether the database can hold one.
+ *
+ * `supported: false` means 20260918150000 is unapplied — the set home then
+ * draws exactly what it drew before the syllabus existed, with no "Sync with
+ * your class" card. A FAILED fetch answers the same way, for the same reason
+ * the folder list does: a syllabus that could not load must not turn an empty
+ * set into an error screen, and the student's own-way grid is still there.
+ */
+export const fetchStudySetSyllabus = (setId: string): Promise<StudySetSyllabusResponse> =>
+  academicRequest<StudySetSyllabusResponse>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/syllabus`
+  )
+    .then((data) =>
+      data && typeof data === 'object'
+        ? {
+            supported: Boolean(data.supported),
+            noteId: typeof data.noteId === 'string' ? data.noteId : null,
+            summary: readSyllabusSummary(data.summary),
+          }
+        : { supported: false, noteId: null, summary: null }
+    )
+    .catch(() => ({ supported: false, noteId: null, summary: null }));
+
+/**
+ * Upload a syllabus. Costs ONE AI use.
+ *
+ * The timeout is raised to 90s: this call extracts a document AND makes a
+ * model call, and the default 10s would abort a perfectly healthy request
+ * mid-generation — which the student would read as a failure while the server
+ * carried on and charged them.
+ */
+export const uploadStudySetSyllabus = (
+  setId: string,
+  input: { fileName: string; base64Data: string }
+): Promise<SyllabusUploadResponse> =>
+  academicRequest<SyllabusUploadResponse>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/syllabus`,
+    { method: 'POST', body: JSON.stringify(input) },
+    90000
+  );
+
+/** Undo: unlink the syllabus and delete the note it created. Free. */
+export const deleteStudySetSyllabus = (setId: string): Promise<void> =>
+  academicRequest<void>(`/users/me/study-sets/${encodeURIComponent(setId)}/syllabus`, {
+    method: 'DELETE',
+  });
 
 export const createPracticeFolder = (setId: string, title: string) =>
   academicRequest<PracticeFolderWithCount>(

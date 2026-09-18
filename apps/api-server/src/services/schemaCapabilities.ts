@@ -81,7 +81,9 @@ type Capability =
   | 'communityEventFields'
   | 'communityInvites'
   // 20260918120000 — practice folders
-  | 'practiceFolders';
+  | 'practiceFolders'
+  // 20260918150000 — study set syllabus + exam date
+  | 'studySetSyllabus';
 
 /**
  * How long an "absent" answer is trusted before the next caller re-probes.
@@ -102,6 +104,7 @@ const resolved: Record<Capability, CachedAnswer | null> = {
   communityEventFields: null,
   communityInvites: null,
   practiceFolders: null,
+  studySetSyllabus: null,
 };
 const inFlight: Record<Capability, Promise<boolean> | null> = {
   groupCommunitySurface: null,
@@ -112,6 +115,7 @@ const inFlight: Record<Capability, Promise<boolean> | null> = {
   communityEventFields: null,
   communityInvites: null,
   practiceFolders: null,
+  studySetSyllabus: null,
 };
 
 /** A cached answer is usable while it is `true`, or while a `false` is fresh. */
@@ -142,6 +146,13 @@ const PROBES: Record<Capability, { table: string; column: string }> = {
   // both. It probes the table, not the column, because a missing RELATION is
   // the shape that arrives first — see isMissingRelationError.
   practiceFolders: { table: 'practice_folders', column: 'id' },
+  // 20260918150000 adds `syllabus_note_id`, `syllabus_summary` AND re-declares
+  // `exam_date` in ONE file, so a database has all three or none and one probe
+  // answers for the whole feature. It probes the two syllabus columns rather
+  // than `exam_date`, because `exam_date` may already be present from
+  // 20260911140000 on a database that never got this file — probing it would
+  // report "syllabus supported" over columns that are not there.
+  studySetSyllabus: { table: 'study_sets', column: 'syllabus_note_id, syllabus_summary' },
 };
 
 async function resolveCapability(db: unknown, capability: Capability): Promise<boolean> {
@@ -249,6 +260,23 @@ export function markPracticeFoldersMissing(): void {
   inFlight.practiceFolders = null;
 }
 
+/**
+ * Does `study_sets` carry `syllabus_note_id` / `syllabus_summary` (and with
+ * them `exam_date`)? False means 20260918150000 is unapplied: the set list
+ * degrades to "no syllabus", the set home hides the Sync card, and
+ * POST /study-sets/:id/syllabus answers 503 BEFORE charging an AI use for
+ * work it could not store.
+ */
+export function hasStudySetSyllabus(db: unknown): Promise<boolean> {
+  return resolveCapability(db, 'studySetSyllabus');
+}
+
+/** Call from a query that saw 42703/PGRST204, then degrade or refuse. */
+export function markStudySetSyllabusMissing(): void {
+  resolved.studySetSyllabus = { value: false, at: Date.now() };
+  inFlight.studySetSyllabus = null;
+}
+
 /** Is the denormalised `messages.reactions` / `dm_messages.reactions` available? */
 export function hasMessageReactionsColumn(db: unknown): Promise<boolean> {
   return resolveCapability(db, 'messageReactionsColumn');
@@ -301,6 +329,7 @@ export function setSchemaCapabilities(next: {
   communityEventFields?: boolean | null;
   communityInvites?: boolean | null;
   practiceFolders?: boolean | null;
+  studySetSyllabus?: boolean | null;
 }): void {
   for (const key of Object.keys(next) as Capability[]) {
     const value = next[key];
