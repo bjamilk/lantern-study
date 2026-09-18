@@ -122,6 +122,7 @@ import { CreateFromSource } from './CreateFromSource';
 import { NoteRoomRow } from './NoteRoomRow';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
 import { SetRoomHeader, type SetRoomHeaderMenuItem } from './SetRoomHeader';
+import { SetRoomTopBar } from './SetRoomTopBar';
 import { SetRoomFocusBar } from './SetRoomFocusBar';
 import { shareStudySet } from './shareStudySet';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
@@ -1469,6 +1470,52 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   // panel. See hooks/useFocusSidebarCollapse.
   useFocusSidebarCollapse(focusMode);
 
+  /**
+   * The set room's header, as an OBJECT rather than as chrome — identity tile,
+   * serif name, gear, and the stats row carrying the plan's counts and its
+   * progress. `ScreenHeader` (for a course room) can only draw a title and a
+   * button row, which is why a set used to read as a page rather than as a
+   * thing the student owns.
+   *
+   * Hoisted to a const because it is rendered in TWO places and must stay one
+   * element: above the scroller for a studio (where it is the compact header),
+   * and INSIDE the scroller on home, so it scrolls away exactly as the
+   * reference's does. Pinned, it ate ~90px of every scrolled view — a set's
+   * name and its topic counts are not something you need in front of you while
+   * you read the eighth material card.
+   */
+  const setHeader = studySetId ? (
+        <SetRoomHeader
+          setId={studySetId}
+          title={label}
+          coverPath={studySet?.coverPath}
+          tileHue={studySet?.tileHue}
+          tileGlyph={studySet?.tileGlyph}
+          progress={activity === 'home' ? roomProgress : null}
+          counts={activity === 'home' ? roomCounts : undefined}
+          visibility={studySet?.visibility}
+          variant={activity === 'home' ? 'home' : 'compact'}
+          mode={studySet?.mode ?? null}
+          // `mode` is already an end-to-end field — the plan's own
+          // `pickRecommendedTopic` reads it and the settings screen writes
+          // it — so Mode needed no migration and no new column: it is the
+          // SAME store action, surfaced where a student stands.
+          onSelectMode={
+            studySet
+              ? (next) => {
+                  void updateSet(studySetId, { mode: next }).catch(() => undefined);
+                }
+              : undefined
+          }
+          onOpenSettings={() => setSettingsOpen(true)}
+          // The timer, Chat and the kebab moved UP into `SetRoomTopBar`:
+          // they are actions on the ROOM, and leaving them here made the
+          // set's own name carry a toolbar. The header is now the set as an
+          // object — tile, title, gear, stats — and nothing else.
+          menu={[]}
+        />
+  ) : null;
+
   const roomMenu: SetRoomHeaderMenuItem[] = studySetId
     ? [
         ...(activity !== 'home'
@@ -1601,14 +1648,39 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       {/* Study/Library. A tab bar is a choice between two PLACES, and a student
           inside a quiz has already chosen one — so it is drawn on the set home
           and nowhere else. The focus bar's Back button is the way out. */}
-      {!focusActivity ? (
+      {focusActivity ? null : studySetId ? (
+        // The set room's own top bar: where you are, and what you can do to
+        // the whole set. It replaces the Study/Library tab row INSIDE a set —
+        // a tab row that switches destination is a strange thing to leave in
+        // a room the student has already entered, and Library is still two
+        // clicks away (the kebab's `All materials`, the rail's `View all`).
+        <SetRoomTopBar
+          setName={label}
+          onOpenStudy={() => {
+            openPicker();
+            navigateTo(AppMode.STUDY_HUB);
+          }}
+          onShare={() =>
+            void shareStudySet({
+              setId: studySetId,
+              title: label,
+              visibility: studySet?.visibility,
+            })
+          }
+          timer={<StudySetTimer setId={studySetId} />}
+          // Only where there is no rail at all — the rail's own Chat row is
+          // the control whenever a rail exists (#126).
+          {...(rail.mode === 'none' ? { onOpenChat: () => openSetChat() } : {})}
+          menu={roomMenu}
+        />
+      ) : (
         <StudyWorkspaceBar
           active="study"
           onSelect={(section) => {
             if (section === 'library') onOpenLibrary();
           }}
         />
-      ) : null}
+      )}
       {/* Room layout, and THE ELEMENT THE COMPANION IS MEASURED AGAINST: its
           width is what the room actually has, after the shell's sidebar and
           chats flyout have taken theirs. `rail.rowRef` observes it; nothing
@@ -1628,12 +1700,20 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           rail.mode === 'none' ? 'flex-col' : 'flex-row'
         }`}
       >
+        {/* THE MEASURED CONTENT COLUMN. The reference holds set home to 728px
+            inside a 976px main column with 24px gutters — a line of body copy
+            at 14px stops being one at about 90 characters, and an 790px-wide
+            wall of 40px pills is what made Lantern's room read as a dashboard.
+            `items-center` + `max-w` on the two children rather than a wrapper
+            div, so the documented min-h-0 / shrink-0 chain below is untouched.
+            Only on set HOME: a studio (quiz, notes, the plan timeline) wants
+            every pixel the room has. */}
         <div
           className={`flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden px-4 md:px-6 ${
             focusActivity ? 'pt-0' : 'pt-4'
-          }`}
+          } ${activity === 'home' && studySetId ? 'items-center' : ''}`}
         >
-        <div className="shrink-0">
+        <div className={`shrink-0 ${activity === 'home' && studySetId ? 'w-full max-w-[728px]' : ''}`}>
         {focusActivity && studySetId ? (
           // The bleed puts the bar's hairline against the window edge while the
           // studio below keeps the room's gutter. Negative margin only — no new
@@ -1658,34 +1738,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             />
           </div>
         ) : studySetId ? (
-          // The set room's header is the SET AS AN OBJECT — identity tile,
-          // serif name, gear, and a bordered chip strip carrying the plan's
-          // counts and its progress. `ScreenHeader` (below, for a course room)
-          // can only draw a title and a button row, which is why a set used to
-          // read as a page rather than as a thing the student owns.
-          <SetRoomHeader
-            setId={studySetId}
-            title={label}
-            coverPath={studySet?.coverPath}
-            tileHue={studySet?.tileHue}
-            tileGlyph={studySet?.tileGlyph}
-            progress={activity === 'home' ? roomProgress : null}
-            counts={activity === 'home' ? roomCounts : undefined}
-            visibility={studySet?.visibility}
-            onOpenSettings={() => setSettingsOpen(true)}
-            menu={roomMenu}
-            controls={
-              <>
-                <StudySetTimer setId={studySetId} />
-                {rail.mode === 'none' ? (
-                  <Button variant="secondary" onClick={() => openSetChat()} aria-label="Chat">
-                    <AppIcon name="chatbubbles" size={16} />
-                    <span className="ml-1.5">Chat</span>
-                  </Button>
-                ) : null}
-              </>
-            }
-          />
+          // On HOME the header is rendered INSIDE the scroller instead (see
+          // `setHeader` and the `header` prop below): it is the set as an
+          // object, not chrome, and the reference scrolls it away. Only the
+          // 52px top bar is pinned. Here it is the compact header a studio
+          // wears, which does belong above the scroll.
+          activity === 'home' ? null : setHeader
         ) : (
           <ScreenHeader
             title={label}
@@ -1734,7 +1792,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         ) : null}
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
+            activity === 'home' && studySetId ? 'w-full max-w-[728px]' : ''
+          }`}
+        >
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row">
         {/* Materials column. Hidden on a study set — the set rail already
             holds Upload and the materials tree — and while a note is open
@@ -2005,6 +2067,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               }}
               onOpenPlan={() => go('plan')}
               onOpenLibrary={onOpenLibrary}
+              header={setHeader}
               onGenerateFromTopic={(brief) => void handleCreateFromTopic(brief, 'materials')}
               footer={
                 <SetRoomFooter

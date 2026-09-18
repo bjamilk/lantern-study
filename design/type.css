@@ -29,31 +29,54 @@
 :root {
   --type-scale: 1;
 
+  /* ===== 2026-09-17, StudyFetch parity wave 1 =====
+     The steps below are the roles MEASURED off the reference set room at
+     1440x900 (docs/studyfetch-mysets-2026-09-17/02-style-and-subpages.md),
+     not a redesign: heading 24/32 weight 500, eyebrow 18/28 weight 500,
+     base 14/20 for every label, button and body-ui string, meta 12/16.
+
+     TRACKING IS NORMAL. Every negative track on this ladder is gone. The
+     reference measures `letter-spacing: normal` on every role, and the two
+     -0.02em steps were the loudest single difference between a Lantern
+     heading and a StudyFetch one: at 24px, -0.02em pulls half a pixel out of
+     every gap and reads as a condensed face rather than a set one.
+
+     WEIGHT 500, NOT 700. The display voice is a serif now; 700 Bitter at 24px
+     is a poster weight. 500 is what the reference sets and what the shipped
+     Bitter 400/600 faces bracket. */
   --type-display-size: calc(28px * var(--type-scale));
-  --type-display-lh: calc(34px * var(--type-scale));
-  --type-display-weight: 700;
-  --type-display-tracking: -0.02em;
+  --type-display-lh: calc(36px * var(--type-scale));
+  --type-display-weight: 500;
+  --type-display-tracking: 0;
 
-  --type-title-size: calc(22px * var(--type-scale));
-  --type-title-lh: calc(28px * var(--type-scale));
-  --type-title-weight: 700;
-  --type-title-tracking: -0.02em;
+  --type-title-size: calc(24px * var(--type-scale));
+  --type-title-lh: calc(32px * var(--type-scale));
+  --type-title-weight: 500;
+  --type-title-tracking: 0;
 
-  --type-heading-size: calc(17px * var(--type-scale));
-  --type-heading-lh: calc(24px * var(--type-scale));
-  --type-heading-weight: 600;
-  --type-heading-tracking: -0.011em;
+  --type-heading-size: calc(18px * var(--type-scale));
+  --type-heading-lh: calc(28px * var(--type-scale));
+  --type-heading-weight: 500;
+  --type-heading-tracking: 0;
 
-  --type-body-size: calc(15px * var(--type-scale));
-  --type-body-lh: calc(22px * var(--type-scale));
+  --type-body-size: calc(14px * var(--type-scale));
+  --type-body-lh: calc(20px * var(--type-scale));
   --type-body-weight: 400;
-  --type-body-tracking: -0.011em;
+  --type-body-tracking: 0;
 
-  --type-caption-size: max(12px, calc(13px * var(--type-scale)));
-  --type-caption-lh: calc(18px * var(--type-scale));
+  /* The floor moves with the base: 12px scaled by the Small setting is
+     10.5px, so meta keeps a max() the same way label does. */
+  --type-caption-size: max(11px, calc(12px * var(--type-scale)));
+  --type-caption-lh: calc(16px * var(--type-scale));
   --type-caption-weight: 400;
   --type-caption-tracking: 0;
 
+  /* THE ONE STEP THAT KEEPS ITS TRACKING, deliberately. `label` is Lantern's
+     uppercase micro-role (rail section eyebrows, badges, tab labels); the
+     reference has no such role, so there is no measurement to match. Uppercase
+     at 11px with normal tracking is the legibility case positive tracking
+     exists for, and dropping it to match a role the reference does not have
+     would be the parity pass making the app harder to read. */
   --type-label-size: max(11px, calc(11px * var(--type-scale)));
   --type-label-lh: calc(16px * var(--type-scale));
   --type-label-weight: 600;

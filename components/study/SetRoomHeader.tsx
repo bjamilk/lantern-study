@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { StudySetPlanProgress } from '@lantern/shared';
-import { AppIcon } from '../ui/AppIcon';
+import { STUDY_SET_MODES, type StudySetMode, type StudySetPlanProgress } from '@lantern/shared';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 import { FEATURE_INK_BG, FEATURE_TINT_BG } from '../ui/featureClasses';
+import { Menu, MenuContent, MenuItem, MenuTrigger } from '../ui/Menu';
 import { SetTile } from './SetRoomTile';
 
 export interface SetRoomHeaderMenuItem {
@@ -9,6 +10,33 @@ export interface SetRoomHeaderMenuItem {
   label: string;
   onSelect: () => void;
 }
+
+/**
+ * The three numbers, in the reference's order, each with its own 16px glyph.
+ *
+ * They were a run of bare numerals on one quiet line, which reads as a
+ * sentence rather than as three separate facts — and `covered` and `mastered`
+ * mean different things, so a student has to be able to find one of them
+ * without reading the other two.
+ */
+const STAT_ICONS: Record<'topics' | 'covered' | 'mastered', AppIconName> = {
+  topics: 'list',
+  covered: 'checkmark-circle',
+  mastered: 'trophy',
+};
+
+/**
+ * A 32px control with a 44px hit target, which is the whole reason this class
+ * exists rather than an `h-11 w-11`: the reference's icon buttons are 32×32
+ * and making them physically bigger would be a different design, so the extra
+ * 12px is a transparent pseudo-element that the pointer and the touch screen
+ * can both find. `relative` + `after:absolute` only — nothing reflows.
+ */
+const ICON_BUTTON_32 =
+  'relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ' +
+  "after:absolute after:content-[''] after:-inset-1.5 " +
+  'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text ' +
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40';
 
 interface SetRoomHeaderProps {
   /** The set's id, so its identity tile matches the one on its card. */
@@ -42,6 +70,20 @@ interface SetRoomHeaderProps {
   /** The gear. Kept OUT of the kebab: it is the one setting students look for. */
   onOpenSettings: () => void;
   menu: readonly SetRoomHeaderMenuItem[];
+  /**
+   * `home` is the set's own front door: a 64px tile and the stats row under
+   * the title, as measured. `compact` is the same header worn while a studio
+   * is open, where the set is a label rather than the subject — a 64px tile
+   * and a progress bar over a quiz would be a second page header.
+   */
+  variant?: 'home' | 'compact';
+  /**
+   * The set's study mode, and the way to change it. Both optional: a caller
+   * with no set row in hand draws the stats row without the Mode control
+   * rather than drawing a control that cannot save.
+   */
+  mode?: StudySetMode | null;
+  onSelectMode?: (mode: StudySetMode) => void;
 }
 
 /**
@@ -63,9 +105,15 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
   onOpenSettings,
   menu,
   controls,
+  variant = 'compact',
+  mode,
+  onSelectMode,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [modeOpen, setModeOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const home = variant === 'home';
+  const activeMode = STUDY_SET_MODES.find((item) => item.id === (mode || 'standard'));
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -88,6 +136,87 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
       ? Math.round((progress.covered / progress.topics) * 100)
       : null;
 
+  const statsRow =
+    progress || counts ? (
+      // 38px high, as measured: the three counts with their own glyphs, the
+      // bar, and Mode. A ROW rather than a line of prose under the title —
+      // "covered" and "mastered" are different facts and a student has to be
+      // able to find one without reading the other two.
+      <div
+        data-testid="set-room-stats"
+        className="mt-1 flex min-h-[38px] flex-wrap items-center gap-x-4 gap-y-1 text-caption text-lantern-text-secondary"
+      >
+        {progress ? (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <AppIcon name={STAT_ICONS.topics} size={16} aria-hidden className="shrink-0" />
+              <span className="tabular-nums text-lantern-text">{progress.topics}</span> Topics
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <AppIcon name={STAT_ICONS.covered} size={16} aria-hidden className="shrink-0" />
+              <span className="tabular-nums text-lantern-text">{progress.covered}</span> Covered
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <AppIcon name={STAT_ICONS.mastered} size={16} aria-hidden className="shrink-0" />
+              <span className="tabular-nums text-lantern-text">{progress.mastered}</span> Mastered
+            </span>
+          </>
+        ) : (
+          <span>{counts}</span>
+        )}
+        {percent === null ? null : (
+          <span className="inline-flex min-w-[8rem] flex-1 items-center gap-2">
+            <span
+              className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full ${FEATURE_TINT_BG.ai}`}
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Topics covered"
+            >
+              {/* `motion-reduce:transition-none`: the bar grows as topics are
+                  covered, and a student who asked for less motion gets the new
+                  width without the slide. */}
+              <span
+                className={`block h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none ${FEATURE_INK_BG.ai}`}
+                style={{ width: `${percent}%` }}
+              />
+            </span>
+            <span className="tabular-nums">{percent}%</span>
+          </span>
+        )}
+        {onSelectMode && activeMode ? (
+          <Menu open={modeOpen} onOpenChange={setModeOpen}>
+            <MenuTrigger
+              aria-label={`Mode: ${activeMode.label}. Change study mode`}
+              title={`Mode: ${activeMode.label}`}
+              className={ICON_BUTTON_32}
+            >
+              <AppIcon name="ellipsis-vertical" size={16} />
+            </MenuTrigger>
+            <MenuContent align="end" placement="bottom">
+              {STUDY_SET_MODES.map((item) => (
+                <MenuItem
+                  key={item.id}
+                  title={item.promise}
+                  onSelect={() => onSelectMode(item.id)}
+                  icon={
+                    <AppIcon
+                      name={item.id === activeMode.id ? 'radio-button-on' : 'radio-button-off'}
+                      size={16}
+                      className="shrink-0"
+                    />
+                  }
+                >
+                  {item.label}
+                </MenuItem>
+              ))}
+            </MenuContent>
+          </Menu>
+        ) : null}
+      </div>
+    ) : null;
+
   return (
     <header className="mb-2">
       <div className="flex items-center gap-3">
@@ -98,57 +227,21 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
             coverPath={coverPath}
             tileHue={tileHue}
             tileGlyph={tileGlyph}
-            size={40}
+            size={home ? 64 : 40}
           />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <h1 className="text-title text-lantern-text truncate">{title}</h1>
               <button
                 type="button"
                 onClick={onOpenSettings}
                 aria-label="Study set settings"
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
+                className={ICON_BUTTON_32}
               >
                 <AppIcon name="settings" size={16} />
               </button>
             </div>
-            {progress || counts ? (
-              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-lantern-text-secondary">
-                {progress ? (
-                  <>
-                    <span>
-                      <span className="tabular-nums text-lantern-text">{progress.topics}</span> topics
-                    </span>
-                    <span>
-                      <span className="tabular-nums text-lantern-text">{progress.covered}</span> covered
-                    </span>
-                    <span>
-                      <span className="tabular-nums text-lantern-text">{progress.mastered}</span> mastered
-                    </span>
-                  </>
-                ) : (
-                  <span>{counts}</span>
-                )}
-                {percent === null ? null : (
-                  <span className="inline-flex w-24 items-center gap-1.5">
-                    <span
-                      className={`h-1 min-w-0 flex-1 overflow-hidden rounded-full ${FEATURE_TINT_BG.ai}`}
-                      role="progressbar"
-                      aria-valuenow={percent}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-label="Topics covered"
-                    >
-                      <span
-                        className={`block h-full rounded-full ${FEATURE_INK_BG.ai}`}
-                        style={{ width: `${percent}%` }}
-                      />
-                    </span>
-                    <span className="tabular-nums">{percent}%</span>
-                  </span>
-                )}
-              </p>
-            ) : null}
+            {statsRow}
           </div>
         </div>
         {controls ? <div className="flex shrink-0 items-center gap-2">{controls}</div> : null}
@@ -160,7 +253,7 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               aria-label="Study set actions"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
+              className={ICON_BUTTON_32}
             >
               <AppIcon name="ellipsis-vertical" size={18} />
             </button>

@@ -43,8 +43,16 @@ describe('the set room asks one predicate which state it is in', () => {
     expect(flat(ROOM)).toContain('useFocusSidebarCollapse(focusMode);');
   });
 
-  it('gates the Study/Library tab bar on it', () => {
-    expect(flat(ROOM)).toContain('{!focusActivity ? ( <StudyWorkspaceBar');
+  it('gates the room’s top bar on it, and picks the right one', () => {
+    // Since the 2026-09-17 parity pass there are two: a set room gets
+    // `SetRoomTopBar` (breadcrumb + Share + timer + kebab) and a course room
+    // keeps the Study/Library tabs. Focus mode gets neither — the focus bar
+    // (#104) is a studio's whole chrome.
+    expect(flat(ROOM)).toContain('{focusActivity ? null : studySetId ? (');
+    expect(flat(ROOM)).toContain(') : ( <StudyWorkspaceBar');
+    expect(ROOM.match(/<SetRoomTopBar/g)?.length).toBe(1);
+    // Two: this one, and the loading / set-unavailable early return above it.
+    expect(ROOM.match(/<StudyWorkspaceBar/g)?.length).toBe(2);
   });
 
   it('draws the focus bar instead of the old header, never both', () => {
@@ -67,10 +75,14 @@ describe('the set room asks one predicate which state it is in', () => {
   });
 });
 
-describe('the app shell hides its breadcrumb strip in focus', () => {
-  it('uses the same predicate, off the same parsed URL', () => {
-    expect(APP).toContain('isSetRoomFocusPath');
-    expect(flat(APP)).toContain('|| isSetRoomFocusPath(studySetPath)');
+describe('the app shell hides its breadcrumb strip inside a set room', () => {
+  it('hides it in EVERY set-room state, off the same parsed URL', () => {
+    // #104 hid it in focus only. Since the 2026-09-17 parity pass the set room
+    // has its own top bar on home too, whose left half is the same
+    // "Study › <set>" trail — so outside focus the shell strip was the same
+    // words twice, 52px apart. The test is now "are we in a set at all".
+    expect(flat(APP)).toContain('|| Boolean(studySetPath)');
+    expect(flat(APP)).not.toContain('|| isSetRoomFocusPath(studySetPath)');
   });
 });
 

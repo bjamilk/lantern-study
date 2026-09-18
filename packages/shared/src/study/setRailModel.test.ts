@@ -64,10 +64,12 @@ describe('buildSetRailModel', () => {
       'Quiz',
       'Test',
       'Flashcards',
-      'Arcade',
+      'Play',
       'Essay',
-      'Walkthrough',
       'Recap',
+      // Lantern's own door, kept at the end: the reference's drawer stops at
+      // Recap, and the set-home wall no longer draws Walkthrough either.
+      'Walkthrough',
     ]);
   });
 

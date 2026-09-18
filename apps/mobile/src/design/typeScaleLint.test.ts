@@ -65,7 +65,10 @@ describe('type scale', () => {
   it('holds the 11 sp floor and the six steps', () => {
     expect(MIN_FONT_SIZE).toBe(11);
     const sizes = Object.values(typeScale).map((s) => s.fontSize);
-    expect(sizes).toEqual([28, 22, 17, 15, 13, 11]);
+    // Re-measured 2026-09-17 with web (packages/shared design/tokens.ts):
+    // 24/32 heads, 18/28 eyebrow, 14/20 base, 12/16 meta. The floor is
+    // unchanged, and `label` — the only step at it — is unchanged with it.
+    expect(sizes).toEqual([28, 24, 18, 14, 12, 11]);
     expect(Math.min(...sizes)).toBeGreaterThanOrEqual(11);
     for (const step of Object.values(typeScale)) {
       // Leading is set on every step; none inherits RN's font-dependent default.

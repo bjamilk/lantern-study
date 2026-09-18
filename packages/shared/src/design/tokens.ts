@@ -95,7 +95,19 @@ const lightBase = {
   // copy is a neutral near-black, and a slate secondary under a neutral
   // primary is the same two-ink tell one level down. Both land ABOVE the
   // slate values they replace (7.81 vs 7.58 on white).
-  textSecondary: '#525252',
+  // 2026-09-17 parity: the reference measures #716d66 here — a WARM grey of
+  // the same ink, which is what seats secondary copy on the paper ground
+  // rather than on top of it, and the direction this token now takes.
+  //
+  // NOT the measured value itself, deliberately. #716d66 is 3.88:1 on the AI
+  // lilac tint (#f5d5ff), which is where the study plan sets secondary copy —
+  // `apps/mobile/src/components/study/studyPlanContrast.test.ts` catches it
+  // and `npm run design:contrast` does not, because the web gate does not pair
+  // this ink with the feature tints. #5e5a54 is the same warm hue two steps
+  // darker: 4.69:1 on that lilac, 5.74:1 on the page, 6.22:1 on a white card.
+  // Taking the hue and refusing the luminance is the "keep Lantern's
+  // accessibility wins" rule applied literally.
+  textSecondary: '#5e5a54',
   // UI-02: #64748b was 4.39:1 on the warm background at the 10-12px sizes
   // this token styles; the neutral #666666 clears AA everywhere the old
   // #5b6a7f did (5.74 white / 5.41 cream / 4.53 on the putty tint).
@@ -157,9 +169,11 @@ const lightBase = {
   // on cream (5.48) and white (5.93) and is the value `--color-info` carries.
   info: '#0369a1',
   infoBackground: '#e0f2fe',
-  // Hairline, not a rule: StudyFetch separates planes with a warm grey one
-  // step off the second plane, which is why its cards float without shadows.
-  border: '#eceae0',
+  // Hairline, not a rule: the reference separates planes with a 1px grey and
+  // no shadow at all, which is why its cards read as a page rather than a pile
+  // of stickers. Re-measured 2026-09-17 as the neutral #e5e5e5 — the warm
+  // #eceae0 it replaces vanished against a white card at 1px.
+  border: '#e5e5e5',
   borderLight: '#f0eee6',
   tabBar: '#ffffff',
   tabBarBorder: '#eceae0',
@@ -206,7 +220,10 @@ const darkBase = {
   // and `text` differed from `primary` (#f5f5f5) by a hair nobody chose.
   // `text` IS dark's primary ink now, and the two greys below are plain greys.
   text: '#f5f5f5',
-  textSecondary: '#b3b3b3',
+  // Warmed in lockstep with light's #716d66 (2026-09-17): a warm secondary ink
+  // in one theme and a cold one in the other is the two-ink tell this palette
+  // spent a wave removing. 9.6:1 on #000, 8.6:1 on #101214.
+  textSecondary: '#b3aea4',
   // UI-01 still holds: this must clear 4.5:1 on every dark surface, which
   // #8c8c8c does (6.25:1 on #000, 5.6:1 on #101214); #64748b did not.
   textTertiary: '#8c8c8c',
@@ -476,11 +493,18 @@ export const radius = {
  * tracking pre-multiplied for React Native, which takes points only — the
  * exact product, unrounded, so it equals apps/mobile/src/design/typeScale.ts
  * and apps/mobile/tailwind.config.js digit for digit.
+ *
+ * 2026-09-17, StudyFetch parity wave 1: the five upper steps were re-measured
+ * off the reference set room (24/32 heads, 18/28 eyebrow, 14/20 base, 12/16
+ * meta) and every negative tracking value on the ladder is now `0` — the
+ * reference sets `letter-spacing: normal` on every role. `label` alone keeps
+ * its +0.04em, because it is Lantern's uppercase micro-role and the reference
+ * has no counterpart to measure; see design/type.css.
  */
 export type TypeStep = {
   fontSize: number;
   lineHeight: number;
-  fontWeight: '400' | '600' | '700';
+  fontWeight: '400' | '500' | '600' | '700';
   letterSpacing: string;
   letterSpacingPx: number;
 };
@@ -506,39 +530,39 @@ export const type: Record<TypeStepName, TypeStep> = {
   /** hero greeting, score numeral */
   display: {
     fontSize: 28,
-    lineHeight: 34,
-    fontWeight: '700',
-    letterSpacing: '-0.02em',
-    letterSpacingPx: -0.56,
+    lineHeight: 36,
+    fontWeight: '500',
+    letterSpacing: '0',
+    letterSpacingPx: 0,
   },
-  /** every screen h1, modal title */
+  /** every screen h1, modal title, section head — the measured 24/32 */
   title: {
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '700',
-    letterSpacing: '-0.02em',
-    letterSpacingPx: -0.44,
+    fontSize: 24,
+    lineHeight: 32,
+    fontWeight: '500',
+    letterSpacing: '0',
+    letterSpacingPx: 0,
   },
-  /** section h2, card title, flashcard face */
+  /** section eyebrow, card title — the measured 18/28 */
   heading: {
-    fontSize: 17,
-    lineHeight: 24,
-    fontWeight: '600',
-    letterSpacing: '-0.011em',
-    letterSpacingPx: -0.187,
+    fontSize: 18,
+    lineHeight: 28,
+    fontWeight: '500',
+    letterSpacing: '0',
+    letterSpacingPx: 0,
   },
-  /** all prose, chat, list titles (which take weight 600) */
+  /** all prose, buttons, labels, chat, list titles — the measured 14/20 base */
   body: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
     fontWeight: '400',
-    letterSpacing: '-0.011em',
-    letterSpacingPx: -0.165,
+    letterSpacing: '0',
+    letterSpacingPx: 0,
   },
-  /** secondary copy, timestamps, stat labels */
+  /** meta: secondary copy, timestamps, stat labels — the measured 12/16 */
   caption: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '400',
     letterSpacing: '0',
     letterSpacingPx: 0,
@@ -554,7 +578,13 @@ export const type: Record<TypeStepName, TypeStep> = {
 };
 
 export const typeStack = {
-  sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  /**
+   * WEB ships Inter (latin subset, 400/500/600, public/fonts/inter-latin-*.woff2);
+   * MOBILE has no font bytes and resolves straight past it to the platform UI
+   * face, which is the same decision `serif` records below. The name leads the
+   * stack on both so the two platforms have one string, not two.
+   */
+  sans: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   /**
    * System serif only. A real display face (Crimson Pro) is a Wave V3
    * decision scoped to web `.prose` and page `h1`; it is deliberately not

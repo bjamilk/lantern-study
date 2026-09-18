@@ -58,19 +58,38 @@ export const RoomRecommendationCard: React.FC<RoomRecommendationCardProps> = ({
   const [showAbout, setShowAbout] = useState(false);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-lantern-border bg-lantern-surface">
+    // The measured card: 235×200, `rounded-xl` (r12), one hairline, no shadow.
+    // `min-h` rather than `h`, because the About disclosure expands INSIDE it
+    // and a fixed height would either clip that sentence or force it into a
+    // popover — and the whole reason About is a disclosure is that a tooltip
+    // does not exist on a touch screen.
+    <div className="relative flex min-h-[200px] flex-col overflow-hidden rounded-xl border border-lantern-border bg-lantern-surface">
+      {/* `About ⓘ` is the card's TOP-RIGHT corner, at an 8px inset, as
+          measured — not a footer control. It sits OUTSIDE the card button (a
+          <button> inside a <button> is markup the keyboard cannot reach) and
+          above it in the stacking order, so the ring is drawn over the
+          illustration band. */}
+      <button
+        type="button"
+        onClick={() => setShowAbout((value) => !value)}
+        aria-expanded={showAbout}
+        aria-label={`About ${label}`}
+        // 16×16 glyph with a 44px hit target from the pseudo-element rather
+        // than from a bigger mark — the reference's (i) is 16px.
+        className="absolute right-2 top-2 z-10 inline-flex h-4 w-4 items-center justify-center rounded-full text-lantern-text-secondary after:absolute after:-inset-3.5 after:content-[''] hover:text-lantern-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
+      >
+        <AppIcon name="information-circle" size={16} />
+      </button>
       <button
         type="button"
         onClick={onClick}
-        className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lantern-ink/40"
+        className="block w-full flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lantern-ink/40"
       >
         <div
-          className={`flex h-24 items-center justify-center ${FEATURE_TINT_BG[feature]} ${FEATURE_PANEL_INK_TEXT[feature]}`}
+          className={`flex h-[104px] items-center justify-center ${FEATURE_TINT_BG[feature]} ${FEATURE_PANEL_INK_TEXT[feature]}`}
         >
           {scene ? (
-            // The band is 96px tall; 80 leaves the scene a margin without
-            // making it a stamp in the middle of the panel.
-            <TileScene scene={scene} feature={feature} height={80} />
+            <TileScene scene={scene} feature={feature} height={84} />
           ) : illustration ? (
             <Illustration
               name={illustration}
@@ -82,25 +101,25 @@ export const RoomRecommendationCard: React.FC<RoomRecommendationCardProps> = ({
             <AppIcon name={icon} size={40} aria-hidden />
           )}
         </div>
-        <div className="px-4 pt-3">
-          <p className="text-caption text-lantern-text-secondary">{eyebrow}</p>
-          <p className="text-heading text-lantern-text mt-0.5">{label}</p>
+        {/* THE EYEBROW IS THE CARD'S VOICE, and it is the serif: doc 02
+            measures it Bitter 18/28 weight 500 in the body ink, the same role
+            as a section eyebrow. It shipped as 14px secondary sans, which read
+            as a caption above a label — two quiet lines and no hierarchy. The
+            label under it is the 14/500 the reference sets, with the 16px
+            glyph that tells three cards apart at a glance.
+            `font-display` explicitly: only `text-display` / `text-title` carry
+            the family, and this is the `heading` step. */}
+        <div className="px-3 pt-2.5">
+          <p className="text-heading font-display text-lantern-text">{eyebrow}</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-body font-medium text-lantern-text-secondary">
+            <AppIcon name={icon} size={16} aria-hidden className="shrink-0" />
+            <span className="min-w-0 truncate">{label}</span>
+          </p>
         </div>
       </button>
-      <div className="px-4 pb-3">
-        <button
-          type="button"
-          onClick={() => setShowAbout((value) => !value)}
-          aria-expanded={showAbout}
-          className="inline-flex min-h-[36px] items-center gap-1.5 text-caption text-lantern-text-secondary hover:text-lantern-text"
-        >
-          About
-          <AppIcon name="information-circle" size={14} />
-        </button>
-        {showAbout ? (
-          <p className="text-caption text-lantern-text-secondary pb-1">{about}</p>
-        ) : null}
-      </div>
+      {showAbout ? (
+        <p className="px-3 pb-2.5 text-caption text-lantern-text-secondary">{about}</p>
+      ) : null}
     </div>
   );
 };

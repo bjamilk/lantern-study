@@ -182,8 +182,22 @@ const SetRail: React.FC<SetRailProps> = ({
     [onNavigate, onToggleCompanion]
   );
 
+  /**
+   * A rail row: 32px tall with a 14/500 label and a 16px glyph, as measured
+   * off the reference on 2026-09-17. It was `p-2.5`, i.e. ~40px, which put
+   * four fewer rows on a laptop screen than the reference fits and pushed the
+   * materials tree below the fold on every set.
+   *
+   * WHY NO 44px PSEUDO-TARGET HERE, when every other 32px control in this wave
+   * got one. These rows are a dense VERTICAL list: a target that overflows its
+   * row by 6px top and bottom overlaps its neighbours, and the later sibling
+   * wins — so a student aiming at `Chat` would open `Tutor`. Stealing an
+   * adjacent row's clicks is a worse accessibility outcome than a 32px height,
+   * and the target here is the full width of the rail, which clears WCAG
+   * 2.5.8's 24×24 minimum with room to spare.
+   */
   const rowClass = (active: boolean) =>
-    `w-full flex items-center gap-3 rounded-xl p-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-colors duration-150 ${
+    `w-full flex h-8 items-center gap-2.5 rounded-xl px-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-colors duration-150 motion-reduce:transition-none ${
       active
         ? 'bg-lantern-nav-column-active text-lantern-nav-column-text font-semibold'
         : 'text-lantern-nav-column-text-secondary hover:bg-white/10 hover:text-lantern-nav-column-text'
@@ -202,7 +216,7 @@ const SetRail: React.FC<SetRailProps> = ({
         className={`${rowClass(active)} ${expanded && indented ? 'pl-9' : ''}`}
       >
         <AppIcon name={link.icon} size={16} className="flex-shrink-0" />
-        {expanded ? <span className="min-w-0 flex-1 truncate text-body tracking-tight">{link.label}</span> : null}
+        {expanded ? <span className="min-w-0 flex-1 truncate text-body font-medium">{link.label}</span> : null}
       </button>
     );
   };
@@ -214,10 +228,10 @@ const SetRail: React.FC<SetRailProps> = ({
       onClick={() => onNavigate(note.path)}
       title={note.label}
       aria-current={note.active ? 'page' : undefined}
-      className={`${rowClass(note.active)} py-1.5 ${expanded ? 'pl-9' : ''}`}
+      className={`${rowClass(note.active)} ${expanded ? 'pl-9' : ''}`}
     >
-      <AppIcon name="document-text" size={14} className="flex-shrink-0" />
-      {expanded ? <span className="min-w-0 flex-1 truncate text-caption">{note.label}</span> : null}
+      <AppIcon name="document-text" size={16} className="flex-shrink-0" />
+      {expanded ? <span className="min-w-0 flex-1 truncate text-body">{note.label}</span> : null}
     </button>
   );
 
@@ -346,7 +360,7 @@ const SetRail: React.FC<SetRailProps> = ({
           <AppIcon name="game-controller" size={16} className="flex-shrink-0" />
           {expanded ? (
             <>
-              <span className="min-w-0 flex-1 truncate text-body tracking-tight">{model.practice.label}</span>
+              <span className="min-w-0 flex-1 truncate text-body font-medium">{model.practice.label}</span>
               <AppIcon
                 name={practiceOpen ? 'chevron-down' : 'chevron-forward'}
                 size={14}
@@ -369,7 +383,7 @@ const SetRail: React.FC<SetRailProps> = ({
         }`}
       >
         <AppIcon name="add" size={16} className="flex-shrink-0" />
-        {expanded ? <span className="text-caption font-semibold">Upload</span> : null}
+        {expanded ? <span className="text-body font-medium">Upload</span> : null}
       </button>
 
       <div className="mt-3">
@@ -417,15 +431,15 @@ const SetRail: React.FC<SetRailProps> = ({
                         }
                         aria-expanded={open}
                         title={folder.label}
-                        className={`${rowClass(false)} min-w-0 flex-1 py-1.5 text-cyan-300 hover:text-cyan-200`}
+                        className={`${rowClass(false)} min-w-0 flex-1 text-cyan-300 hover:text-cyan-200`}
                       >
                         <AppIcon
                           name={open ? 'chevron-down' : 'chevron-forward'}
                           size={12}
                           className="flex-shrink-0"
                         />
-                        <AppIcon name="folder" size={14} className="flex-shrink-0" />
-                        <span className="min-w-0 flex-1 truncate text-caption">{folder.label}</span>
+                        <AppIcon name="folder" size={16} className="flex-shrink-0" />
+                        <span className="min-w-0 flex-1 truncate text-body font-medium">{folder.label}</span>
                         <span className="flex-shrink-0 text-label">{folder.notes.length}</span>
                       </button>
                       {/* The only folder action that is honest from here: the

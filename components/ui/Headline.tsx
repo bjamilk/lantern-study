@@ -18,8 +18,14 @@ export interface HeadlineProps {
   accent?: string;
   /** Whose ink the accent word is set in. Defaults to the body ink. */
   feature?: FeatureKey;
-  /** `display` (28 px) for a screen's own name, `title` (22 px) for a section. */
-  size?: 'display' | 'title';
+  /**
+   * `display` (28px) for a screen's own name, `title` (24px) for a section,
+   * `eyebrow` (18px) for the line that INTRODUCES a section rather than being
+   * one — "Recommended from your study plan" over the thing it recommends.
+   * The reference measures all three in the serif; `eyebrow` reaches for the
+   * family explicitly because only `text-display` / `text-title` carry it.
+   */
+  size?: 'display' | 'title' | 'eyebrow';
   /** The heading level. Pick by the document outline, never by the size. */
   as?: 'h1' | 'h2' | 'h3';
   className?: string;
@@ -53,7 +59,12 @@ export const Headline: React.FC<HeadlineProps> = ({
   as: Tag = 'h2',
   className = '',
 }) => {
-  const sizeClass = size === 'display' ? 'text-display' : 'text-title';
+  const sizeClass =
+    size === 'display'
+      ? 'text-display'
+      : size === 'eyebrow'
+        ? 'text-heading font-display'
+        : 'text-title';
   const base = `${sizeClass} text-lantern-text ${className}`;
 
   const at = accent ? children.indexOf(accent) : -1;

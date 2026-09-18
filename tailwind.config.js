@@ -37,10 +37,12 @@ module.exports = {
       // fontSize (118), so `font-bold`, `leading-*` and `tracking-*` at a call
       // site still win — the step only supplies the default.
       fontSize: {
-        display: ['var(--type-display-size)', { lineHeight: 'var(--type-display-lh)', letterSpacing: '-0.02em', fontWeight: '700' }],
-        title: ['var(--type-title-size)', { lineHeight: 'var(--type-title-lh)', letterSpacing: '-0.02em', fontWeight: '700' }],
-        heading: ['var(--type-heading-size)', { lineHeight: 'var(--type-heading-lh)', letterSpacing: '-0.011em', fontWeight: '600' }],
-        body: ['var(--type-body-size)', { lineHeight: 'var(--type-body-lh)', letterSpacing: '-0.011em', fontWeight: '400' }],
+        // Tracking is `0em` on every step but `label` as of the 2026-09-17
+        // parity measurement — see design/type.css for why.
+        display: ['var(--type-display-size)', { lineHeight: 'var(--type-display-lh)', letterSpacing: '0em', fontWeight: '500' }],
+        title: ['var(--type-title-size)', { lineHeight: 'var(--type-title-lh)', letterSpacing: '0em', fontWeight: '500' }],
+        heading: ['var(--type-heading-size)', { lineHeight: 'var(--type-heading-lh)', letterSpacing: '0em', fontWeight: '500' }],
+        body: ['var(--type-body-size)', { lineHeight: 'var(--type-body-lh)', letterSpacing: '0em', fontWeight: '400' }],
         caption: ['var(--type-caption-size)', { lineHeight: 'var(--type-caption-lh)', letterSpacing: '0em', fontWeight: '400' }],
         label: ['var(--type-label-size)', { lineHeight: 'var(--type-label-lh)', letterSpacing: '0.04em', fontWeight: '600' }],
       },

@@ -130,8 +130,12 @@ const PRACTICE_IDS: readonly WorkspaceActivityId[] = [
   'cards',
   'play',
   'essay',
-  'walkthrough',
   'recap',
+  // Re-measured 2026-09-17: the reference's drawer ends at Recap. Walkthrough
+  // is Lantern's own door and it stays, at the end, because the set-home wall
+  // no longer draws it — `OwnWayGrid.test.ts` asserts against this list that
+  // nothing the wall dropped became unreachable.
+  'walkthrough',
 ];
 
 /**
@@ -144,7 +148,10 @@ const RAIL_LABELS: Partial<Record<WorkspaceActivityId, string>> = {
   plan: 'Study plan',
   lecture: 'Record lecture',
   cards: 'Flashcards',
-  play: 'Arcade',
+  // `play` had an override to 'Arcade' here while the activity registry, the
+  // focus bar's tool menu and the studio header all said 'Play'. One door, two
+  // words, and the rail was the odd one out — so the override is gone rather
+  // than the other three being changed to match it.
 };
 
 /** Path activities that should light the row for a given activity id. */

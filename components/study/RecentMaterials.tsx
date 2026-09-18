@@ -61,6 +61,17 @@ interface RecentMaterialsProps {
    * Both the grid tile and the list row now carry the same trigger.
    */
   renderNoteMenu?: (note: StudyNote) => React.ReactNode;
+  /**
+   * Sort and the grid/list toggle. OFF on set home (2026-09-17 parity: the
+   * reference puts a type filter there and nothing else), on everywhere the
+   * whole archive is the subject.
+   *
+   * Not a deletion — the two controls are what a set with twenty PDFs called
+   * `lecture-notes` actually needs, and they still ship on the Materials /
+   * Library page. On HOME they are two more choices in front of a student who
+   * came here to study, and the grid is already sorted newest-first.
+   */
+  showViewControls?: boolean;
 }
 
 /**
@@ -94,9 +105,13 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
   onOpenDeck,
   onViewAll,
   renderNoteMenu,
+  showViewControls = true,
 }) => {
   const [filter, setFilter] = useState<MaterialFilter>('all');
-  const [view, setView] = useViewMode('setRoomMaterials', 'grid');
+  const [storedView, setView] = useViewMode('setRoomMaterials', 'grid');
+  // A remembered `list` with no toggle to leave it by is a trap, so the
+  // control being absent also means the view is the grid.
+  const view = showViewControls ? storedView : 'grid';
   const [sort, setSort] = useMaterialSort('setRoomMaterials', 'newest');
 
   const available = useMemo(() => {
@@ -124,12 +139,17 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
         <h2 className="text-title text-lantern-text">Recent materials</h2>
         <div className="flex flex-wrap items-center gap-2">
           {available.length > 1 ? (
-            <label className="inline-flex items-center gap-1.5">
+            // The measured filter: 97×32, white, 1px hairline, r12, with the
+            // 12px caret the native control already draws. A `<select>` rather
+            // than a menu button because it is a one-of-N choice, which is the
+            // control the platform gives a keyboard and a screen reader for
+            // free. 44px hit target from the pseudo-element, not from height.
+            <label className="relative inline-flex items-center gap-1.5">
               <span className="sr-only">Filter materials by type</span>
               <select
                 value={filter}
                 onChange={(event) => setFilter(event.target.value as MaterialFilter)}
-                className="min-h-[40px] rounded-full border border-lantern-border bg-lantern-surface px-3 text-caption text-lantern-text"
+                className="h-8 rounded-xl border border-lantern-border bg-lantern-surface px-2 text-body font-medium text-lantern-text after:absolute after:-inset-1.5 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
               >
                 {available.map((option) => (
                   <option key={option} value={option}>
@@ -139,13 +159,20 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
               </select>
             </label>
           ) : null}
-          <MaterialSortMenu value={sort} onChange={setSort} label="recent materials" />
-          <ViewModeToggle value={view} onChange={setView} label="Recent materials" />
+          {showViewControls ? (
+            <>
+              <MaterialSortMenu value={sort} onChange={setSort} label="recent materials" />
+              <ViewModeToggle value={view} onChange={setView} label="Recent materials" />
+            </>
+          ) : null}
         </div>
       </div>
 
       {view === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        // THREE columns at 233px each with a 12px gutter, as measured — it was
+        // four, which at this column width makes a 180px card whose preview
+        // block shows two lines and stops being a preview.
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((note) => (
             <StudySetMaterialTile
               key={note.id}
@@ -159,21 +186,21 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
               key={deck.id}
               type="button"
               onClick={() => onOpenDeck?.(deck.id)}
-              className="min-h-[11rem] overflow-hidden rounded-2xl border border-lantern-border bg-lantern-surface text-left hover:bg-lantern-background-secondary"
+              className="min-h-[226px] overflow-hidden rounded-xl border border-lantern-border bg-lantern-surface text-left hover:bg-lantern-background-secondary"
             >
-              <div className={`flex h-28 items-center justify-center ${FEATURE_TINT_BG.flashcards}`}>
+              <div className={`flex h-[164px] items-center justify-center ${FEATURE_TINT_BG.flashcards}`}>
                 <AppIcon name="layers" size={32} className="text-lantern-ink" />
               </div>
               <div className="flex items-center gap-2 px-3 py-2.5">
                 <AppIcon name="layers" size={16} className={FEATURE_INK_TEXT.flashcards} />
-                <span className="truncate text-body font-semibold">{deck.name}</span>
+                <span className="truncate text-body font-medium">{deck.name}</span>
               </div>
             </button>
           ))}
           <button
             type="button"
             onClick={onViewAll}
-            className="flex min-h-[11rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-lantern-border text-caption font-medium text-lantern-text-secondary hover:border-lantern-text-tertiary hover:text-lantern-text"
+            className="flex min-h-[226px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-lantern-border text-body font-medium text-lantern-text-secondary hover:border-lantern-text-tertiary hover:text-lantern-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
           >
             <AppIcon name="arrow-forward" size={20} />
             View all materials

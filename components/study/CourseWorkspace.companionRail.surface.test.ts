@@ -47,12 +47,15 @@ describe('the room measures itself instead of asking the window', () => {
 
 describe('there is exactly one chat control on screen', () => {
   it('draws the header buttons only where no rail is rendered', () => {
-    // Two of them: the set header and the course room's ScreenHeader.
-    expect(ROOM.match(/rail\.mode === 'none' \? \(/g)?.length).toBe(2);
-    // And the focus bar's, which is a prop rather than a child.
-    expect(flat(ROOM)).toContain(
-      "{...(rail.mode === 'none' ? { onOpenChat: () => openSetChat() } : {})}"
-    );
+    // One of them now: the course room's ScreenHeader. The set room's Chat
+    // button moved out of the set header and into `SetRoomTopBar` in the
+    // 2026-09-17 parity pass, where it is a PROP rather than a child.
+    expect(ROOM.match(/rail\.mode === 'none' \? \(/g)?.length).toBe(1);
+    // Two prop forms: the focus bar's and the set room's top bar.
+    expect(
+      ROOM.match(/\{\.\.\.\(rail\.mode === 'none' \? \{ onOpenChat: \(\) => openSetChat\(\) \} : \{\}\)\}/g)
+        ?.length
+    ).toBe(2);
   });
 
   it('draws the collapsed rail when there is one', () => {

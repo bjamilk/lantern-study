@@ -129,11 +129,13 @@ module.exports = {
       // +0.04em on label — so `text-title` and `typeScale.title` are the same
       // three numbers.
       fontSize: {
-        display: ['28px', { lineHeight: '34px', letterSpacing: '-0.56px', fontWeight: '700' }],
-        title: ['22px', { lineHeight: '28px', letterSpacing: '-0.44px', fontWeight: '700' }],
-        heading: ['17px', { lineHeight: '24px', letterSpacing: '-0.187px', fontWeight: '600' }],
-        body: ['15px', { lineHeight: '22px', letterSpacing: '-0.165px', fontWeight: '400' }],
-        caption: ['13px', { lineHeight: '18px', letterSpacing: '0px', fontWeight: '400' }],
+        // 2026-09-17: re-measured in lockstep with web (packages/shared
+        // design/tokens.ts `type`). Tracking is 0 on every step but `label`.
+        display: ['28px', { lineHeight: '36px', letterSpacing: '0px', fontWeight: '500' }],
+        title: ['24px', { lineHeight: '32px', letterSpacing: '0px', fontWeight: '500' }],
+        heading: ['18px', { lineHeight: '28px', letterSpacing: '0px', fontWeight: '500' }],
+        body: ['14px', { lineHeight: '20px', letterSpacing: '0px', fontWeight: '400' }],
+        caption: ['12px', { lineHeight: '16px', letterSpacing: '0px', fontWeight: '400' }],
         label: ['11px', { lineHeight: '16px', letterSpacing: '0.44px', fontWeight: '600' }],
       },
       fontFamily: {
