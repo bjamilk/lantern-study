@@ -22,6 +22,7 @@
       "@lantern/shared/learning": ["../../packages/shared/dist/learning/index"],
       "@lantern/shared/jobs": ["../../packages/shared/dist/jobs/index"],
       "@lantern/shared/jobs/*": ["../../packages/shared/dist/jobs/*"],
+      "@lantern/shared/ai": ["../../packages/shared/dist/ai/index"],
       "@lantern/shared/analytics": ["../../packages/shared/dist/analytics/index"],
       "@lantern/shared/moderation": ["../../packages/shared/dist/moderation/index"],
       "@lantern/shared/notes": ["../../packages/shared/dist/notes/index"],

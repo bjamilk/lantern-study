@@ -39,6 +39,7 @@
     "src/utils/chatMute.ts",
     "src/utils/dmHistoryCutoff.ts",
     "src/utils/flashcardGeneration.ts",
+    "src/ai/**/*.ts",
     "src/flashcards/**/*.ts",
     "src/settings/**/*.ts",
     "src/network/**/*.ts",

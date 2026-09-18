@@ -211,4 +211,55 @@ describe('sanitizeSettings', () => {
     expect(merged.test_presets).toBeUndefined();
     expect(merged.study).toEqual(expect.objectContaining({ dailyCardGoal: 30 }));
   });
+  // --- tutorStyle: the one SCALAR preference (F2) ----------------------------
+  // It cannot ride the category loop (that requires an object), so it has its
+  // own read with a four-id allowlist. These cases are the allowlist.
+
+  it.each(['default', 'coach', 'professor', 'peer'])(
+    'accepts the tutor style %s',
+    (style) => {
+      const merged = mergeUserSettings({}, { tutorStyle: style });
+      expect(merged.tutorStyle).toBe(style);
+    }
+  );
+
+  it('starts an account with no stored preference on the default style', () => {
+    expect(mergeUserSettings({}, {}).tutorStyle).toBe('default');
+  });
+
+  it('drops junk rather than storing it, and keeps the style already set', () => {
+    for (const junk of ['', 'COACH', 'drill-sergeant', 42, true, null, [], { id: 'coach' }]) {
+      const merged = mergeUserSettings({ tutorStyle: 'coach' }, { tutorStyle: junk });
+      expect(merged.tutorStyle).toBe('coach');
+    }
+  });
+
+  it('cannot smuggle a privileged key in under this one', () => {
+    // Two routes to the same guarantee: the value is read only when it is one
+    // of four fixed strings, and privileged keys are stripped before this code
+    // ever sees the body.
+    const merged = mergeUserSettings(
+      { is_platform_admin: false },
+      {
+        tutorStyle: { is_platform_admin: true, coach: true },
+        is_platform_admin: true,
+        is_banned: true,
+      }
+    );
+    expect(merged.tutorStyle).toBe('default');
+    expect(merged.is_platform_admin).toBe(false);
+    expect(merged.is_banned).toBeUndefined();
+  });
+
+  it('does not clobber a sibling category, and is not clobbered by one', () => {
+    const merged = mergeUserSettings(
+      // Nested shape: with no `notifications` key the normalizer takes the
+      // legacy-flat branch, which does not read `appearance` at all.
+      { tutorStyle: 'professor', notifications: { pushEnabled: true }, appearance: { theme: 'dark' } },
+      { study: { dailyCardGoal: 30 } }
+    );
+    expect(merged.tutorStyle).toBe('professor');
+    expect(merged.appearance).toEqual(expect.objectContaining({ theme: 'dark' }));
+    expect(merged.study).toEqual(expect.objectContaining({ dailyCardGoal: 30 }));
+  });
 });
