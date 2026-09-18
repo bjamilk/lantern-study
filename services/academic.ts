@@ -6,6 +6,10 @@
  */
 import { getApiBaseUrl } from '@lantern/shared';
 import type { Course, CourseTopic, InstitutionSummary, StudySet, User, UserCourse } from '@lantern/shared';
+import type {
+  PracticeFolderListResponse,
+  PracticeFolderWithCount,
+} from '@lantern/shared/study/practiceFolders';
 import { mapUserFromApi } from '@lantern/shared/utils/apiMappers';
 import { getAuthHeaders, fetchMarketplaceCampuses } from './supabase';
 import { handleApiAuthFailure } from './sessionHandler';
@@ -242,6 +246,61 @@ export const deleteStudySetFolder = (folderId: string) =>
   academicRequest(`/users/me/study-sets/folders/${encodeURIComponent(folderId)}`, {
     method: 'DELETE',
   });
+
+// ---------- Practice folders ----------
+// Folders that hold ONE set's quizzes and tests. Scoped under the set in the
+// path because a Practice folder is the SET's, not the account's — unlike
+// `fetchStudySetFolders` above, which groups sets.
+
+/**
+ * This set's folders, plus whether the database can hold any.
+ *
+ * `supported: false` means 20260918120000 is unapplied; the hub then draws
+ * exactly what it drew before folders existed. A FAILED fetch answers the
+ * same way on purpose — a folder list that could not load must not turn the
+ * Practice hub into an error screen, and the student keeps every quiz and
+ * test they had.
+ */
+export const fetchPracticeFolders = (setId: string): Promise<PracticeFolderListResponse> =>
+  academicRequest<PracticeFolderListResponse>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders`
+  )
+    .then((data) =>
+      data && typeof data === 'object' && Array.isArray(data.folders)
+        ? { supported: Boolean(data.supported), folders: data.folders }
+        : { supported: false, folders: [] }
+    )
+    .catch(() => ({ supported: false, folders: [] }));
+
+export const createPracticeFolder = (setId: string, title: string) =>
+  academicRequest<PracticeFolderWithCount>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders`,
+    { method: 'POST', body: JSON.stringify({ title }) }
+  );
+
+export const renamePracticeFolder = (setId: string, folderId: string, title: string) =>
+  academicRequest<PracticeFolderWithCount>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders/${encodeURIComponent(folderId)}`,
+    { method: 'PATCH', body: JSON.stringify({ title }) }
+  );
+
+/** The folder goes; its quizzes and tests stay, unfiled. */
+export const deletePracticeFolder = (setId: string, folderId: string) =>
+  academicRequest<void>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/practice-folders/${encodeURIComponent(folderId)}`,
+    { method: 'DELETE' }
+  );
+
+/** File one quiz or test into a folder, or `null` to move it out. */
+export const movePracticeItem = (
+  setId: string,
+  testId: string,
+  practiceFolderId: string | null
+) =>
+  academicRequest<{ id: string; practiceFolderId: string | null }>(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/practice-items/${encodeURIComponent(testId)}`,
+    { method: 'PATCH', body: JSON.stringify({ practiceFolderId }) }
+  );
 
 export const fetchStudySetPlan = (setId: string) =>
   academicRequest(`/users/me/study-sets/${encodeURIComponent(setId)}/plan`);

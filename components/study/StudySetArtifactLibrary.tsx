@@ -11,6 +11,22 @@ export interface ArtifactCard {
   meta?: string;
   feature: 'tests' | 'flashcards' | 'ai' | 'notes';
   icon: 'clipboard' | 'layers' | 'headphones' | 'school' | 'mic' | 'document' | 'game-controller' | 'document-text' | 'help-circle';
+  /**
+   * The Practice folder this card sits in (`PracticeFiledItem`).
+   *
+   * ABSENT means the database has no folder column yet, null means unfiled —
+   * the same rule the server's `practiceFolderIdOf` applies. Only the Practice
+   * hub reads it; every other library leaves it off and is unaffected.
+   */
+  practiceFolderId?: string | null;
+}
+
+/** A folder tile: the title, the "Folder · n items" line under it, and its ⋮. */
+export interface ArtifactFolderCard {
+  id: string;
+  title: string;
+  /** Defaults to the bare word "Folder" when a surface has no count to print. */
+  meta?: string;
 }
 
 interface StudySetArtifactLibraryProps {
@@ -20,8 +36,21 @@ interface StudySetArtifactLibraryProps {
   onOpen: (id: string) => void;
   onCreate?: () => void;
   createLabel?: string;
-  folders?: Array<{ id: string; title: string }>;
+  folders?: readonly ArtifactFolderCard[];
   onOpenFolder?: (id: string) => void;
+  /**
+   * Optional per-FOLDER overflow menu (Rename / Delete). Rendered beside the
+   * folder's button for the same reason `renderItemMenu` is: a <button> may
+   * not contain another button.
+   */
+  renderFolderMenu?: (folder: ArtifactFolderCard) => React.ReactNode;
+  /**
+   * A dashed "Create folder" tile, drawn beside the dashed create tile. Only
+   * the Practice hub passes it, and only once the server says this database
+   * can hold folders — a create card that could only 503 is worse than none.
+   */
+  onCreateFolder?: () => void;
+  createFolderLabel?: string;
   /**
    * Optional per-tile overflow menu (the ⋮ a deck tile needs for its cover).
    * It is rendered BESIDE the tile's button, not inside it: a <button> may not
@@ -40,6 +69,9 @@ export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = (
   createLabel = '+ New',
   folders = [],
   onOpenFolder,
+  renderFolderMenu,
+  onCreateFolder,
+  createFolderLabel = 'Create folder',
   renderItemMenu,
 }) => {
   return (
@@ -58,20 +90,39 @@ export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = (
             <span className="mt-4 block text-body font-semibold">{createLabel}</span>
           </button>
         ) : null}
-        {folders.map((folder) => (
+        {onCreateFolder ? (
           <button
-            key={folder.id}
             type="button"
-            onClick={() => onOpenFolder?.(folder.id)}
-            className="min-h-[11rem] rounded-2xl border border-lantern-border bg-lantern-surface text-left px-4 py-4 hover:bg-lantern-background-secondary"
+            onClick={onCreateFolder}
+            className="min-h-[11rem] rounded-2xl border border-dashed border-lantern-border bg-lantern-surface text-left px-4 py-4 hover:bg-lantern-background-secondary"
           >
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-lantern-background-secondary">
               <AppIcon name="folder" size={18} />
             </span>
-            <span className="mt-4 block text-body font-semibold truncate">{folder.title}</span>
-            <span className="block text-caption text-lantern-text-secondary">Folder</span>
+            <span className="mt-4 block text-body font-semibold">{createFolderLabel}</span>
           </button>
-        ))}
+        ) : null}
+        {folders.map((folder) => {
+          const folderMenu = renderFolderMenu?.(folder);
+          return (
+            <div key={folder.id} className="relative">
+              <button
+                type="button"
+                onClick={() => onOpenFolder?.(folder.id)}
+                className="w-full min-h-[11rem] rounded-2xl border border-lantern-border bg-lantern-surface text-left px-4 py-4 hover:bg-lantern-background-secondary"
+              >
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-lantern-background-secondary">
+                  <AppIcon name="folder" size={18} />
+                </span>
+                <span className="mt-4 block text-body font-semibold truncate">{folder.title}</span>
+                <span className="block text-caption text-lantern-text-secondary">
+                  {folder.meta ?? 'Folder'}
+                </span>
+              </button>
+              {folderMenu ? <div className="absolute right-2 top-2">{folderMenu}</div> : null}
+            </div>
+          );
+        })}
         {items.map((item) => {
           const preview = item.preview ? notePreviewText(item.preview, 140) : '';
           const menu = renderItemMenu?.(item);

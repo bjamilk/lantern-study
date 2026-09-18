@@ -142,6 +142,11 @@ import { useAcademicStore } from '../../stores/academicStore';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { CoursePicker } from '../academic/CoursePicker';
 import { FolderNameModal } from '../ui/FolderNameModal';
+import {
+  usePracticeFolderStore,
+  withPracticeFolders,
+} from '../../stores/practiceFolderStore';
+import type { PracticeFolderWithCount } from '@lantern/shared/study/practiceFolders';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useTestStore } from '../../stores/testStore';
@@ -228,6 +233,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const decks = useFlashcardStore((s) => s.decks);
   const flashcards = useFlashcardStore((s) => s.flashcards);
   const testResults = useTestStore((s) => s.testResults);
+  const practiceFolders = usePracticeFolderStore((s) => s.folders);
+  const practiceMoves = usePracticeFolderStore((s) => s.moves);
+  // `null` is UNKNOWN, not false — the hub draws no folder UI until the
+  // server has answered, so the first paint looks like yesterday rather than
+  // flashing an empty folder row. See stores/practiceFolderStore.ts.
+  const practiceFoldersSupported = usePracticeFolderStore((s) => s.supported);
 
   // --- Room state. Three groups: what is showing (`activity`, `createKind`,
   // the modal flags), what has been fetched for THIS room (`fetchedNotes`,
@@ -253,6 +264,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [planUnits, setPlanUnits] = useState<StudySetUnit[]>([]);
   const [planGenerating, setPlanGenerating] = useState(false);
   const [quizQuestionCount, setQuizQuestionCount] = useState(10);
+  // Which practice folder is open, and which one a dialog is editing. Both are
+  // ROOM state, not store state: they are where the student is looking, and a
+  // store that remembered them would reopen a folder on the next visit.
+  const [openPracticeFolderId, setOpenPracticeFolderId] = useState<string | null>(null);
+  const [practiceFolderModal, setPracticeFolderModal] = useState<
+    { mode: 'create' } | { mode: 'rename'; folder: PracticeFolderWithCount } | null
+  >(null);
   const [importSource, setImportSource] = useState<StudyUploadSource | null>(null);
   // Files the Upload Materials page's dropzone handed over, waiting for the
   // modal to consume them once. Cleared by the modal, not by this component,
@@ -294,6 +312,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       setFetchedTests([]);
       return Promise.resolve();
     }
+    // The folders belong to the SET, so a course room (no set) has none and
+    // asks for none — the route would 400 on a missing set id anyway.
+    if (studySetId) void usePracticeFolderStore.getState().loadFolders(studySetId);
     return fetchWorkspaceTests({ courseId, studySetId }).then(setFetchedTests);
   }, [courseId, studySetId]);
 
@@ -390,7 +411,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       if (!cancelled) setFetchedNotes([]);
     });
     void reloadTests().catch(() => {
-      if (!cancelled) setFetchedTests([]);
+      if (!cancelled) {
+        setFetchedTests([]);
+        setOpenPracticeFolderId(null);
+      }
     });
     if (!courseId) {
       setTopics([]);
@@ -1679,6 +1703,17 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
    */
   const renderPracticeHub = () => {
     const tab = practiceTabForActivity(routePath?.activity);
+    // The overlay is applied HERE, once, so both tabs and the folder filter
+    // read the same answer: an item just moved is in its new folder on every
+    // tab at the same instant, not only on the one that was showing.
+    const card = (test: (typeof quizRows)[number], door: 'quiz' | 'test') => ({
+      id: test.id,
+      title: test.title || (door === 'quiz' ? 'Quiz' : 'Test'),
+      preview: test.preview,
+      practiceFolderId: test.practiceFolderId,
+      feature: 'tests' as const,
+      icon: (door === 'quiz' ? 'help-circle' : 'clipboard') as 'help-circle' | 'clipboard',
+    });
     return (
       <PracticeHub
         setLabel={label}
@@ -1686,20 +1721,38 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         onTabChange={(next) =>
           go(next === 'all' ? 'practice' : next === 'tests' ? 'test' : 'quiz')
         }
-        quizzes={quizRows.map((test) => ({
-          id: test.id,
-          title: test.title || 'Quiz',
-          preview: test.preview,
-          feature: 'tests' as const,
-          icon: 'help-circle' as const,
-        }))}
-        tests={testRows.map((test) => ({
-          id: test.id,
-          title: test.title || 'Test',
-          preview: test.preview,
-          feature: 'tests' as const,
-          icon: 'clipboard' as const,
-        }))}
+        quizzes={withPracticeFolders(quizRows.map((test) => card(test, 'quiz')), practiceMoves)}
+        tests={withPracticeFolders(testRows.map((test) => card(test, 'test')), practiceMoves)}
+        foldersSupported={practiceFoldersSupported === true && Boolean(studySetId)}
+        folders={practiceFolders}
+        openFolderId={openPracticeFolderId}
+        onOpenFolder={setOpenPracticeFolderId}
+        onCreateFolder={() => setPracticeFolderModal({ mode: 'create' })}
+        onRenameFolder={(folder) => setPracticeFolderModal({ mode: 'rename', folder })}
+        onDeleteFolder={(folder) => {
+          if (!studySetId) return;
+          // Leaving the folder open would strand the student on a breadcrumb
+          // to something that no longer exists.
+          if (openPracticeFolderId === folder.id) setOpenPracticeFolderId(null);
+          void usePracticeFolderStore
+            .getState()
+            .removeFolder(studySetId, folder.id)
+            .then((ok) =>
+              showToast(
+                ok ? 'Folder deleted. Its quizzes and tests were kept.' : 'Could not delete that folder.',
+                ok ? 'success' : 'error'
+              )
+            );
+        }}
+        onMoveItem={(itemId, folderId) => {
+          if (!studySetId) return;
+          void usePracticeFolderStore
+            .getState()
+            .moveItem(studySetId, itemId, folderId)
+            .then((ok) => {
+              if (!ok) showToast('Could not move that — it stayed where it was.', 'error');
+            });
+        }}
         onOpen={(which, id) => {
           if (which === 'tests') onOpenTest(id);
           else go('quiz', { quizId: id });
@@ -2804,6 +2857,37 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             .catch(() => showToast('Could not create that folder.', 'error'));
         }}
       />
+      {/* Create / rename a PRACTICE folder. One modal for both, because the
+          only difference is the title it starts with and where the name goes
+          — two modals is how the two dialogs drift apart. */}
+      <FolderNameModal
+        isOpen={practiceFolderModal !== null}
+        onClose={() => setPracticeFolderModal(null)}
+        title={practiceFolderModal?.mode === 'rename' ? 'Rename folder' : 'New practice folder'}
+        placeholder="Folder name"
+        submitLabel={practiceFolderModal?.mode === 'rename' ? 'Save' : 'Create'}
+        {...(practiceFolderModal?.mode === 'rename'
+          ? { initialName: practiceFolderModal.folder.title }
+          : {})}
+        onSubmit={(name) => {
+          const pending = practiceFolderModal;
+          setPracticeFolderModal(null);
+          if (!studySetId || !pending) return;
+          const store = usePracticeFolderStore.getState();
+          if (pending.mode === 'rename') {
+            void store
+              .renameFolder(studySetId, pending.folder.id, name)
+              .then((ok) => {
+                if (!ok) showToast('Could not rename that folder.', 'error');
+              });
+            return;
+          }
+          void store.createFolder(studySetId, name).then((created) => {
+            if (created) showToast('Folder created.', 'success');
+            else showToast('Could not create that folder.', 'error');
+          });
+        }}
+      />
       {importOpen && (
         <ImportAndStudyModal
           isOpen={importOpen}
@@ -3026,6 +3110,15 @@ interface WorkspaceTestRow {
   studyDoor?: string | null;
   attemptKind?: string | null;
   mode?: string | null;
+  /**
+   * The Practice folder this row is filed in.
+   *
+   * ABSENT when the API answered from a database without the column (the
+   * hand-applied 20260918120000) — the same absent-vs-null rule the server's
+   * `practiceFolderIdOf` applies. Read through `folderIdFor`, never directly,
+   * so the optimistic overlay is not lost.
+   */
+  practiceFolderId?: string | null;
 }
 
 /**
@@ -3113,6 +3206,15 @@ async function fetchWorkspaceTests(filter: {
           (typeof sessionConfig.sourceDeckId === 'string' && sessionConfig.sourceDeckId) ||
           null,
         preview: firstQuestionPreview(record.questions ?? session.questions ?? config.questions),
+        // Spread, not assigned: the key must stay ABSENT when the API omitted
+        // it, because absent ("no folder column here") and null ("unfiled")
+        // are different answers and the hub draws different things for them.
+        ...('practiceFolderId' in record
+          ? {
+              practiceFolderId:
+                typeof record.practiceFolderId === 'string' ? record.practiceFolderId : null,
+            }
+          : {}),
         studyDoor:
           (typeof config.studyDoor === 'string' && config.studyDoor) ||
           (typeof sessionConfig.studyDoor === 'string' && sessionConfig.studyDoor) ||
