@@ -143,6 +143,12 @@ interface LectureStudioProps {
  */
 const ENHANCE_REVEAL_STEP_MS = 120;
 const ENHANCE_REVEAL_STEPS = 12;
+/**
+ * How long the reveal waits for the enhanced notes to come back from the
+ * parent's refetch before it gives up. A reveal that never ends is the
+ * reference's stuck spinner in a different coat.
+ */
+const ENHANCE_REVEAL_WAIT_MS = 15_000;
 
 export const LectureStudio: React.FC<LectureStudioProps> = ({
   courseId,
@@ -230,6 +236,9 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   const [shareOpen, setShareOpen] = useState(false);
   /** How much of the enhanced notes has been revealed into the editor. */
   const [revealChars, setRevealChars] = useState<number | null>(null);
+  /** Re-runs the reveal effect while it waits for the note to come back. */
+  const [revealWaitTick, setRevealWaitTick] = useState(0);
+  const revealStartedAt = useRef<number | null>(null);
   const [editingNotes, setEditingNotes] = useState(false);
   const [tab, setTab] = useState<LectureTabPillId>('notes');
   const [starting, setStarting] = useState(false);
@@ -585,9 +594,20 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
     if (revealChars === null) return;
     const full = storedParts.enhanced;
     if (!full) {
-      setRevealChars(null);
-      return;
+      // The note has not come back from the parent's refetch yet. Wait — but
+      // not forever: a reveal that never ends is the stuck spinner in a
+      // different coat, so it gives up after `ENHANCE_REVEAL_WAIT_MS` and the
+      // tab goes back to its own label with the notes still saved on the note.
+      const startedAt = revealStartedAt.current ?? Date.now();
+      revealStartedAt.current = startedAt;
+      if (Date.now() - startedAt > ENHANCE_REVEAL_WAIT_MS) {
+        setRevealChars(null);
+        return;
+      }
+      const wait = setTimeout(() => setRevealWaitTick((value) => value + 1), 200);
+      return () => clearTimeout(wait);
     }
+    revealStartedAt.current = null;
     if (revealChars >= full.length) {
       const done = setTimeout(() => setRevealChars(null), ENHANCE_REVEAL_STEP_MS);
       return () => clearTimeout(done);
@@ -598,7 +618,7 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
       ENHANCE_REVEAL_STEP_MS
     );
     return () => clearTimeout(timer);
-  }, [revealChars, storedParts.enhanced]);
+  }, [revealChars, revealWaitTick, storedParts.enhanced]);
 
   const enhancing = writing || revealChars !== null;
   const writeCost = formatCreditCost(getSmartNotesCreditCost(depth));
