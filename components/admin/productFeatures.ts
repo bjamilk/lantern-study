@@ -46,6 +46,70 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'lecture-recorder-screen-1-0-64',
+    title: 'Lecture recorder: the transcript drawer and the floating tab pill',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'The lecture screen is laid out the way a student records in class: the notes editor in the middle, a Transcript drawer beside it that walks through pre-check, consent, recording, saving and done, and a floating tab pill underneath (My Notes · Enhanced Notes · Material · Audio Files · Record). While recording the drawer shows the transcript growing in place with a level meter, the clock and a red stop; it can be minimised to a small floating widget so the editor takes the full width. Enhanced notes are revealed into the editor under a "Saving enhanced notes…" chip.',
+    details: [
+      'The drawer is a pure state machine (precheck → consent → recording → minimised ↔ expanded → saving → done → resume). Consent is remembered on the account after the first "Yes, record now", so a second lecture goes straight from Start to recording.',
+      'Transcript chunks grow in place from the live captions, split on a pause of two seconds or at a segment boundary, and are replaced by the transcribed text once a segment lands. Stamps are start times while live and end times once saved.',
+      'At narrow widths the drawer becomes a sheet rather than squeezing the editor below 480px. The rail widths follow the same dock ladder the companion column uses.',
+      '"Turn into" moved from a row of chips into a header menu that keeps every price. The lectures page is a day-grouped list (Today, Yesterday, weekday + date) with search, rename and delete-with-confirm.',
+      'The enhance route returns the whole text — there is no token stream — so the notes are revealed progressively in short steps and the reveal gives up after 15 seconds so no chip or "Generating…" label can be stranded.',
+    ],
+    howToUse: [
+      'Web: a set → Record lecture → a lecture. Record on the pill opens the drawer; ⚙ for language and mic; − minimises; Stop then Enhance notes.',
+      'Phone: the same tab order; the drawer is the Transcript tab; the minimised widget is a compact bar above the tab strip.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'Presentation only: capture, segment uploads and transcription are unchanged from 1.0.63. No migration.',
+      'Not yet device-tested with a real microphone; the three things to try are a 12-minute take, killing the tab at minute seven, and going offline for one segment then Retry.',
+    ],
+    commits: ['4dd92847'],
+  },
+  {
+    id: 'plan-from-syllabus-1-0-64',
+    title: 'The study plan follows the syllabus',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'When a set has a syllabus, its plan units are named and ordered by the week their material belongs to, exams sit between units as markers ("Exam 1 · 10 Oct"), and weeks with no material yet are listed under the plan as "Coming up in your syllabus" — a list, not a plan. A week becomes a unit only when real material matched it; nothing here can make a topic that opens nothing.',
+    details: [
+      'The matcher is deterministic and needs no AI call: normalised title similarity (Dice ≥ 0.5; scaffolding words like "week" and "chapter" and bare numbers are ignored) or ≥ 0.25 with the material dated within 7 days of the week. There is no date-only match, because a material\'s only date is when it was uploaded.',
+      'Greedy one-to-one assignment with stable tie-breaks, so the answer is the same on every device and reload.',
+      'Computed on read — no table, no column, nothing persisted — so it cannot go stale when a unit is renamed or a material is added. Without a syllabus the plan payload is byte-for-byte what it was.',
+      'Exam dividers are hidden under the "weakest first" sort, where "everything above this is on the midterm" would no longer be true.',
+    ],
+    howToUse: ['Web and phone: upload a syllabus on the set (Sync with your class), then open Plan.'],
+    surfaces: ['web', 'mobile', 'api'],
+    adminNotes: [
+      'Reads study_sets.syllabus_summary from the 20260918150000 migration (applied 2026-09-18). The plan endpoint carries an optional `syllabus` key only when a summary exists.',
+    ],
+    commits: ['030d8da5'],
+  },
+  {
+    id: 'upload-tray-scope-and-skip-sync-1-0-64',
+    title: 'Upload tray belongs to the signed-in student; "Skip for now" follows the account',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'On a shared browser the web upload tray could show a previous student\'s upload titles; rows are now stamped with their owner, filtered per user and cleared on sign-out. The phone\'s "Skip for now" on the Sync-with-your-class card is saved on the account (the same setting web writes), so skipping on one device holds on the other.',
+    details: [
+      'Pre-existing upload rows with no owner are dropped on load rather than guessed; an upload cannot resume across a reload anyway. The phone tracked imports per user already.',
+      'The skip setting is a flat map of set id → time, capped at the newest 200; junk keys and privileged keys are rejected by the shared normaliser, and merges only ever add skips.',
+    ],
+    howToUse: ['Nothing to do; behaviour only.'],
+    surfaces: ['web', 'mobile', 'api'],
+    adminNotes: ['Fixes issue #144. The privileged-settings key list now lives in @lantern/shared and the API re-exports it.'],
+    commits: ['000e964b'],
+  },
+  {
     id: 'lecture-recorder-precheck-1-0-63',
     title: 'Lecture recorder: check your sound and connection before you start',
     area: 'notes',
