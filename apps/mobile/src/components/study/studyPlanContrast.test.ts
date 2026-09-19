@@ -110,3 +110,26 @@ describe('sources chip contrast', () => {
     expect(contrastRatio(accent.tint, colors.surface)).toBeGreaterThanOrEqual(1.05);
   });
 });
+
+/**
+ * The syllabus additions put the `ai` INK on TEXT for the first time on this
+ * screen — the `Week 3 · 10 Oct` eyebrow, the `Exam 1 · 10 Oct` marker and an
+ * unmatched week's exam label are all caption-sized words in the rail's colour,
+ * on the card or the page rather than on the tint. The ring arcs only ever had
+ * to clear the 3:1 non-text floor; these have to clear the text one.
+ */
+describe('syllabus contrast', () => {
+  it.each(PALETTES)('$name: the week eyebrow reads on its card', ({ accent, colors }) => {
+    expect(contrastRatio(accent.ink, colors.surface)).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it.each(PALETTES)('$name: the exam marker reads on the page behind the spine', ({ accent, colors }) => {
+    expect(contrastRatio(accent.ink, colors.background)).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it.each(PALETTES)('$name: the marker ring separates from the page', ({ accent, colors }) => {
+    // The marker's disc is an outline in the ink, with no fill: the ring itself
+    // is the whole drawing, so it carries the non-text floor on its own.
+    expect(contrastRatio(accent.ink, colors.background)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+});

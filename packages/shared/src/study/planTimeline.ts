@@ -234,10 +234,10 @@ export function asPlanSortKey(value: unknown): PlanSortKey {
  *   first, because "nothing filed here yet" is not the weakest thing you know —
  *   it is the absence of anything to know.
  */
-export function sortPlanTimeline(
-  timeline: readonly PlanTimelineUnit[],
+export function sortPlanTimeline<T extends PlanTimelineUnit>(
+  timeline: readonly T[],
   sort: PlanSortKey
-): PlanTimelineUnit[] {
+): T[] {
   const rows = [...timeline];
   if (sort === 'unit') return rows;
   if (sort === 'recommended') {

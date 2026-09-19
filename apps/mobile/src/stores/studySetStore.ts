@@ -33,6 +33,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StudySet, StudySetFolder } from '@lantern/shared/types';
 import type { StudySetTopic, StudySetTopicStatus, StudySetUnit } from '@lantern/shared/learning';
+import type { StudySetPlanSyllabus } from '@lantern/shared/study/planSyllabus';
 import {
   createStudySet as apiCreate,
   deleteStudySet as apiDelete,
@@ -111,6 +112,14 @@ export interface StudySetPlan {
   units: StudySetUnit[];
   topics: StudySetTopic[];
   loaded: boolean;
+  /**
+   * The set's class schedule, read against the SERVER's units, or null.
+   *
+   * Null is the normal answer: the key is absent from the payload unless the
+   * set has a stored `syllabus_summary`, which is every set that has never had
+   * one uploaded and every set at all before 20260918150000 is hand-applied.
+   */
+  syllabus: StudySetPlanSyllabus | null;
 }
 
 interface StudySetState {
@@ -408,17 +417,19 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
   },
 
   loadPlan: async (setId) => {
-    const empty: StudySetPlan = { units: [], topics: [], loaded: false };
+    const empty: StudySetPlan = { units: [], topics: [], loaded: false, syllabus: null };
     if (!setId) return empty;
     try {
       const data = (await fetchStudySetPlan(setId)) as {
         units?: StudySetUnit[];
         topics?: StudySetTopic[];
+        syllabus?: StudySetPlanSyllabus;
       } | null;
       const plan: StudySetPlan = {
         units: Array.isArray(data?.units) ? data!.units : [],
         topics: Array.isArray(data?.topics) ? data!.topics : [],
         loaded: true,
+        syllabus: data?.syllabus ?? null,
       };
       set({ plans: { ...get().plans, [setId]: plan } });
       return plan;
@@ -449,6 +460,10 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
       units: Array.isArray(saved?.units) ? saved!.units : [],
       topics: Array.isArray(saved?.topics) ? saved!.topics : [],
       loaded: true,
+      // `PUT /plan` echoes the rows it wrote and nothing else. The schedule is
+      // unchanged by a save, so the one already in hand is kept rather than
+      // dropped and re-fetched.
+      syllabus: get().plans[setId]?.syllabus ?? null,
     };
     set({ plans: { ...get().plans, [setId]: plan } });
     return plan;
