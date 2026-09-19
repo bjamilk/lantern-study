@@ -55,6 +55,12 @@ jest.mock('../services/idempotency', () => ({
 import router, { initializeGamificationRoutes } from './gamification';
 import * as gamificationData from '../services/data/gamification';
 
+/**
+ * The route only accepts today ±1 day (UTC), so a literal date here is a time
+ * bomb: this suite went red at 00:00 UTC two days after it was written.
+ */
+const TODAY = new Date().toISOString().slice(0, 10);
+
 let walletStub: Record<string, jest.Mock>;
 
 type Call = string;
@@ -320,7 +326,7 @@ describe('GET /quests/daily', () => {
     const quests = [{ id: 'q1', quest_type: 'review_cards', progress_count: 0, target_count: 10 }];
     const rec = initWith((_t, nth) => (nth === 0 ? { data: null, error: null } : { data: quests, error: null }));
 
-    const res = await runRoute('get', '/quests/daily', { query: { activityDate: '2026-09-17' } });
+    const res = await runRoute('get', '/quests/daily', { query: { activityDate: TODAY } });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ success: true, data: quests });
@@ -330,10 +336,10 @@ describe('GET /quests/daily', () => {
       rec.trace[1].slice('upsert('.length, -', {"onConflict":"user_id,quest_date,quest_type","ignoreDuplicates":true})'.length),
     );
     expect(seeded).toEqual([
-      { quest_type: 'review_cards', target_count: 10, reward_xp: 15, user_id: USER, quest_date: '2026-09-17' },
-      { quest_type: 'answer_questions', target_count: 3, reward_xp: 20, user_id: USER, quest_date: '2026-09-17' },
-      { quest_type: 'create_note', target_count: 1, reward_xp: 10, user_id: USER, quest_date: '2026-09-17' },
-      { quest_type: 'complete_test', target_count: 1, reward_xp: 25, user_id: USER, quest_date: '2026-09-17' },
+      { quest_type: 'review_cards', target_count: 10, reward_xp: 15, user_id: USER, quest_date: TODAY },
+      { quest_type: 'answer_questions', target_count: 3, reward_xp: 20, user_id: USER, quest_date: TODAY },
+      { quest_type: 'create_note', target_count: 1, reward_xp: 10, user_id: USER, quest_date: TODAY },
+      { quest_type: 'complete_test', target_count: 1, reward_xp: 25, user_id: USER, quest_date: TODAY },
     ]);
     expect(
       rec.trace[1].endsWith(', {"onConflict":"user_id,quest_date,quest_type","ignoreDuplicates":true})'),
@@ -342,7 +348,7 @@ describe('GET /quests/daily', () => {
       'from("daily_quests")',
       'select("*")',
       `eq("user_id", "${USER}")`,
-      'eq("quest_date", "2026-09-17")',
+      `eq("quest_date", "${TODAY}")`,
     ]);
   });
 
@@ -353,7 +359,7 @@ describe('GET /quests/daily', () => {
         : { data: [], error: null },
     );
 
-    const res = await runRoute('get', '/quests/daily', { query: { activityDate: '2026-09-17' } });
+    const res = await runRoute('get', '/quests/daily', { query: { activityDate: TODAY } });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ success: true, data: [] });
@@ -383,7 +389,7 @@ describe('POST /quests/progress', () => {
     const rec = initWith(questFlow(updated), { awardPoints: jest.fn(async () => ({})) });
 
     const res = await runRoute('post', '/quests/progress', {
-      body: { questType: 'review_cards', increment: 2, activityDate: '2026-09-17' },
+      body: { questType: 'review_cards', increment: 2, activityDate: TODAY },
     });
 
     expect(res.statusCode).toBe(200);
@@ -394,7 +400,7 @@ describe('POST /quests/progress', () => {
       'from("daily_quests")',
       'select("*")',
       `eq("user_id", "${USER}")`,
-      'eq("quest_date", "2026-09-17")',
+      `eq("quest_date", "${TODAY}")`,
       'eq("quest_type", "review_cards")',
       'maybeSingle()',
       'from("daily_quests")',
@@ -412,7 +418,7 @@ describe('POST /quests/progress', () => {
     initWith(questFlow({ ...quest, progress_count: 10, completed: true }), { awardPoints });
 
     await runRoute('post', '/quests/progress', {
-      body: { questType: 'review_cards', increment: 2, activityDate: '2026-09-17' },
+      body: { questType: 'review_cards', increment: 2, activityDate: TODAY },
     });
 
     expect(awardPoints).toHaveBeenCalledTimes(1);
@@ -428,7 +434,7 @@ describe('POST /quests/progress', () => {
     );
 
     await runRoute('post', '/quests/progress', {
-      body: { questType: 'review_cards', increment: 5, activityDate: '2026-09-17' },
+      body: { questType: 'review_cards', increment: 5, activityDate: TODAY },
     });
 
     expect(awardPoints).not.toHaveBeenCalled();
@@ -438,7 +444,7 @@ describe('POST /quests/progress', () => {
     const rec = initWith((_t, nth) => (nth === 2 ? { data: null, error: null } : { data: [], error: null }));
 
     const res = await runRoute('post', '/quests/progress', {
-      body: { questType: 'not_a_quest', activityDate: '2026-09-17' },
+      body: { questType: 'not_a_quest', activityDate: TODAY },
     });
 
     expect(res.statusCode).toBe(200);
