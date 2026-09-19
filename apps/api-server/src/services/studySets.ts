@@ -72,6 +72,10 @@ import {
   type SyllabusSummary,
 } from '@lantern/shared/study/syllabusSummary';
 import {
+  buildPlanSyllabusView,
+  type StudySetPlanSyllabus,
+} from '@lantern/shared/study/planSyllabus';
+import {
   hasStudySetSyllabus,
   isMissingSchemaError,
   markStudySetSyllabusMissing,
@@ -648,6 +652,21 @@ export class StudySetsService {
    */
   async getSyllabus(userId: string, setId: string): Promise<StudySetSyllabus> {
     await this.get(userId, setId);
+    return this.readSyllabusColumns(userId, setId);
+  }
+
+  /**
+   * The syllabus columns, WITHOUT the ownership check.
+   *
+   * Split out of `getSyllabus` so `getPlan` — which has already proven the set
+   * is this caller's, one line earlier — can read the schedule without a second
+   * `this.get` round trip. Every caller of this must have run `this.get` first:
+   * the service-role client bypasses RLS, so that call IS the access control.
+   */
+  private async readSyllabusColumns(
+    userId: string,
+    setId: string
+  ): Promise<StudySetSyllabus> {
     if (!(await hasStudySetSyllabus(this.db))) {
       return { supported: false, noteId: null, summary: null };
     }
@@ -816,6 +835,16 @@ export class StudySetsService {
    *
    * A failure to read it is not a failure to read the plan — the list degrades
    * to empty, which draws the offer to start one, which is the honest default.
+   *
+   * `syllabus` is ADDITIVE and OPTIONAL in the strongest sense: the key is
+   * absent unless this set has a stored `syllabus_summary` with at least one
+   * week in it. No summary, no uploaded syllabus, or an unapplied
+   * 20260918150000 all produce the same payload this route produced before the
+   * field existed, byte for byte — which is the contract the "no summary" tests
+   * pin on all four surfaces. When it IS present it carries the summary as well
+   * as the view, so a client drawing units the server has never seen (a plan
+   * that was never saved, regrouped locally from its materials) can recompute
+   * the same view against its own ids with no second request.
    */
   async getPlan(
     userId: string,
@@ -824,6 +853,7 @@ export class StudySetsService {
     units: StudySetUnitRow[];
     topics: StudySetTopicRow[];
     preAssessments: { unitId: string; testId: string; completedAt: string | null }[];
+    syllabus?: StudySetPlanSyllabus;
   }> {
     await this.get(userId, setId);
     const unitsRes = await this.db
@@ -853,14 +883,23 @@ export class StudySetsService {
     const preAssessments = await Promise.resolve()
       .then(() => this.data?.tests?.listSetPreAssessments?.(userId, setId) ?? [])
       .catch(() => []);
+    const units: StudySetUnitRow[] = (unitsRes.data || []).map((row) => ({
+      id: String(row.id),
+      studySetId: String(row.study_set_id),
+      title: String(row.title || ''),
+      position: Number(row.position) || 10,
+    }));
+    // Same degradation rule as `preAssessments` above, for the same reason: the
+    // schedule is a garnish on this response and a set room must not go blank
+    // because one hand-applied migration is outstanding. `readSyllabusColumns`
+    // already answers `supported: false` rather than throwing for that case;
+    // the catch is for everything else.
+    const syllabus = await this.readSyllabusColumns(userId, setId).catch(() => null);
+    const view = buildPlanSyllabusView(syllabus?.summary ?? null, units);
     return {
       preAssessments,
-      units: (unitsRes.data || []).map((row) => ({
-        id: String(row.id),
-        studySetId: String(row.study_set_id),
-        title: String(row.title || ''),
-        position: Number(row.position) || 10,
-      })),
+      units,
+      ...(view && syllabus?.summary ? { syllabus: { ...view, summary: syllabus.summary } } : {}),
       topics: (topicsRes.data || []).map((row) => ({
         id: String(row.id),
         studySetId: String(row.study_set_id),
