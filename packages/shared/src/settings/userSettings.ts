@@ -148,6 +148,16 @@ export interface FlashcardGenerationSettings {
 export interface LectureSettings {
   spokenLanguage: LectureSpokenLanguageId;
   transcribeTo: LectureTranscribeTarget;
+  /**
+   * The student has answered the recording-consent card with "Yes, record now".
+   *
+   * Account-wide, like the languages, and for the same reason: a student who
+   * has confirmed once that they may record their own classes should not be
+   * asked again before every lecture on every device. It records that the
+   * ANSWER was given — it does not record consent on anyone else's behalf, and
+   * the consent line is still shown beside the pre-check.
+   */
+  recordingConsent?: boolean;
 }
 
 /** First-time / returning-user coach tips + getting-started checklist progress. */
@@ -175,6 +185,97 @@ export interface OnboardingVisitedSettings {
   offline: boolean;
 }
 
+/**
+ * Which study sets have had "Sync with your class" skipped, for the ACCOUNT.
+ *
+ * `studySetId → epoch ms of the tap`, flat, because that is the one shape the
+ * generic patch machinery already handles correctly: `mergeSettingsPatches`
+ * unions two flat maps key by key, and `subtractSettingsPatch` compares them
+ * field by field, so an unsynced skip made on the phone cannot be dropped by a
+ * later one on the same device. A `{ sets: {…} }` wrapper would have needed a
+ * special case in both, like `featureTips.checklist` already does.
+ *
+ * It is a DECISION ("I have no syllabus for this set"), not session state, so
+ * unlike `featureTips.dismissed` it survives the normalizer — but it is
+ * BOUNDED. This blob rides on the profile row and is read on every sign-in, so
+ * an unbounded map of set ids would grow forever; the newest
+ * `SYNC_CLASS_SKIPPED_CAP` are kept and the oldest decisions fall off. Losing
+ * the oldest one costs the student one extra "Skip for now" tap on a set they
+ * last touched hundreds of sets ago.
+ *
+ * MONOTONIC, like `onboardingVisited`: merges union, so a client that is
+ * behind cannot un-skip a card another device hid. The timestamp is only ever
+ * used for ordering, never shown.
+ */
+export type SyncClassSkippedSettings = Record<string, number>;
+
+/** How many skipped sets the account remembers. Oldest fall off. */
+export const SYNC_CLASS_SKIPPED_CAP = 200;
+
+/**
+ * Settings keys that must never be writable by a client: ban state and admin
+ * flags are set only by the admin routes / the service role. Defined here
+ * because BOTH the API's `stripPrivilegedSettings` (which re-exports this) and
+ * `normalizeSyncClassSkipped` below have to agree on the list, and two copies
+ * of it would drift.
+ */
+export const PRIVILEGED_SETTINGS_KEYS: ReadonlySet<string> = new Set([
+  'is_banned',
+  'account_status',
+  'is_platform_admin',
+  'ban_reason',
+  'banned_at',
+  'banned_by',
+  'suspended_until',
+  'moderation_flags',
+]);
+
+/** A set id is a uuid in practice; this is the widest shape worth storing. */
+const SYNC_CLASS_SET_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+
+/**
+ * Set ids mapped to a plausible timestamp, and nothing else.
+ *
+ * Every other key and value is DROPPED rather than merged — the map is written
+ * by clients, so this is the only thing standing between the profile blob and
+ * whatever a crafted patch puts under this key. A nested object, an array, a
+ * boolean or a key that is not id-shaped never survives, which is also why the
+ * key cannot be used to smuggle a privileged name anywhere a reader looks.
+ */
+export function normalizeSyncClassSkipped(raw: unknown): SyncClassSkippedSettings {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const entries: Array<[string, number]> = [];
+  for (const [setId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!SYNC_CLASS_SET_ID_RE.test(setId)) continue;
+    // A privileged flag name is id-shaped, and storing one here would leave it
+    // sitting in the profile blob looking like a flag to the next reader that
+    // walks it. Not stored at all.
+    if (PRIVILEGED_SETTINGS_KEYS.has(setId)) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue;
+    entries.push([setId, Math.floor(value)]);
+  }
+  // Newest first, then capped: a full map drops the oldest decision, never the
+  // one the student just made.
+  entries.sort((a, b) => b[1] - a[1]);
+  return Object.fromEntries(entries.slice(0, SYNC_CLASS_SKIPPED_CAP));
+}
+
+/**
+ * Union two skip maps, keeping the later timestamp for a set both name.
+ *
+ * The ONE merge rule for this key, and the reason no layer between the card
+ * and the row has to know it is monotonic: nothing here can turn a skip off.
+ */
+export function mergeSyncClassSkipped(a: unknown, b: unknown): SyncClassSkippedSettings {
+  const left = normalizeSyncClassSkipped(a);
+  const right = normalizeSyncClassSkipped(b);
+  const merged: SyncClassSkippedSettings = { ...left };
+  for (const [setId, at] of Object.entries(right)) {
+    merged[setId] = Math.max(merged[setId] ?? 0, at);
+  }
+  return normalizeSyncClassSkipped(merged);
+}
+
 export interface UserSettings {
   notifications: NotificationSettings;
   study: StudySettings;
@@ -185,6 +286,8 @@ export interface UserSettings {
   marketplace?: MarketplaceSettings;
   featureTips?: FeatureTipsSettings;
   onboardingVisited?: OnboardingVisitedSettings;
+  /** Sets whose "Sync with your class" card the student has dismissed (#142). */
+  syncClassSkipped?: SyncClassSkippedSettings;
   flashcardGeneration?: FlashcardGenerationSettings;
   lecture?: LectureSettings;
   /**
@@ -294,6 +397,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     marketplace: false,
     offline: false,
   },
+  syncClassSkipped: {},
   flashcardGeneration: {
     count: DEFAULT_FLASHCARD_GENERATION_OPTIONS.count,
     typeMix: DEFAULT_FLASHCARD_GENERATION_OPTIONS.typeMix,
@@ -384,6 +488,11 @@ export function normalizeUserSettings(raw: unknown): UserSettings {
   // string of any shape through. Four ids or `default`, nothing else.
   // Same reason again: the deep merge would carry a stored language of any
   // shape straight through to the Whisper request. Allowlist on every read.
+  // And again: a map written by clients, read back on every sign-in. Junk keys
+  // and junk values are dropped, and the map is capped rather than grown.
+  merged.syncClassSkipped = normalizeSyncClassSkipped(
+    record.syncClassSkipped ?? merged.syncClassSkipped
+  );
   merged.lecture = normalizeLectureSettings(record.lecture ?? merged.lecture);
   merged.tutorStyle = normalizeTutorStyleId(record.tutorStyle ?? merged.tutorStyle);
   return merged;
@@ -403,6 +512,10 @@ export function normalizeLectureSettings(raw: unknown): LectureSettings {
   return {
     spokenLanguage: normalizeLectureSpokenLanguage(record.spokenLanguage),
     transcribeTo: normalizeLectureTranscribeTarget(record.transcribeTo),
+    // Present only once the student has answered, so an account that never
+    // opened the recorder keeps the two-key shape this category has always
+    // written — which is what the API's sanitizer test pins.
+    ...(record.recordingConsent === true ? { recordingConsent: true } : {}),
   };
 }
 

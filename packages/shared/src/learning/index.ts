@@ -15,6 +15,8 @@ export * from './noteRowMark';
 export * from './notesList';
 export * from './adaptiveQuiz';
 export * from './lectureStudio';
+export * from './lectureRecorder';
+export * from './lectureSessions';
 export * from './lessonStudio';
 export * from './recapStudio';
 export * from './studyCalendar';

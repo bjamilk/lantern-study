@@ -6,6 +6,7 @@ import {
 } from '@lantern/shared';
 import { AppIcon } from '../ui/AppIcon';
 import { FEATURE_INK_TEXT } from '../ui/featureClasses';
+import { MenuItem } from '../ui/Menu';
 
 interface TurnIntoMenuProps {
   disabled?: boolean;
@@ -63,6 +64,52 @@ export const TurnIntoMenu: React.FC<TurnIntoMenuProps> = ({
       );
     })}
   </div>
+);
+
+/**
+ * The same targets, as MENU ITEMS.
+ *
+ * The lecture room's header carries "Turn into" as an outlined menu rather than
+ * as a row of six pills — a studio has one row of chrome and the pills were
+ * most of it. The items are the same list, with the same prices and the same
+ * ticks, so nothing about what a student is buying changes with the shape.
+ * Render inside a `<MenuContent>`.
+ */
+export const TurnIntoMenuItems: React.FC<{
+  existing?: Partial<Record<TurnIntoTargetId, boolean>>;
+  onSelect: (target: TurnIntoTargetId) => void;
+  disabled?: boolean;
+}> = ({ existing, onSelect, disabled }) => (
+  <>
+    {TURN_INTO_TARGETS.map((target) => {
+      const made = Boolean(existing?.[target.id]);
+      const cost = formatTurnIntoCost(target.id);
+      return (
+        <MenuItem
+          key={target.id}
+          disabled={disabled}
+          onSelect={() => onSelect(target.id)}
+          aria-label={`${target.label} — ${cost}${made ? ' — already made' : ''}`}
+          icon={
+            <span className={FEATURE_INK_TEXT[target.feature]} aria-hidden="true">
+              <AppIcon name={target.icon} size={16} />
+            </span>
+          }
+        >
+          <span className="flex-1">{target.label}</span>
+          {made ? (
+            <span className="text-lantern-feature-tests-ink" aria-hidden="true">
+              <AppIcon name="checkmark" size={14} />
+            </span>
+          ) : null}
+          {/* The price never leaves: it is stated wherever the action is. */}
+          <span className="text-caption text-lantern-text-tertiary" aria-hidden="true">
+            · {cost}
+          </span>
+        </MenuItem>
+      );
+    })}
+  </>
 );
 
 export default TurnIntoMenu;

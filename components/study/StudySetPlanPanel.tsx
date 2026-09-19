@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  applyPlanSyllabusNames,
   asPlanSortKey,
   initialOpenUnitId,
+  orderTimelineBySyllabus,
+  planSyllabusViewFor,
   isWalkableAttachment,
   pickRecommendedTopic,
   planTimeline,
@@ -16,6 +19,7 @@ import {
   unitsFromSourceMaterials,
   type PlanTopicActivity,
   type PreAssessmentCardAction,
+  type StudySetPlanSyllabus,
   type StudySetMode,
   type StudySetTopic,
   type StudySetUnit,
@@ -26,7 +30,7 @@ import { Button, Card } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { ExamDateField } from './ExamDateField';
 import { PlanCustomizeBar } from './PlanCustomizeBar';
-import { StudyPlanTimeline } from './StudyPlanTimeline';
+import { PlanComingUpList, StudyPlanTimeline } from './StudyPlanTimeline';
 import { UnitPreAssessmentCard } from './UnitPreAssessmentCard';
 import { isPastExam } from './SetRoomFooter';
 import {
@@ -124,6 +128,10 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   const sort = useUIStore((state) => asPlanSortKey(state.planSortBySet[studySetId]));
   const setPlanSort = useUIStore((state) => state.setPlanSort);
   const [seededUnitId, setSeededUnitId] = useState<string | null>(null);
+  // The set's syllabus, as `GET …/plan` computed it against the SERVER's units.
+  // Held raw: which view is actually drawn is `planSyllabusViewFor`'s decision,
+  // below, because this panel does not always draw the server's units.
+  const [planSyllabus, setPlanSyllabus] = useState<StudySetPlanSyllabus | null>(null);
 
   // A local plan files every topic under one unit called "Your materials",
   // which draws one node on a spine — no structure at all for a student with
@@ -131,9 +139,33 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   // set room's plan band does, so both surfaces name the same units.
   const grouped = storedUnits.length > 1 ? null : unitsFromSourceMaterials(storedTopics, notes);
   const topics = grouped && grouped.units.length > 1 ? grouped.topics : storedTopics;
-  const units = unitsForTopics(
+  const drawnUnits = unitsForTopics(
     grouped && grouped.units.length > 1 ? grouped.units : storedUnits,
     topics
+  );
+
+  // The syllabus, read against the units THIS page is about to draw. When those
+  // are the server's own the payload's view is used as-is; when they were
+  // regrouped locally from the materials (ids the server has never seen) the
+  // same pure function runs again over the local ids. Null when the set has no
+  // syllabus, which is every set that has never had one uploaded — and then
+  // every line below behaves exactly as it did before this existed.
+  const syllabusView = useMemo(
+    () =>
+      planSyllabusViewFor({
+        payload: planSyllabus,
+        summary: planSyllabus?.summary ?? null,
+        units: drawnUnits,
+      }),
+    [planSyllabus, drawnUnits]
+  );
+  // Renamed BEFORE the timeline is built: `unitSources` reads a unit's title to
+  // decide whether its single material's chip would merely repeat the heading,
+  // so renaming first is what makes that material's own name appear underneath
+  // its new, course-given one.
+  const units = useMemo(
+    () => applyPlanSyllabusNames(drawnUnits, syllabusView),
+    [drawnUnits, syllabusView]
   );
 
   // A set opened straight into the Plan tab may reach here before the sets
@@ -157,6 +189,11 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
           setStoredUnits(nextUnits);
           setStoredTopics(nextTopics);
         }
+        // Absent unless the set has a stored schedule, so `?? null` is the
+        // normal answer and not a failure.
+        setPlanSyllabus(
+          (data as { syllabus?: StudySetPlanSyllabus })?.syllabus ?? null
+        );
         // Which units already carry a check, so the first paint draws the right
         // verb. Without this a student who finished one is offered
         // "Continue · uses 1 AI credit" for work they have already done.
@@ -187,7 +224,14 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   const progress = studySetPlanProgress(topics);
   const percent = studySetProgressPercent(progress);
   const recommended = pickRecommendedTopic(topics, mode);
-  const planOrder = planTimeline(units, topics, recommended?.id ?? null);
+  // Syllabus order is applied to the BASE order, before the sort menu runs, so
+  // `Unit order` — "the order the course teaches them" — is for the first time
+  // literally the order the course teaches them, and the other two sorts go on
+  // meaning what they say relative to it.
+  const planOrder = orderTimelineBySyllabus(
+    planTimeline(units, topics, recommended?.id ?? null),
+    syllabusView
+  );
   // Sorting happens AFTER the timeline is built, never before: the ring
   // percentages and the `next` row are facts about the plan, and a sort that
   // ran first would be ranking units by an arc it had not computed yet.
@@ -460,6 +504,15 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
             onStartTopic={startTopic}
             materials={notes}
             onOpenSource={openSource}
+            syllabus={syllabusView}
+            sort={sort}
+          />
+
+          {/* Weeks with no material behind them. A list, under the plan, with
+              one door — never units, never topics. See `PlanComingUpList`. */}
+          <PlanComingUpList
+            weeks={syllabusView?.comingUp ?? []}
+            onAddMaterials={() => goToSetActivity('add')}
           />
         </div>
 

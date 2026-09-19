@@ -8,6 +8,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { useUIStore } from '../../stores/uiStore';
+import { recordSyncClassSkip } from '../../utils/syncClassSkipped';
 
 /**
  * The network and dismissal state behind "Sync with your class".
@@ -61,7 +62,6 @@ function toBase64(file: File): Promise<string> {
 
 export function useSyncWithClass(studySetId: string | null | undefined): SyncWithClassState {
   const userId = useAuthStore((s) => s.currentUser?.id);
-  const markSkipped = useUIStore((s) => s.markSyncClassSkipped);
   // Subscribing to the map itself is what makes `Skip for now` re-render the
   // page; the selector above returns a stable function and would not.
   const skippedMap = useUIStore((s) => s.syncClassSkipped);
@@ -138,10 +138,13 @@ export function useSyncWithClass(studySetId: string | null | undefined): SyncWit
     }
   }, [studySetId, loadSets]);
 
+  // Local cache first, then the account: the skip is a DECISION about this set
+  // and follows the student to their phone (#142). The card is gone the moment
+  // this returns — the write is fire-and-forget.
   const skipForNow = useCallback(() => {
     if (!studySetId) return;
-    markSkipped(userId, studySetId);
-  }, [markSkipped, userId, studySetId]);
+    recordSyncClassSkip(userId, studySetId);
+  }, [userId, studySetId]);
 
   const skipped = Boolean(studySetId && userId && skippedMap[userId]?.[studySetId]);
 
