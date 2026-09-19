@@ -413,7 +413,10 @@ export function normalizeLectureSettings(raw: unknown): LectureSettings {
   return {
     spokenLanguage: normalizeLectureSpokenLanguage(record.spokenLanguage),
     transcribeTo: normalizeLectureTranscribeTarget(record.transcribeTo),
-    recordingConsent: record.recordingConsent === true,
+    // Present only once the student has answered, so an account that never
+    // opened the recorder keeps the two-key shape this category has always
+    // written — which is what the API's sanitizer test pins.
+    ...(record.recordingConsent === true ? { recordingConsent: true } : {}),
   };
 }
 
