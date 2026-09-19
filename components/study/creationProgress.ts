@@ -11,13 +11,10 @@
  * an upload in flight has no server row until it lands — and would need a
  * table that does not exist. So the popover reads what is already true.
  *
- * KNOWN ISSUE (tracked, found during the import-progress lane):
- * `noteUploadStore`'s localStorage key is not user-scoped and the store has no
- * reset action, so on a SHARED browser the previous student's file names can
- * still appear in this list after a sign-out. `aiJobStore` carries `userId` on
- * every record and is filtered here; the upload tray cannot be, because its
- * records have no owner. Fixing it means adding `userId` to `NoteUploadJob` and
- * a reset on sign-out, which is a store change this lane does not own.
+ * Both lists are filtered BY OWNER here (#144): each store's persisted list is
+ * one list per browser, so on a shared machine an unfiltered read shows the
+ * previous student's titles. `getJobsForUser` and `getUploadJobsForUser` are
+ * the two doors, and a signed-out reader gets nothing from either.
  *
  * Touches: `stores/aiJobStore` and `stores/noteUploadStore` for their types
  * only — nothing here reads a store or renders. The filtering, ordering and
@@ -29,7 +26,10 @@ import {
   getJobsForUser,
   type AiJob,
 } from '../../stores/aiJobStore';
-import type { NoteUploadJob } from '../../stores/noteUploadStore';
+import {
+  getUploadJobsForUser,
+  type NoteUploadJob,
+} from '../../stores/noteUploadStore';
 
 function statusOfAiJob(job: AiJob): CreationStatus {
   if (job.status === 'succeeded') return 'done';
@@ -71,7 +71,7 @@ export function toCreationEntries(
     updatedAt: job.updatedAt,
   }));
 
-  const fromUploads: CreationEntry[] = uploadJobs
+  const fromUploads: CreationEntry[] = getUploadJobsForUser([...uploadJobs], userId)
     .filter((job) => !job.dismissed)
     .filter((job) => !titles.has(job.fileName.trim().toLowerCase()))
     .map((job) => ({

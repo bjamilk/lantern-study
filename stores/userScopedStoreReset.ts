@@ -37,6 +37,7 @@ import { useTestStore } from './testStore';
 import { useFlashcardStore } from './flashcardStore';
 import { useNotesStore } from './notesStore';
 import { useAiJobStore, isJobRunning } from './aiJobStore';
+import { useNoteUploadStore } from './noteUploadStore';
 import { resetAIUsageState } from '../services/ai';
 
 export interface UserScopedReset {
@@ -58,6 +59,11 @@ export const USER_SCOPED_STORE_RESETS: UserScopedReset[] = [
     reset: () =>
       useAiJobStore.setState((state) => ({ jobs: state.jobs.filter((job) => isJobRunning(job)) })),
   },
+  // #144: the note-import tray. Every row is cleared rather than only the
+  // finished ones — unlike an AI job an upload costs no credit and holds no
+  // generated work, so there is nothing here a student could lose, and the
+  // transfer itself died with the session.
+  { name: 'noteUploadStore', reset: () => useNoteUploadStore.getState().reset() },
   // Not a zustand store, but the same defect class: a module global holding one
   // account's AI credit figures (E3 M11).
   { name: 'aiUsage', reset: () => resetAIUsageState() },

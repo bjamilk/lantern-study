@@ -301,4 +301,46 @@ describe('sanitizeSettings', () => {
       expect(merged.lecture).toEqual({ spokenLanguage: 'ha', transcribeTo: 'same' });
     });
   });
+
+  /**
+   * The Sync-with-your-class "Skip for now" map (#142 follow-up). It is the
+   * first settings category whose KEYS come from the client, so what matters
+   * here is that the route accepts it at all, merges rather than replaces, and
+   * still drops everything that is not a set id mapped to a timestamp.
+   */
+  describe('syncClassSkipped', () => {
+    it('accepts the category and unions it onto what is stored', () => {
+      const merged = mergeUserSettings(
+        { syncClassSkipped: { 'set-a': 100 } },
+        { syncClassSkipped: { 'set-b': 200 } }
+      ) as any;
+      expect(merged.syncClassSkipped).toEqual({ 'set-a': 100, 'set-b': 200 });
+    });
+
+    it('never un-skips a set a patch leaves out', () => {
+      const merged = mergeUserSettings(
+        { syncClassSkipped: { 'set-a': 100 } },
+        { syncClassSkipped: {} }
+      ) as any;
+      expect(merged.syncClassSkipped).toEqual({ 'set-a': 100 });
+    });
+
+    it('drops junk keys and junk values rather than storing them', () => {
+      const merged = mergeUserSettings(
+        {},
+        { syncClassSkipped: { 'set-a': 100, 'has space': 200, bad: 'yes' } }
+      ) as any;
+      expect(merged.syncClassSkipped).toEqual({ 'set-a': 100 });
+    });
+
+    it('cannot smuggle a privileged key to the top level', () => {
+      const merged = mergeUserSettings(
+        {},
+        { syncClassSkipped: { is_platform_admin: 1, is_banned: true } }
+      ) as any;
+      expect(merged.is_platform_admin).toBeUndefined();
+      expect(merged.is_banned).toBeUndefined();
+      expect(merged.syncClassSkipped).toEqual({});
+    });
+  });
 });

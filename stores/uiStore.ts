@@ -148,10 +148,11 @@ interface UIState {
   /**
    * Which sets have had "Sync with your class" skipped, per user id.
    *
-   * Shaped like `visitedSurfaces` and persisted beside it for the same
-   * reason: it is a fact about the ACCOUNT ("I do not have a syllabus for
-   * this set") rather than about this laptop, and finding the card back on
-   * the phone would be the same annoyance twice. Keyed by user so signing in
+   * The offline-first CACHE of `settings.syncClassSkipped`, which is where
+   * the decision actually lives — it is a fact about the ACCOUNT ("I do not
+   * have a syllabus for this set") rather than about this laptop, so the phone
+   * reads the same key. `utils/syncClassSkipped.ts` owns the write-through and
+   * the sign-in merge; this store does no network. Keyed by user so signing in
    * as somebody else cannot hide their card.
    *
    * Set-keyed rather than a single flag because the answer genuinely differs
@@ -166,6 +167,12 @@ interface UIState {
     studySetId: string
   ) => boolean;
   isSyncClassSkipped: (userId: string | null | undefined, studySetId: string) => boolean;
+  /**
+   * OR the account's skipped sets into this device's cache. Union only: the
+   * profile may know a set this browser has never seen, and this browser may
+   * know one the account's bounded map has dropped.
+   */
+  mergeSyncClassSkipped: (userId: string | null | undefined, setIds: string[]) => void;
   
   // Selected Chat
   selectedChat: ChatItem | null;
@@ -504,6 +511,20 @@ export const useUIStore = create<UIState>()(
       isSyncClassSkipped: (userId, studySetId) => {
         if (!userId || !studySetId) return false;
         return Boolean(get().syncClassSkipped[userId]?.[studySetId]);
+      },
+      mergeSyncClassSkipped: (userId, setIds) => {
+        if (!userId || setIds.length === 0) return;
+        const current = get().syncClassSkipped;
+        const mine = current[userId] ?? {};
+        let changed = false;
+        const merged = { ...mine };
+        for (const setId of setIds) {
+          if (!setId || merged[setId]) continue;
+          merged[setId] = true;
+          changed = true;
+        }
+        if (!changed) return;
+        set({ syncClassSkipped: { ...current, [userId]: merged } });
       },
       mergeVisitedSurfaces: (userId, remote) => {
         if (!userId) return;
