@@ -1,52 +1,101 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+/**
+ * The LECTURE ROOM: a note editor, a transcript drawer beside it, and the
+ * companion rail beside that.
+ *
+ * Exports: `LectureStudio` (named + default).
+ * Touches: `notesStore` (create/save/remove), `lectureRecordingStore` (the take
+ * itself — capture, segments, upload, transcription), `companionStore` (Ask),
+ * `toastStore`, `authStore` (the account's language + consent memory),
+ * `useLecturePreCheck` (level meter, quality, mic list), and the pure planners
+ * in `@lantern/shared` (`lectureDrawerReducer`, `growLectureChunks`,
+ * `lectureTabPillLabels`, `lectureNoteParts`).
+ *
+ * ## The shape, and why it changed (lane W7)
+ *
+ * This studio used to be ONE column: a toolbar, a consent bar, an enhance row,
+ * a live-transcript box, a tab strip and an Ask box, stacked down a single
+ * pane. Five of those six were controls, and the lecture — the notes a student
+ * types during class — got whatever was left. The measured reference (doc 04
+ * §9) puts the notes in the middle of the screen and everything else either in
+ * a 236px drawer to their right or in a floating pill at the bottom, and that
+ * is what this file now draws:
+ *
+ *   editor column (fluid)  |  transcript drawer 236  |  the companion rail
+ *
+ * The drawer lives INSIDE the set room's focus layout, so it is a sibling of
+ * the editor and NOT an overlay — until the room is too narrow for both, at
+ * which point `lectureDrawerPlacement` turns it into a sheet rather than
+ * squeezing the editor below a width you can write in. The studio measures
+ * ITSELF for that decision, exactly as `useCompanionRail` measures the room:
+ * the window is not the column.
+ *
+ * ## Gotchas
+ *
+ *  - A lecture IS a note. The body is typed notes + transcript + an appended
+ *    Smart Notes section, so every autosave has to re-attach `enhancedRef` or
+ *    the first keystroke after enhancing deletes the enhanced notes.
+ *  - The drawer's step comes from the pure reducer, but the RECORDER's status
+ *    comes from the store. They are synced one way only (store → drawer) in the
+ *    effect below: the store is what owns the microphone, and a drawer that
+ *    thought it was recording when the store had stopped is how you get a stuck
+ *    "Generating…" — the exact bug the reference has.
+ *  - The Record tab does not open a panel. It opens the DRAWER, which is the
+ *    fifth surface; the four panels are the four tabs before it.
+ */
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   LECTURE_ASK_JUST_SAID,
   LECTURE_ASK_KEEP_LISTENING,
   LECTURE_CONSENT_LINE,
-  NOTES_STUDIO_DEPTHS,
+  applyLectureSegmentToChunks,
   applyLectureNoteStamp,
   buildLectureAsk,
   composeLectureNoteBody,
   displayLectureTranscript,
   formatLectureClock,
+  growLectureChunks,
   hasEnoughNoteStudyContent,
+  initialLectureDrawer,
   latestLectureTranscript,
   lectureAudioAttachment,
+  lectureDrawerCopy,
+  lectureDrawerReducer,
   lectureNoteParts,
   lectureStudioPriceLine,
-  lectureTabs,
-  lectureTranscriptLines,
+  lectureTabPillLabels,
   newLectureNoteTitle,
   preferLectureTranscript,
+  sealLectureChunks,
   studySetNotePayload,
   resolveLectureStudioNote,
-  resolveLectureTab,
   shouldCreateLectureNote,
   shouldDeleteDoorNoteOnDiscard,
   type LectureAttachmentLike,
-  type LectureTabId,
+  type LectureChunk,
+  type LectureTabPillId,
   type TurnIntoTargetId,
 } from '@lantern/shared';
 import {
-  SMART_NOTES_SKILL_HINT_EXAMPLES,
-  SMART_NOTES_SKILL_HINT_MAX_CHARS,
   upsertSmartNotesSection,
   type SmartNotesDepth,
   type SmartNotesRequestOptions,
 } from '@lantern/shared/utils/smartNotes';
-import {
-  SMART_NOTES_CREDIT_COST,
-  formatCreditCost,
-  getSmartNotesCreditCost,
-} from '@lantern/shared/utils/aiCredits';
+import { formatCreditCost, getSmartNotesCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { StudyNote } from '../../types';
 import { Button, Select } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
-import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
-import { Tab, TabList, TabPanel, Tabs } from '../ui/Tabs';
-import { TurnIntoMenu } from './TurnIntoMenu';
+import { Menu, MenuContent, MenuItem, MenuTrigger } from '../ui/Menu';
 import { NoteReadingView } from './NoteReadingView';
 import { LectureAudioPlayer } from './LectureAudioPlayer';
+import { LectureEnhanceModal } from './LectureEnhanceModal';
+import { LectureTabPill } from './LectureTabPill';
+import {
+  LectureMinimisedWidget,
+  LectureTranscriptDrawer,
+} from './LectureTranscriptDrawer';
+import { lectureDrawerPlacement } from './lectureDrawerLayout';
+import { TurnIntoMenuItems } from './TurnIntoMenu';
+import NoteCollaboratorsModal from '../NoteCollaboratorsModal';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -58,12 +107,12 @@ import { useAuthStore } from '../../stores/authStore';
 import { useLecturePreCheck } from '../../hooks/useLecturePreCheck';
 import {
   currentLectureLanguages,
+  lectureConsentRemembered,
+  rememberLectureConsent,
   setLectureLanguages,
 } from '../../utils/lectureRecorderPrefs';
-import { LectureLevelMeter } from './LectureLevelMeter';
-import { LecturePreCheckPanel } from './LecturePreCheckPanel';
 import { LectureRecorderSettings } from './LectureRecorderSettings';
-import { LectureAudioSegments, LectureTranscriptSegments } from './LectureSegmentList';
+import { LectureAudioSegments } from './LectureSegmentList';
 import { resolveLectureResume, lectureSegmentRows } from '@lantern/shared/utils/lectureSegments';
 
 interface LectureStudioProps {
@@ -82,6 +131,18 @@ interface LectureStudioProps {
   ) => Promise<unknown>;
   onNoteReady: (noteId: string) => Promise<void>;
 }
+
+/**
+ * How fast the enhanced notes arrive in the editor.
+ *
+ * The enhance route answers with the WHOLE text — there is no token stream to
+ * subscribe to — so the reveal is progressive rendering rather than streaming,
+ * in steps no slower than this. It is the honest version of the reference's
+ * effect: nothing is faked about where the words came from, and the chip above
+ * the editor says "Saving enhanced notes…" because that is what is happening.
+ */
+const ENHANCE_REVEAL_STEP_MS = 120;
+const ENHANCE_REVEAL_STEPS = 12;
 
 export const LectureStudio: React.FC<LectureStudioProps> = ({
   courseId,
@@ -112,10 +173,7 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   const whisperTranscript = useLectureRecordingStore((s) => s.whisperTranscript);
   const startRecording = useLectureRecordingStore((s) => s.start);
   const stopRecording = useLectureRecordingStore((s) => s.stopAndTranscribe);
-  const pauseRecording = useLectureRecordingStore((s) => s.pauseRecording);
-  const resumeRecording = useLectureRecordingStore((s) => s.resumeRecording);
   const discardRecording = useLectureRecordingStore((s) => s.discard);
-  const cancelTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
   const segments = useLectureRecordingStore((s) => s.segments);
   const segmentsNoteId = useLectureRecordingStore((s) => s.transcriptNoteId);
@@ -141,28 +199,47 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
         : lectures.find((row) => row.id === decision.noteId) || note
       : note);
 
-  const [agreed, setAgreed] = useState(status !== 'idle');
-  const [consented, setConsented] = useState(status !== 'idle');
+  const userSettings = useAuthStore((s) => s.currentUser?.settings);
+  const currentUserId = useAuthStore((s) => s.currentUser?.id);
+  const languages = useMemo(() => currentLectureLanguages(userSettings), [userSettings]);
+  const consentRemembered = useMemo(
+    () => lectureConsentRemembered(userSettings),
+    [userSettings]
+  );
+
+  const [drawer, dispatchDrawer] = useReducer(
+    lectureDrawerReducer,
+    { consentRemembered, open: status !== 'idle' },
+    initialLectureDrawer
+  );
+  /** The account's answer can land after the first render (the profile loads). */
+  useEffect(() => {
+    if (consentRemembered && !drawer.consentRemembered) {
+      dispatchDrawer({ type: 'consent-granted' });
+    }
+  }, [consentRemembered, drawer.consentRemembered]);
+
+  const [agreed, setAgreed] = useState(status !== 'idle' || consentRemembered);
   const [title, setTitle] = useState(activeNote?.title || '');
   const [notesBody, setNotesBody] = useState('');
   const [askDraft, setAskDraft] = useState('');
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
   const [writing, setWriting] = useState(false);
-  /**
-   * Notes read as a hierarchy by default; Edit brings back the textarea. A
-   * lecture that starts recording flips to Edit on its own — typing during
-   * class is the whole point of this pane.
-   */
+  const [enhanceOpen, setEnhanceOpen] = useState(false);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  /** How much of the enhanced notes has been revealed into the editor. */
+  const [revealChars, setRevealChars] = useState<number | null>(null);
   const [editingNotes, setEditingNotes] = useState(false);
-  /** null = follow the default rule; a value = the student picked that tab. */
-  const [requestedTab, setRequestedTab] = useState<LectureTabId | null>(null);
+  const [tab, setTab] = useState<LectureTabPillId>('notes');
   const [starting, setStarting] = useState(false);
-  /** The ⚙ popover: mic + the two language choices. */
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /** One line about the reader, appended to the enhance prompt as a hint. */
   const [skillHint, setSkillHint] = useState('');
-  /** A material from this set to read alongside the transcript. '' = none. */
   const [contextNoteId, setContextNoteId] = useState('');
+  const [chunks, setChunks] = useState<LectureChunk[]>([]);
+  /** The measured width of this studio — what decides inline drawer vs sheet. */
+  const [studioWidth, setStudioWidth] = useState<number | null>(null);
+  const studioRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef(title);
   const notesRef = useRef(notesBody);
@@ -170,13 +247,21 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   titleRef.current = title;
   notesRef.current = notesBody;
 
+  useEffect(() => {
+    const node = studioRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const measure = (width: number) =>
+      setStudioWidth((prev) => (prev !== null && Math.abs(prev - width) < 1 ? prev : width));
+    measure(node.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (typeof width === 'number') measure(width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const knownTranscript = whisperTranscript || latestLectureTranscript(activeNote?.attachments);
-  /**
-   * The stored body, split into the three texts the tabs show. Reading the
-   * typed notes through the planner (rather than `splitLectureNoteBody` alone)
-   * is what keeps the generated Smart Notes block — which is appended to the
-   * END of the body, after the transcript — out of the editable textarea.
-   */
   const storedParts = lectureNoteParts({
     body: activeNote?.body ?? '',
     attachments: activeNote?.attachments ?? [],
@@ -277,40 +362,34 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   const elapsedMs = getSessionElapsedMs({ startedAt, pausedAt, pausedTotalMs });
   void tick;
   const recording = status === 'recording';
+  const busy = status === 'saving' || status === 'uploading' || status === 'transcribing';
 
   /**
-   * The pre-check holds its OWN short-lived microphone stream: the take is
-   * still one `MediaRecorder` in the store, on a stream of its own. It stays
-   * open while recording so the meter beside the clock keeps moving, and is
-   * released the moment the recorder is neither armed nor running.
+   * The pre-check holds its own short-lived microphone stream so the meter
+   * moves before and during a take, and is released once neither is true.
    */
-  const preCheckActive = status === 'idle' || recording;
-  const preCheck = useLecturePreCheck(preCheckActive);
-  const userSettings = useAuthStore((s) => s.currentUser?.settings);
-  const languages = useMemo(() => currentLectureLanguages(userSettings), [userSettings]);
+  const preCheck = useLecturePreCheck(status === 'idle' || recording);
+
   const allNotes = useNotesStore((s) => s.notes);
-  /**
-   * The materials the "Attach a material" picker may offer: this set's notes,
-   * minus the lecture being enhanced. The server checks owner and set again —
-   * this list is a convenience, never the authorization.
-   */
   const attachableNotes = useMemo(() => {
     if (!studySetId) return [];
     return (allNotes ?? []).filter(
       (row) => row.studySetId === studySetId && row.id !== activeNote?.id
     );
   }, [allNotes, studySetId, activeNote?.id]);
+  const contextNote = attachableNotes.find((row) => row.id === contextNoteId) ?? null;
 
   useEffect(() => {
     if (recording) setEditingNotes(true);
   }, [recording]);
 
-  /**
-   * Read the note's own segment rows whenever a lecture is opened and nothing
-   * is running. This is the recovery path: the rows were written BEFORE their
-   * audio was transcribed, so a tab that died mid-lecture left a trail here
-   * that the local blob could never have left.
-   */
+  /** STORE → DRAWER. The store owns the microphone; the drawer follows it. */
+  useEffect(() => {
+    if (recording && drawer.step !== 'recording') dispatchDrawer({ type: 'recording-started' });
+    if (status === 'saving' && drawer.step === 'recording') dispatchDrawer({ type: 'stop' });
+    if (status === 'idle' && drawer.step === 'saving') dispatchDrawer({ type: 'saved' });
+  }, [recording, status, drawer.step]);
+
   useEffect(() => {
     if (status !== 'idle' || !activeNote?.id) return;
     hydrateFromNote(activeNote.id, activeNote.attachments);
@@ -319,50 +398,53 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   /** An interrupted take: offer to carry on, or just to finish transcribing. */
   const recovery = useMemo(() => {
     if (status !== 'idle' || !activeNote) return null;
-    const decision = resolveLectureResume({
+    const resume = resolveLectureResume({
       rows: lectureSegmentRows(activeNote.attachments ?? []),
     });
-    return decision.action === 'recover' ? decision : null;
+    return resume.action === 'recover' ? resume : null;
   }, [status, activeNote?.id, activeNote?.attachments]);
 
   const segmentsForNote = segmentsNoteId === activeNote?.id ? segments : [];
-  const failedSegments = segmentsForNote.filter((row) => row.status === 'failed');
 
-  const handleResumeTake = async () => {
-    if (!recovery || !activeNote) return;
-    setConsented(true);
-    setStarting(true);
-    try {
-      await startRecording(activeNote.id, titleRef.current || activeNote.title || '', {
-        language: languages.spokenLanguage,
-        translateTo: languages.transcribeTo,
-        deviceId: preCheck.selectedDeviceId,
-        resume: {
-          sessionId: recovery.sessionId,
-          nextSeq: recovery.nextSeq,
-          recordedMs: recovery.recordedMs,
-        },
-      });
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not carry on.', 'error');
-    } finally {
-      setStarting(false);
-    }
-  };
+  /* ------------------------------------------------------------ chunks -- */
 
-  const handleFinishTake = () => {
-    segmentsForNote
-      .filter((row) => row.status !== 'done')
-      .forEach((row) => retrySegment(row.seq));
-  };
-  const busy = status === 'saving' || status === 'uploading' || status === 'transcribing';
-  const paused = recording && Boolean(pausedAt);
+  /**
+   * The captions grow the open chunk; a closed segment replaces the captions
+   * for its span. Both rules live in `@lantern/shared/learning/lectureRecorder`
+   * so the phone's Transcript tab reads the same list.
+   */
+  const captions = displayLectureTranscript({
+    committed: committedTranscript,
+    interim: interimTranscript,
+  });
+  useEffect(() => {
+    if (!recording || !captions.trim()) return;
+    setChunks((previous) => growLectureChunks({ chunks: previous, text: captions, atMs: elapsedMs }));
+    // `elapsedMs` moves every tick; the chunk grows on new WORDS, not on time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captions, recording]);
 
-  const handleNotesChange = (next: string) => {
-    const stamped = recording ? applyLectureNoteStamp(notesRef.current, next, elapsedMs) : next;
-    setNotesBody(stamped);
-    scheduleSave();
-  };
+  useEffect(() => {
+    const done = segmentsForNote.filter((row) => row.status === 'done' && row.transcript);
+    if (!done.length) return;
+    setChunks((previous) =>
+      done.reduce(
+        (rows, row) =>
+          applyLectureSegmentToChunks({
+            chunks: rows,
+            seq: row.seq,
+            startOffsetMs: row.startOffsetMs,
+            durationMs: row.durationMs,
+            text: row.transcript,
+          }),
+        previous
+      )
+    );
+  }, [segmentsForNote]);
+
+  const sealedChunks = drawer.step === 'done' ? sealLectureChunks(chunks) : chunks;
+
+  /* ------------------------------------------------------- the actions -- */
 
   const ensureNote = async (): Promise<StudyNote | null> => {
     if (activeNote) return activeNote;
@@ -398,12 +480,7 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
     }
   };
 
-  const handleStart = async () => {
-    if (!shouldCreateLectureNote(agreed)) {
-      showToast('Confirm you can record before starting.', 'info');
-      return;
-    }
-    setConsented(true);
+  const beginTake = async (resume?: { sessionId: string; nextSeq: number; recordedMs: number }) => {
     if (starting || recording || busy) return;
     setStarting(true);
     try {
@@ -414,6 +491,7 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
         language: languages.spokenLanguage,
         translateTo: languages.transcribeTo,
         deviceId: preCheck.selectedDeviceId,
+        ...(resume ? { resume } : {}),
       });
       if (useLectureRecordingStore.getState().status !== 'recording') {
         await cleanupDoorNote();
@@ -426,9 +504,54 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
     }
   };
 
+  /** The big black button: ask for consent first, unless it is remembered. */
+  const handleStartPressed = () => {
+    if (!shouldCreateLectureNote(agreed)) {
+      showToast('Confirm you can record before starting.', 'info');
+      return;
+    }
+    const next = lectureDrawerReducer(drawer, { type: 'start-pressed' });
+    dispatchDrawer({ type: 'start-pressed' });
+    if (next.step === 'recording') void beginTake();
+  };
+
+  const handleConsent = (granted: boolean) => {
+    if (!granted) {
+      dispatchDrawer({ type: 'consent-declined' });
+      return;
+    }
+    dispatchDrawer({ type: 'consent-granted' });
+    rememberLectureConsent();
+    void beginTake();
+  };
+
+  const handleStop = () => {
+    dispatchDrawer({ type: 'stop' });
+    stopRecording({ currentBody: notesRef.current });
+  };
+
+  const handleResume = () => {
+    const rows = lectureSegmentRows(activeNote?.attachments ?? []);
+    const offer = resolveLectureResume({ rows });
+    dispatchDrawer({ type: 'resume' });
+    void beginTake(
+      offer.action === 'none'
+        ? undefined
+        : { sessionId: offer.sessionId, nextSeq: offer.nextSeq, recordedMs: offer.recordedMs }
+    );
+  };
+
   const handleDiscard = async () => {
     discardRecording();
+    dispatchDrawer({ type: 'discard' });
+    setChunks([]);
     await cleanupDoorNote();
+  };
+
+  const handleNotesChange = (next: string) => {
+    const stamped = recording ? applyLectureNoteStamp(notesRef.current, next, elapsedMs) : next;
+    setNotesBody(stamped);
+    scheduleSave();
   };
 
   const askAboutLecture = async () => {
@@ -436,21 +559,49 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
     if (target) {
       await setActiveNoteContext({ id: target.id, title: title || target.title || 'Lecture' });
     }
-    const excerpt = liveTranscript;
     openWithMessage(
       buildLectureAsk({
         question: askDraft,
-        recentTranscript: excerpt,
+        recentTranscript: liveTranscript,
         noteTitle: title || target?.title,
         elapsedMs: recording ? elapsedMs : undefined,
       }),
-      {
-        noteId: target?.id,
-        recentTranscript: excerpt.slice(-400),
-      }
+      { noteId: target?.id, recentTranscript: liveTranscript.slice(-400) }
     );
     setAskDraft('');
   };
+
+  /* ------------------------------------------------------------ enhance -- */
+
+  /**
+   * Reveal the enhanced notes progressively once they land.
+   *
+   * The tab keeps saying "Generating…" for as long as `revealChars` is running,
+   * and the chip above the editor says what is happening. When it finishes —
+   * or when the request fails — both go away in the SAME state update, which is
+   * what stops the reference's stuck spinner from ever existing here.
+   */
+  useEffect(() => {
+    if (revealChars === null) return;
+    const full = storedParts.enhanced;
+    if (!full) {
+      setRevealChars(null);
+      return;
+    }
+    if (revealChars >= full.length) {
+      const done = setTimeout(() => setRevealChars(null), ENHANCE_REVEAL_STEP_MS);
+      return () => clearTimeout(done);
+    }
+    const step = Math.max(1, Math.ceil(full.length / ENHANCE_REVEAL_STEPS));
+    const timer = setTimeout(
+      () => setRevealChars((chars) => Math.min(full.length, (chars ?? 0) + step)),
+      ENHANCE_REVEAL_STEP_MS
+    );
+    return () => clearTimeout(timer);
+  }, [revealChars, storedParts.enhanced]);
+
+  const enhancing = writing || revealChars !== null;
+  const writeCost = formatCreditCost(getSmartNotesCreditCost(depth));
 
   const enhanceNotes = async () => {
     if (!activeNote) {
@@ -465,12 +616,13 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
       showToast('Add notes or wait for the transcript before enhancing.', 'info');
       return;
     }
+    setEnhanceError(null);
+    setEnhanceOpen(false);
     setWriting(true);
+    setTab('enhanced');
     try {
-      // Save the WHOLE lecture, not the typed half. `snapshot.body` is only
-      // what the student typed, so writing it straight back used to delete the
-      // transcript from the note — and the transcript is the part worth
-      // summarizing in the first place.
+      // Save the WHOLE lecture, not the typed half: the transcript is the part
+      // worth summarizing, and the server re-reads the note.
       const full = {
         title: snapshot.title,
         body: composeBody(snapshot.body, persistableTranscript),
@@ -481,413 +633,206 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
         skillLevelHint: skillHint.trim() || undefined,
         contextNoteId: contextNoteId || undefined,
       });
-      showToast('Enhanced notes saved on this lecture.', 'success');
+      setRevealChars(0);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not enhance notes.', 'error');
+      // The tab label is a function of `enhancing`, so clearing it here IS the
+      // fix for the reference's "Generating…" that never stopped.
+      setRevealChars(null);
+      setEnhanceError(
+        error instanceof Error ? error.message : lectureDrawerCopy.enhanceFailed
+      );
     } finally {
       setWriting(false);
     }
   };
 
-  const writeCost = formatCreditCost(getSmartNotesCreditCost(depth));
-  const canEnhance = status === 'idle' || busy;
+  /* ----------------------------------------------------------- the tabs -- */
 
-  const tabSource = {
+  const audioRow = lectureAudioAttachment({
     body: activeNote?.body ?? '',
     attachments: activeNote?.attachments ?? [],
-    liveTranscript,
-    sourceType: activeNote?.sourceType,
-    youtubeVideoId: activeNote?.youtubeVideoId,
+  });
+  const tabItems = lectureTabPillLabels({
+    recording,
+    enhancing,
+    hasEnhanced: Boolean(storedParts.enhanced),
+  });
+  const placement = lectureDrawerPlacement(studioWidth ?? 0);
+  const drawerVisible = drawer.open && !drawer.minimised;
+  const enhancedShown =
+    revealChars === null ? storedParts.enhanced : storedParts.enhanced.slice(0, revealChars);
+
+  const onPickTab = (next: LectureTabPillId) => {
+    if (next === 'record') {
+      dispatchDrawer({ type: drawerVisible ? 'close' : 'open' });
+      return;
+    }
+    setTab(next);
   };
-  const tabs = lectureTabs(tabSource);
-  const tab = resolveLectureTab(tabSource, requestedTab, { recording });
-  const transcriptLines = lectureTranscriptLines(
-    preferLectureTranscript(storedParts.transcript, liveTranscript)
-  );
-  const audioRow = lectureAudioAttachment(tabSource);
-  const hasEnhancedTab = tabs.some((row) => row.id === 'enhanced');
 
-  /**
-   * The consent gate is a door, not a wall. It used to cover the whole pane
-   * whenever nothing was recording, so opening a lecture you took last week —
-   * with its notes, its transcript and its audio all saved — asked "Start a
-   * lecture?" and showed you none of them. It now only stands in front of a
-   * lecture that has nothing to read yet; an existing one opens on its tabs and
-   * carries the consent line as a slim bar above them instead.
-   */
-  const hasSomethingToShow = tabs.length > 1 || storedParts.typed.trim().length > 0;
-  const showConsent = !consented && status === 'idle' && !hasSomethingToShow;
-
-  /**
-   * One node, two homes: the depth picker lives inside the Enhanced tab once
-   * that tab exists, and in the toolbar before it does — a lecture with no
-   * generated notes yet still has to be able to make some.
-   */
-  const enhanceControls = canEnhance ? (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="text-label uppercase text-lantern-text-secondary">Enhance</span>
-      <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Notes depth">
-        {NOTES_STUDIO_DEPTHS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            role="radio"
-            aria-checked={depth === option.id}
-            onClick={() => setDepth(option.id)}
-            className={`min-h-[44px] rounded-full border px-3 text-body ${
-              depth === option.id
-                ? 'border-lantern-primary bg-lantern-primary text-white'
-                : 'border-lantern-border bg-lantern-surface text-lantern-text hover:border-lantern-text-tertiary'
-            }`}
-          >
-            {option.label}
-            <span className="ml-1 text-caption font-normal opacity-80">
-              · {formatCreditCost(SMART_NOTES_CREDIT_COST[option.id])}
-            </span>
-          </button>
-        ))}
-      </div>
-      <Button size="sm" onClick={() => void enhanceNotes()} loading={writing} disabled={writing || busy}>
-        Enhance notes · {writeCost}
-      </Button>
-      {/*
-        Two optional steers, both free. The price line above does not move for
-        either of them: a hint is a sentence in the prompt, not a second call.
-      */}
-      <div className="w-full space-y-2">
-        <label htmlFor="lecture-skill-hint" className="block text-caption text-lantern-text-secondary">
-          How much do you already know? (optional)
-        </label>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            id="lecture-skill-hint"
-            value={skillHint}
-            maxLength={SMART_NOTES_SKILL_HINT_MAX_CHARS}
-            onChange={(event) => setSkillHint(event.target.value)}
-            placeholder="e.g. I know the basics but not the maths"
-            className="min-h-[44px] min-w-0 flex-1 rounded-xl border border-lantern-border bg-lantern-background px-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
-          />
-          {SMART_NOTES_SKILL_HINT_EXAMPLES.map((example) => (
-            <button
-              key={example.id}
-              type="button"
-              onClick={() => setSkillHint(example.text)}
-              className="min-h-[44px] rounded-full border border-lantern-border bg-lantern-surface px-3 text-body text-lantern-text hover:border-lantern-text-tertiary"
-            >
-              {example.label}
-            </button>
-          ))}
-        </div>
-        {attachableNotes.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <label
-              htmlFor="lecture-context-note"
-              className="text-caption text-lantern-text-secondary"
-            >
-              Attach a material
-            </label>
-            <Select
-              id="lecture-context-note"
-              value={contextNoteId}
-              onChange={(event) => setContextNoteId(event.target.value)}
-              className="min-h-[44px] min-w-0 flex-1"
-            >
-              <option value="">None</option>
-              {attachableNotes.map((row) => (
-                <option key={row.id} value={row.id}>
-                  {row.title || 'Untitled note'}
-                </option>
-              ))}
-            </Select>
-          </div>
-        ) : null}
-      </div>
-    </div>
+  const settingsPopover = settingsOpen ? (
+    <LectureRecorderSettings
+      languages={languages}
+      onChangeLanguages={(patch) => setLectureLanguages(patch)}
+      devices={preCheck.devices}
+      selectedDeviceId={preCheck.selectedDeviceId}
+      onSelectDevice={preCheck.selectDevice}
+      onClose={() => setSettingsOpen(false)}
+    />
   ) : null;
 
-  return (
-    <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface">
-      <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-lantern-border px-3 py-2">
-        <span className={`text-label uppercase ${FEATURE_INK_TEXT.recording}`}>Lecture</span>
-        <div
-          className={`inline-flex min-h-[44px] items-center gap-2 rounded-full px-3 ${FEATURE_TINT_BG.recording}`}
-          aria-live="polite"
-        >
-          <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
-            {recording && !paused ? (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lantern-feature-recording-ink opacity-75" />
-            ) : null}
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-lantern-feature-recording-ink" />
-          </span>
-          <span className={`text-heading tabular-nums ${FEATURE_INK_TEXT.recording}`}>
-            {recording || busy ? formatLectureClock(elapsedMs) : '0:00'}
-          </span>
-          <span className="text-caption text-lantern-text-secondary">
-            {status === 'saving'
-              ? 'Saving your recording…'
-              : busy
-                ? status === 'uploading'
-                  ? 'Uploading…'
-                  : 'Transcribing…'
-                : paused
-                  ? 'Paused'
-                  : recording
-                    ? 'Recording'
-                    : 'Ready'}
-          </span>
+  const drawerNode = (
+    <LectureTranscriptDrawer
+      drawer={drawer}
+      preCheck={preCheck}
+      canStart={agreed}
+      starting={starting}
+      chunks={sealedChunks}
+      sealed={drawer.step === 'done'}
+      elapsedMs={elapsedMs}
+      enhancing={enhancing}
+      onEnhance={() => setEnhanceOpen(true)}
+      enhanceCost={writeCost}
+      onClose={() => dispatchDrawer({ type: 'close' })}
+      onOpenSettings={() => setSettingsOpen((was) => !was)}
+      onStart={handleStartPressed}
+      onConsent={handleConsent}
+      onStop={handleStop}
+      onMinimise={() => dispatchDrawer({ type: 'minimise' })}
+      onResume={handleResume}
+      settings={settingsPopover}
+      consent={
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 text-body">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(event) => setAgreed(event.target.checked)}
+              className="mt-1"
+            />
+            <span>I can record this lecture.</span>
+          </label>
+          <p className="text-caption text-lantern-text-secondary">{LECTURE_CONSENT_LINE}</p>
+          <p className="text-caption text-lantern-text-secondary">{lectureStudioPriceLine()}</p>
         </div>
-        {showConsent ? null : recording ? (
-          <>
-            {/* The same analyser as the pre-check, small, beside the clock. */}
-            <LectureLevelMeter levelDb={preCheck.levelDb} size="sm" label="Input level" />
-            {paused ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => resumeRecording()}
-                title="Resume recording"
-                aria-label="Resume recording"
-              >
-                Resume
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => pauseRecording()}
-                title="Pause recording"
-                aria-label="Pause recording"
-              >
-                Pause
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="danger"
-              onClick={() => stopRecording({ currentBody: notesRef.current })}
-              title="Stop recording"
-              aria-label="Stop recording"
+      }
+    />
+  );
+
+  return (
+    <div
+      ref={studioRef}
+      className="flex-1 min-h-0 min-w-0 flex flex-row gap-4 overflow-hidden"
+      data-testid="lecture-studio"
+      data-drawer-placement={placement}
+    >
+      {/* THE EDITOR COLUMN. `relative`, because the tab pill and the minimised
+          widget float inside it rather than taking rows of their own. */}
+      <div className="relative flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface">
+        {/* HEADER — the lecture's own breadcrumb, Turn into, Share. The set and
+            the timer are the focus bar's job, one row above this one. */}
+        <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-lantern-border px-3 py-2">
+          <span aria-hidden="true">🎙</span>
+          <input
+            value={title}
+            onChange={(event) => {
+              setTitle(event.target.value);
+              scheduleSave();
+            }}
+            aria-label="Lecture title"
+            className="min-w-0 flex-1 bg-transparent text-title font-semibold text-lantern-text outline-none"
+          />
+          <Menu>
+            <MenuTrigger
+              aria-label="Turn this lecture into something else"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text hover:border-lantern-text-tertiary disabled:opacity-50"
+              disabled={turning || !activeNote}
             >
-              Stop
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => void handleDiscard()}
-              title="Discard this recording"
-              aria-label="Discard this recording"
-            >
-              Discard
-            </Button>
-          </>
-        ) : busy ? (
-          <Button size="sm" variant="ghost" onClick={() => cancelTranscription()}>
-            Cancel
-          </Button>
-        ) : (
-          <>
-            <Button
-              size="sm"
-              onClick={() => void handleStart()}
-              loading={starting}
-              disabled={starting || !consented}
-              title="Start recording"
-              aria-label="Start recording"
-            >
-              {activeNote ? 'Record' : 'Start'}
-            </Button>
+              Turn into
+              <AppIcon name="chevron-down" size={14} aria-hidden />
+            </MenuTrigger>
+            <MenuContent align="end" placement="bottom">
+              <TurnIntoMenuItems
+                existing={activeNote ? turnIntoExisting?.(activeNote.id) : undefined}
+                onSelect={onTurnInto}
+              />
+            </MenuContent>
+          </Menu>
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            disabled={!activeNote}
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text hover:border-lantern-text-tertiary disabled:opacity-50"
+          >
+            <AppIcon name="share" size={16} aria-hidden />
+            Share
+          </button>
+        </div>
+
+        {enhancing ? (
+          <div className="pointer-events-none absolute left-1/2 top-14 z-10 -translate-x-1/2">
+            <span className="rounded-full bg-lantern-primary-fill px-3 py-1 text-caption text-white shadow-lantern-md">
+              ⟳ {lectureDrawerCopy.enhancing}
+            </span>
+          </div>
+        ) : null}
+
+        {enhanceError ? (
+          <div
+            role="alert"
+            className="shrink-0 flex items-center gap-2 border-b border-lantern-border bg-lantern-surface px-3 py-2"
+          >
+            <span className="text-body text-lantern-error">
+              ✕ {lectureDrawerCopy.enhanceFailed}
+            </span>
             <button
               type="button"
-              onClick={() => setSettingsOpen((was) => !was)}
-              aria-label="Recorder settings"
-              aria-expanded={settingsOpen}
-              title="Recorder settings"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-lantern-border text-lantern-text hover:border-lantern-text-tertiary"
+              onClick={() => setEnhanceError(null)}
+              className="ml-auto min-h-[44px] rounded-full border border-lantern-border px-3 text-body text-lantern-text"
             >
-              <AppIcon name="settings" size={20} />
+              Close
             </button>
-          </>
-        )}
-      </div>
-
-      {showConsent ? (
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
-          <h2 className="text-heading">Start a lecture?</h2>
-          <p className="text-body text-lantern-text-secondary">{LECTURE_CONSENT_LINE}</p>
-          <p className="text-caption text-lantern-text-secondary">{lectureStudioPriceLine()}</p>
-          {decision.action === 'resume' ? (
-            <p className="text-caption text-lantern-text-secondary">
-              This continues {activeNote?.title || 'the open lecture note'} — it will not create a second dated note.
-            </p>
-          ) : (
-            <p className="text-caption text-lantern-text-secondary">
-              We will create “{decision.title}” only after you start.
-            </p>
-          )}
-          {/*
-            The pre-check replaces the bare Start button. The consent tick and
-            the cost copy above it are unchanged — they are the two things a
-            student must read, and a meter is not a reason to move them.
-          */}
-          <LecturePreCheckPanel
-            preCheck={preCheck}
-            canStart={agreed}
-            starting={starting}
-            onOpenSettings={() => setSettingsOpen((was) => !was)}
-            onStart={() => void handleStart()}
-            consent={
-              <label className="flex items-start gap-2 text-body">
-                <input
-                  type="checkbox"
-                  checked={agreed}
-                  onChange={(event) => setAgreed(event.target.checked)}
-                  className="mt-1"
-                />
-                <span>I can record this lecture.</span>
-              </label>
-            }
-          />
-          {settingsOpen ? (
-            <LectureRecorderSettings
-              languages={languages}
-              onChangeLanguages={(patch) => setLectureLanguages(patch)}
-              devices={preCheck.devices}
-              selectedDeviceId={preCheck.selectedDeviceId}
-              onSelectDevice={preCheck.selectDevice}
-              onClose={() => setSettingsOpen(false)}
-            />
-          ) : null}
-        </div>
-      ) : (
-        <>
-          <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-lantern-border px-3 py-2">
-            <input
-              value={title}
-              onChange={(event) => {
-                setTitle(event.target.value);
-                scheduleSave();
-              }}
-              aria-label="Lecture title"
-              className="min-w-0 flex-1 bg-transparent text-heading font-semibold text-lantern-text outline-none"
-            />
-            <TurnIntoMenu
-              disabled={turning || !activeNote}
-              existing={activeNote ? turnIntoExisting?.(activeNote.id) : undefined}
-              onSelect={onTurnInto}
-            />
           </div>
+        ) : null}
 
-          {!consented && status === 'idle' ? (
-            <div className="shrink-0 flex flex-wrap items-center gap-3 border-b border-lantern-border px-3 py-2">
-              <label className="flex items-center gap-2 text-body">
-                <input
-                  type="checkbox"
-                  checked={agreed}
-                  onChange={(event) => {
-                    setAgreed(event.target.checked);
-                    setConsented(event.target.checked);
-                  }}
-                />
-                <span>I can record this lecture.</span>
-              </label>
-              <span className="text-caption text-lantern-text-secondary">{LECTURE_CONSENT_LINE}</span>
+        {recovery ? (
+          <div className="shrink-0 border-b border-lantern-border px-3 py-2">
+            <p className="text-body text-lantern-text">
+              This lecture was interrupted. {recovery.untranscribed} part
+              {recovery.untranscribed === 1 ? '' : 's'} recorded but not transcribed — the audio is
+              saved.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button size="sm" onClick={handleResume} loading={starting}>
+                Carry on recording
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  segmentsForNote
+                    .filter((row) => row.status !== 'done')
+                    .forEach((row) => retrySegment(row.seq))
+                }
+              >
+                Finish transcribing
+              </Button>
             </div>
-          ) : null}
+          </div>
+        ) : null}
 
-          {settingsOpen && status === 'idle' ? (
-            <div className="shrink-0 border-b border-lantern-border p-3">
-              <LectureRecorderSettings
-                languages={languages}
-                onChangeLanguages={(patch) => setLectureLanguages(patch)}
-                devices={preCheck.devices}
-                selectedDeviceId={preCheck.selectedDeviceId}
-                onSelectDevice={preCheck.selectDevice}
-                onClose={() => setSettingsOpen(false)}
-              />
-            </div>
-          ) : null}
-
-          {/*
-            A lecture this device did not finish. Both doors are open and both
-            are honest: the audio is already saved either way, so "Carry on"
-            records more into the SAME take (the stamps stay true to the
-            lecture) and "Finish" only asks for the words of what is already
-            there. Neither re-records anything and neither charges twice.
-          */}
-          {recovery ? (
-            <div className="shrink-0 border-b border-lantern-border px-3 py-2">
-              <p className="text-body text-lantern-text">
-                This lecture was interrupted. {recovery.untranscribed} part
-                {recovery.untranscribed === 1 ? '' : 's'} recorded but not transcribed — the audio is
-                saved.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => void handleResumeTake()} loading={starting}>
-                  Carry on recording
-                </Button>
-                <Button size="sm" variant="secondary" onClick={handleFinishTake}>
-                  Finish transcribing
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {!hasEnhancedTab && enhanceControls ? (
-            <div className="shrink-0 border-b border-lantern-border px-3 py-2">{enhanceControls}</div>
-          ) : null}
-
-          {/*
-            The transcript during class. The Transcript TAB is unreachable while
-            a take runs — nothing may pull a typing student off My Notes — so the
-            growing list lives here, above the tabs, where it can be read without
-            leaving the notes.
-          */}
-          {recording || busy ? (
-            <div className="shrink-0 border-b border-lantern-border p-3 max-h-[30%] overflow-y-auto">
-              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">
-                Live transcript
-              </h2>
-              {segmentsForNote.length || recording ? (
-                <LectureTranscriptSegments
-                  segments={segmentsForNote}
-                  liveCaptions={displayLectureTranscript({
-                    committed: committedTranscript,
-                    interim: interimTranscript,
-                  })}
-                  recording={recording}
-                  onRetry={retrySegment}
-                />
-              ) : (
-                <p className="text-body text-lantern-text-tertiary">
-                  Saving your recording… the last part is still on its way.
-                </p>
-              )}
-            </div>
-          ) : null}
-
-          <Tabs
-            value={tab}
-            onValueChange={(next) => setRequestedTab(next as LectureTabId)}
-            variant="segmented"
-            aria-label="Lecture"
-            className="flex-1 min-h-0 flex flex-col"
-          >
-            <TabList className="shrink-0 mx-3 mt-3 overflow-x-auto">
-              {tabs.map((row, index) => (
-                <Tab
-                  key={row.id}
-                  value={row.id}
-                  index={index}
-                  /* A take owns the pane: nothing may pull a typing student off My Notes. */
-                  disabled={recording && row.id !== 'notes'}
-                >
-                  {row.label}
-                </Tab>
-              ))}
-            </TabList>
-
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <TabPanel value="notes" className="flex h-full min-h-0 flex-col p-3">
+        {/* THE PANE. One scroller, generous side padding, a content block that
+            stops at the width a line of prose is readable at. `pb-24` is the
+            floating pill's clearance — it sits over this, not beside it. */}
+        <div
+          id="lecture-panel"
+          role="tabpanel"
+          aria-labelledby={`lecture-tab-${tab}`}
+          className="flex-1 min-h-0 overflow-y-auto px-6 pb-24 pt-4 md:px-12"
+        >
+          <div className="mx-auto w-full max-w-[560px]">
+            {tab === 'notes' ? (
+              <div className="flex h-full min-h-0 flex-col">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <h2 className="text-label uppercase text-lantern-text-secondary">My notes</h2>
                   <button
@@ -905,12 +850,12 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
                     onChange={(event) => handleNotesChange(event.target.value)}
                     aria-label="Typed lecture notes"
                     placeholder="Type during class. New paragraphs get a timestamp."
-                    className="flex-1 min-h-[10rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
+                    className="min-h-[24rem] w-full flex-1 resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
                   />
                 ) : (
                   <div
                     aria-label="Typed lecture notes"
-                    className="flex-1 min-h-[10rem] w-full overflow-y-auto rounded-xl border border-lantern-border bg-lantern-background p-3"
+                    className="min-h-[24rem] w-full flex-1 rounded-xl border border-lantern-border bg-lantern-background p-3"
                   >
                     <NoteReadingView
                       body={notesBody}
@@ -918,87 +863,207 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
                     />
                   </div>
                 )}
-              </TabPanel>
+              </div>
+            ) : null}
 
-              <TabPanel value="enhanced" className="space-y-3 p-3">
+            {tab === 'enhanced' ? (
+              <div className="space-y-3">
                 <NoteReadingView
-                  body={storedParts.enhanced}
-                  emptyLine="No enhanced notes yet."
+                  body={enhancedShown}
+                  emptyLine={
+                    enhancing ? 'Writing your notes…' : 'No enhanced notes yet.'
+                  }
                 />
-                {enhanceControls ? (
-                  <div className="border-t border-lantern-border pt-3">{enhanceControls}</div>
-                ) : null}
-              </TabPanel>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setEnhanceOpen(true)}
+                  disabled={enhancing}
+                >
+                  ✨ Enhance notes · {writeCost}
+                </Button>
+              </div>
+            ) : null}
 
-              <TabPanel value="transcript" className="p-3">
-                {segmentsForNote.length ? (
-                  <LectureTranscriptSegments segments={segmentsForNote} onRetry={retrySegment} />
-                ) : transcriptLines.length ? (
-                  <ol className="space-y-2">
-                    {transcriptLines.map((line, index) => (
-                      <li key={`${line.time ?? ''}-${index}`} className="flex gap-3">
-                        {/* The gutter time is a caption; the sentence stays body prose. */}
-                        <span className="w-12 shrink-0 text-caption tabular-nums text-lantern-text-secondary">
-                          {line.time ?? ''}
-                        </span>
-                        <span className="min-w-0 text-body text-lantern-text">{line.text}</span>
-                      </li>
-                    ))}
-                  </ol>
+            {tab === 'materials' ? (
+              <div className="space-y-3">
+                <h2 className="text-label uppercase text-lantern-text-secondary">Material</h2>
+                {contextNote ? (
+                  <div className="rounded-xl border border-lantern-border bg-lantern-background p-3">
+                    <p className="text-body text-lantern-text">
+                      {contextNote.title || 'Untitled note'}
+                    </p>
+                    <p className="mt-1 text-caption text-lantern-text-secondary">
+                      Enhanced notes will read this together with the transcript.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-2"
+                      onClick={() => setContextNoteId('')}
+                    >
+                      Remove
+                    </Button>
+                  </div>
                 ) : (
-                  <p className="text-body text-lantern-text-tertiary">
-                    Captions save into this note as you go. The full Whisper transcript lands after
-                    you stop.
-                  </p>
+                  <>
+                    <p className="text-body text-lantern-text-secondary">
+                      Attach a material from this set. Enhanced notes will use it together with the
+                      transcript.
+                    </p>
+                    {attachableNotes.length > 0 ? (
+                      <Select
+                        aria-label="Attach a material"
+                        value={contextNoteId}
+                        onChange={(event) => setContextNoteId(event.target.value)}
+                        className="min-h-[44px] w-full"
+                      >
+                        <option value="">Attach a material</option>
+                        {attachableNotes.map((row) => (
+                          <option key={row.id} value={row.id}>
+                            {row.title || 'Untitled note'}
+                          </option>
+                        ))}
+                      </Select>
+                    ) : (
+                      <p className="text-caption text-lantern-text-tertiary">
+                        This set has no other material yet.
+                      </p>
+                    )}
+                  </>
                 )}
-              </TabPanel>
+              </div>
+            ) : null}
 
-              <TabPanel value="materials" className="p-3">
-                <p className="text-body text-lantern-text-secondary">
-                  Uploaded files and Walk / Read live on this lecture in Library.
+            {tab === 'audio' ? (
+              activeNote && segmentsForNote.length ? (
+                <LectureAudioSegments
+                  noteId={activeNote.id}
+                  segments={segmentsForNote}
+                  attachments={activeNote.attachments}
+                />
+              ) : activeNote && audioRow ? (
+                <LectureAudioPlayer noteId={activeNote.id} attachment={audioRow} />
+              ) : (
+                <p className="text-body text-lantern-text-tertiary">
+                  No recording is saved on this lecture yet.
                 </p>
-              </TabPanel>
+              )
+            ) : null}
 
-              <TabPanel value="audio">
-                {activeNote && segmentsForNote.length ? (
-                  <LectureAudioSegments
-                    noteId={activeNote.id}
-                    segments={segmentsForNote}
-                    attachments={activeNote.attachments}
-                  />
-                ) : activeNote && audioRow ? (
-                  /* A lecture recorded before segments existed: one whole take. */
-                  <LectureAudioPlayer noteId={activeNote.id} attachment={audioRow} />
-                ) : (
-                  <p className="p-3 text-body text-lantern-text-tertiary">
-                    No recording is saved on this lecture yet.
-                  </p>
-                )}
-              </TabPanel>
-            </div>
-          </Tabs>
-
-          <div className="shrink-0 border-t border-lantern-border p-3">
-            <div className="mb-2 flex flex-wrap items-baseline gap-2">
-              <h2 className="text-label uppercase text-lantern-text-secondary">Ask Lantern</h2>
-              <p className="text-caption text-lantern-text-secondary">{LECTURE_ASK_KEEP_LISTENING}</p>
-            </div>
-            <div className="flex flex-wrap items-start gap-2">
-              <textarea
-                value={askDraft}
-                onChange={(event) => setAskDraft(event.target.value)}
-                aria-label="Ask about the lecture"
-                placeholder={LECTURE_ASK_JUST_SAID}
-                rows={2}
-                className="min-w-0 flex-1 resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
-              />
-              <Button size="sm" variant="secondary" onClick={() => void askAboutLecture()}>
-                {LECTURE_ASK_JUST_SAID}
-              </Button>
+            {/* Ask lives under the pane, not in chrome of its own: it is about
+                what was just said, and it reads as the last paragraph. */}
+            <div className="mt-6 border-t border-lantern-border pt-3">
+              <div className="mb-2 flex flex-wrap items-baseline gap-2">
+                <h2 className="text-label uppercase text-lantern-text-secondary">Ask Lantern</h2>
+                <p className="text-caption text-lantern-text-secondary">
+                  {LECTURE_ASK_KEEP_LISTENING}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-start gap-2">
+                <textarea
+                  value={askDraft}
+                  onChange={(event) => setAskDraft(event.target.value)}
+                  aria-label="Ask about the lecture"
+                  placeholder={LECTURE_ASK_JUST_SAID}
+                  rows={2}
+                  className="min-w-0 flex-1 resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
+                />
+                <Button size="sm" variant="secondary" onClick={() => void askAboutLecture()}>
+                  {LECTURE_ASK_JUST_SAID}
+                </Button>
+              </div>
+              {recording ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-2"
+                  onClick={() => void handleDiscard()}
+                >
+                  Discard this recording
+                </Button>
+              ) : null}
             </div>
           </div>
-        </>
-      )}
+        </div>
+
+        {/* THE FLOATING TAB PILL, centred in the editor column. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4">
+          <LectureTabPill
+            items={tabItems}
+            value={drawerVisible && recording ? 'record' : tab}
+            onChange={onPickTab}
+            panelId="lecture-panel"
+          />
+        </div>
+
+        {/* THE MINIMISED WIDGET — bottom-right of the editor, over the notes. */}
+        {drawer.minimised && recording ? (
+          <div className="absolute bottom-20 right-4">
+            <LectureMinimisedWidget
+              elapsedMs={elapsedMs}
+              levelDb={preCheck.levelDb}
+              qualityLabel={preCheck.quality.label}
+              onStop={handleStop}
+              onExpand={() => dispatchDrawer({ type: 'expand' })}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      {/* THE DRAWER — a column beside the editor while the room can hold one,
+          a sheet over it when it cannot. Never a squeezed editor. */}
+      {drawerVisible && placement === 'inline' ? (
+        <aside
+          className="my-2 w-[236px] shrink-0"
+          aria-label={lectureDrawerCopy.title}
+          data-testid="lecture-drawer-inline"
+        >
+          {drawerNode}
+        </aside>
+      ) : null}
+
+      {drawerVisible && placement === 'sheet' ? (
+        <div
+          className="fixed inset-0 z-40 flex justify-end bg-black/40"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) dispatchDrawer({ type: 'close' });
+          }}
+        >
+          <aside
+            className="h-full w-[280px] max-w-[90vw] p-2"
+            aria-label={lectureDrawerCopy.title}
+            data-testid="lecture-drawer-sheet"
+          >
+            {drawerNode}
+          </aside>
+        </div>
+      ) : null}
+
+      <LectureEnhanceModal
+        isOpen={enhanceOpen}
+        onClose={() => setEnhanceOpen(false)}
+        depth={depth}
+        onDepthChange={setDepth}
+        skillHint={skillHint}
+        onSkillHintChange={setSkillHint}
+        attachableNotes={attachableNotes}
+        contextNoteId={contextNoteId}
+        onContextNoteChange={setContextNoteId}
+        onSubmit={() => void enhanceNotes()}
+        writing={writing}
+        cost={writeCost}
+      />
+
+      {activeNote && shareOpen ? (
+        <NoteCollaboratorsModal
+          isOpen={shareOpen}
+          onClose={() => setShareOpen(false)}
+          noteId={activeNote.id}
+          currentUserId={currentUserId}
+        />
+      ) : null}
     </div>
   );
 };

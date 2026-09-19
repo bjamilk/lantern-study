@@ -111,6 +111,57 @@ export function setLectureLanguages(patch: {
   return next;
 }
 
+/* ------------------------------------------------------------ consent --- */
+
+/**
+ * Has this account already answered the recording-consent card?
+ *
+ * Read off the same `lecture` settings category as the languages, so a student
+ * is asked once rather than before every lecture. It rides with the account
+ * because the question ("may you record this?") is about the student, not about
+ * the laptop they happen to be sitting at.
+ */
+export function lectureConsentRemembered(settings: unknown): boolean {
+  const lecture =
+    settings && typeof settings === 'object'
+      ? (settings as { lecture?: unknown }).lecture
+      : undefined;
+  if (!lecture || typeof lecture !== 'object' || Array.isArray(lecture)) return false;
+  return (lecture as Record<string, unknown>).recordingConsent === true;
+}
+
+/**
+ * Remember a "Yes, record now".
+ *
+ * Deliberately one-way: nothing here writes `false`. The card is a confirmation
+ * the student gives, not a toggle the app flips back on their behalf — and a
+ * declined take simply does not start.
+ */
+export function rememberLectureConsent(): void {
+  const user = useAuthStore.getState().currentUser;
+  const settings =
+    user?.settings && typeof user.settings === 'object'
+      ? (user.settings as unknown as Record<string, unknown>)
+      : {};
+  if (!user?.id) return;
+  const current = currentLectureLanguages(settings);
+  const next = { ...current, recordingConsent: true };
+  useAuthStore.getState().setCurrentUser({
+    ...user,
+    settings: {
+      ...settings,
+      lecture: next,
+      updatedAt: new Date().toISOString(),
+    },
+  } as typeof user);
+  void saveUserSettingsDetailed(user.id, { lecture: next }).then((result) => {
+    if (!result.ok) {
+      // Not surfaced: the worst case is being asked once more next time.
+      console.warn('Failed to save lecture consent preference');
+    }
+  });
+}
+
 /* --------------------------------------------------------- mic device --- */
 
 const MIC_DEVICE_KEY = 'lantern:lecture:micDeviceId';
