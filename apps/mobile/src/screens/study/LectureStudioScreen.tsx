@@ -18,7 +18,7 @@
  * duplicate dated note; a note created by the door is deleted again on discard
  * when it is still untouched.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -28,12 +28,18 @@ import {
   LECTURE_CONSENT_LINE,
   NOTES_STUDIO_DEPTHS,
   applyLectureNoteStamp,
+  applyLectureSegmentToChunks,
   buildLectureAsk,
   composeLectureNoteBody,
   displayLectureTranscript,
   formatLectureClock,
+  growLectureChunks,
   hasEnoughNoteStudyContent,
+  initialLectureDrawer,
   isLectureNote,
+  lectureDrawerReducer,
+  sealLectureChunks,
+  type LectureChunk,
   latestLectureTranscript,
   lectureNoteParts,
   lectureStudioPriceLine,
@@ -64,7 +70,12 @@ import { LecturePreflightCard } from '../../components/lecture/LecturePreflightC
 import { LectureLanguagePicker } from '../../components/lecture/LectureLanguagePicker';
 import { LectureTabs } from '../../components/lecture/LectureTabs';
 import { LectureTranscriptSegments } from '../../components/lecture/LectureSegmentList';
+import {
+  LectureRecordingBar,
+  LectureTranscriptPanel,
+} from '../../components/lecture/LectureTranscriptPanel';
 import { lectureStudioView } from './lectureStudioView';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -137,6 +148,23 @@ export function LectureStudioScreen({ navigation, route }: Props) {
     lectures.find((row) => row.id === activeId) ||
     courseNotes.find((row) => row.id === activeId) ||
     null;
+
+  /**
+   * The same drawer state machine the web runs, in the Transcript tab.
+   *
+   * The consent answer is remembered on the ACCOUNT (`lecture.recordingConsent`),
+   * so a student who has answered the card on the laptop is not asked again on
+   * the phone. The consent LINE is still shown beside the pre-flight either way.
+   */
+  const lectureSettings = useSettingsStore((s) => s.settings?.lecture);
+  const updateSettings = useSettingsStore((s) => s.updateSettings);
+  const consentRemembered = lectureSettings?.recordingConsent === true;
+  const [drawer, dispatchDrawer] = useReducer(
+    lectureDrawerReducer,
+    { consentRemembered, open: status !== 'idle' },
+    initialLectureDrawer
+  );
+  const [chunks, setChunks] = useState<LectureChunk[]>([]);
 
   const [agreed, setAgreed] = useState(status !== 'idle');
   const [consented, setConsented] = useState(status !== 'idle');
@@ -250,6 +278,73 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   }, [status, activeNote?.id, activeNote?.attachments, hydrateFromNote]);
 
   const segmentsForNote = segmentsNoteId === activeNote?.id ? segments : [];
+
+  /* ------------------------------------------------- the drawer, in a tab -- */
+
+  /** STORE → DRAWER. The store owns the microphone; the drawer follows it. */
+  useEffect(() => {
+    if (recording && drawer.step !== 'recording') dispatchDrawer({ type: 'recording-started' });
+    if (busy && drawer.step === 'recording') dispatchDrawer({ type: 'stop' });
+    if (status === 'idle' && drawer.step === 'saving') dispatchDrawer({ type: 'saved' });
+  }, [recording, busy, status, drawer.step]);
+
+  useEffect(() => {
+    if (consentRemembered && !drawer.consentRemembered) {
+      dispatchDrawer({ type: 'consent-granted' });
+    }
+  }, [consentRemembered, drawer.consentRemembered]);
+
+  const captions = displayLectureTranscript({
+    committed: committedTranscript,
+    interim: interimTranscript,
+  });
+  useEffect(() => {
+    if (!recording || !captions.trim()) return;
+    setChunks((previous) =>
+      growLectureChunks({ chunks: previous, text: captions, atMs: elapsedMs })
+    );
+    // The chunk grows on new WORDS, not on every tick of the clock.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captions, recording]);
+
+  useEffect(() => {
+    const done = segmentsForNote.filter((row) => row.status === 'done' && row.transcript);
+    if (!done.length) return;
+    setChunks((previous) =>
+      done.reduce(
+        (rows, row) =>
+          applyLectureSegmentToChunks({
+            chunks: rows,
+            seq: row.seq,
+            startOffsetMs: row.startOffsetMs,
+            durationMs: row.durationMs,
+            text: row.transcript,
+          }),
+        previous
+      )
+    );
+  }, [segmentsForNote]);
+
+  /** The Start button: ask the consent card first, unless it is remembered. */
+  const handleStartPressed = () => {
+    if (!shouldCreateLectureNote(agreed)) {
+      showToast('Confirm you can record before starting.', 'info');
+      return;
+    }
+    const next = lectureDrawerReducer(drawer, { type: 'start-pressed' });
+    dispatchDrawer({ type: 'start-pressed' });
+    if (next.step === 'recording') void handleStart();
+  };
+
+  const handleConsent = (granted: boolean) => {
+    if (!granted) {
+      dispatchDrawer({ type: 'consent-declined' });
+      return;
+    }
+    dispatchDrawer({ type: 'consent-granted' });
+    void updateSettings('lecture', { recordingConsent: true });
+    void handleStart();
+  };
 
   const tabSource = {
     body: activeNote?.body ?? '',
@@ -466,13 +561,29 @@ export function LectureStudioScreen({ navigation, route }: Props) {
             */}
             <LecturePreflightCard />
             <LectureLanguagePicker />
-            <Button
-              disabled={!agreed}
-              onPress={() => void handleStart()}
-              accessibilityLabel="Start recording"
-            >
-              {starting ? 'Starting…' : 'Start recording'}
-            </Button>
+            {drawer.step === 'consent' ? (
+              // The consent card comes AFTER the pre-flight, exactly as it does
+              // on the web: the student checks the room can be heard, then
+              // answers for the room.
+              <LectureTranscriptPanel
+                drawer={drawer}
+                chunks={[]}
+                sealed={false}
+                elapsedMs={0}
+                onConsent={handleConsent}
+                onStop={() => undefined}
+                onResume={() => undefined}
+                onEnhance={() => undefined}
+              />
+            ) : (
+              <Button
+                disabled={!agreed}
+                onPress={handleStartPressed}
+                accessibilityLabel="Start recording"
+              >
+                {starting ? 'Starting…' : 'Start recording'}
+              </Button>
+            )}
           </View>
         ) : (
           <View className="gap-4">
@@ -544,7 +655,20 @@ export function LectureStudioScreen({ navigation, route }: Props) {
               take runs — nothing may pull a typing student off My Notes — so
               the growing list lives here, above the tabs.
             */}
-            {recording || busy ? (
+            {/* The minimised widget's phone shape: a compact bar above the tab
+                strip, so the clock and Stop stay in reach while typing. */}
+            {recording && drawer.minimised ? (
+              <LectureRecordingBar
+                elapsedMs={elapsedMs}
+                onStop={() => {
+                  dispatchDrawer({ type: 'stop' });
+                  void stopForTitle({ currentBody: notesRef.current });
+                }}
+                onExpand={() => dispatchDrawer({ type: 'expand' })}
+              />
+            ) : null}
+
+            {(recording || busy) && !drawer.minimised ? (
               <View>
                 <T.Label>Live transcript</T.Label>
                 <View className="mt-2 min-h-[120px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
@@ -555,6 +679,14 @@ export function LectureStudioScreen({ navigation, route }: Props) {
                     onRetry={(seq) => void retrySegment(seq)}
                   />
                 </View>
+                <Pressable
+                  onPress={() => dispatchDrawer({ type: 'minimise' })}
+                  accessibilityRole="button"
+                  accessibilityLabel="Minimize transcript"
+                  className="min-h-[44px] justify-center"
+                >
+                  <T.Caption tone="secondary">Minimize transcript</T.Caption>
+                </Pressable>
               </View>
             ) : null}
 
@@ -566,8 +698,31 @@ export function LectureStudioScreen({ navigation, route }: Props) {
               source={tabSource}
               noteTitle={title || activeNote?.title}
               recording={recording}
+              recordingLabel={recording}
               tab={requestedTab}
               onTabChange={setRequestedTab}
+              // The drawer's states, in the tab the web calls Record.
+              renderTranscript={() => (
+                <LectureTranscriptPanel
+                  drawer={drawer}
+                  chunks={drawer.step === 'done' ? sealLectureChunks(chunks) : chunks}
+                  sealed={drawer.step === 'done'}
+                  elapsedMs={elapsedMs}
+                  enhancing={writing}
+                  enhanceCost={formatCreditCost(getSmartNotesCreditCost(depth))}
+                  onConsent={handleConsent}
+                  onStop={() => {
+                    dispatchDrawer({ type: 'stop' });
+                    void stopForTitle({ currentBody: notesRef.current });
+                  }}
+                  onResume={() => {
+                    dispatchDrawer({ type: 'resume' });
+                    void handleStart();
+                  }}
+                  onEnhance={() => void enhanceNotes()}
+                  precheck={<LecturePreflightCard />}
+                />
+              )}
               renderNotes={() => (
                 <View>
                   <View className="flex-row items-center justify-between">

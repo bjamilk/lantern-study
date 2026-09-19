@@ -107,6 +107,7 @@ import { canEditCover, removeCover } from '../../stores/coverActions';
 import { NotesStudio } from './NotesStudio';
 import { AdaptiveQuiz } from './AdaptiveQuiz';
 import { LectureStudio } from './LectureStudio';
+import { LectureSessionsList } from './LectureSessionsList';
 import { LessonStudio } from './LessonStudio';
 import { RecapStudio } from './RecapStudio';
 import { StudyCalendar } from './StudyCalendar';
@@ -2399,22 +2400,35 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             !(selectedNote && isLectureNote(selectedNote)) &&
             !routePath?.noteId &&
             !routePath?.createNew ? (
-            <StudySetArtifactLibrary
-              title="Lectures"
-              empty="Record a lecture or open one you already filed."
-              createLabel="+ New"
+            // A lecture is looked for by WHEN it was, so the list is a diary
+            // grouped by day rather than the artifact card grid every other
+            // door uses (lane W7, doc 04 §9's sessions list).
+            <LectureSessionsList
+              lectures={lectures.map((note) => ({
+                id: note.id,
+                title: note.title || 'Lecture',
+                createdAt: note.createdAt,
+                updatedAt: note.updatedAt,
+              }))}
               onCreate={() => go('lecture', { createNew: true })}
               onOpen={(noteId) => {
                 void openNote(noteId);
                 go('lecture', { noteId });
               }}
-              items={lectures.map((note) => ({
-                id: note.id,
-                title: note.title || 'Lecture',
-                preview: note.body,
-                feature: 'notes' as const,
-                icon: 'mic' as const,
-              }))}
+              onRename={(noteId, nextTitle) => {
+                void useNotesStore
+                  .getState()
+                  .saveNote(noteId, { title: nextTitle || 'Lecture' })
+                  .then(() => reloadNotes())
+                  .catch(() => undefined);
+              }}
+              onDelete={(noteId) => {
+                void useNotesStore
+                  .getState()
+                  .removeNote(noteId)
+                  .then(() => reloadNotes())
+                  .catch(() => undefined);
+              }}
             />
           ) : activity === 'lecture' ? (
             <LectureStudio

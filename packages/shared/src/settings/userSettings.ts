@@ -148,6 +148,16 @@ export interface FlashcardGenerationSettings {
 export interface LectureSettings {
   spokenLanguage: LectureSpokenLanguageId;
   transcribeTo: LectureTranscribeTarget;
+  /**
+   * The student has answered the recording-consent card with "Yes, record now".
+   *
+   * Account-wide, like the languages, and for the same reason: a student who
+   * has confirmed once that they may record their own classes should not be
+   * asked again before every lecture on every device. It records that the
+   * ANSWER was given — it does not record consent on anyone else's behalf, and
+   * the consent line is still shown beside the pre-check.
+   */
+  recordingConsent?: boolean;
 }
 
 /** First-time / returning-user coach tips + getting-started checklist progress. */
@@ -502,6 +512,10 @@ export function normalizeLectureSettings(raw: unknown): LectureSettings {
   return {
     spokenLanguage: normalizeLectureSpokenLanguage(record.spokenLanguage),
     transcribeTo: normalizeLectureTranscribeTarget(record.transcribeTo),
+    // Present only once the student has answered, so an account that never
+    // opened the recorder keeps the two-key shape this category has always
+    // written — which is what the API's sanitizer test pins.
+    ...(record.recordingConsent === true ? { recordingConsent: true } : {}),
   };
 }
 

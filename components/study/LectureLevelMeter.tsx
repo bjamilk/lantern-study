@@ -23,12 +23,20 @@ interface LectureLevelMeterProps {
   size?: 'sm' | 'lg';
   /** Screen-reader name; the bars themselves are decorative. */
   label?: string;
+  /**
+   * `onInk` is the meter drawn INSIDE the black recording pill and the
+   * minimised widget, where the recording ink (a butter yellow) is the lit bar
+   * but the unlit one cannot be the hairline border — that is invisible on
+   * ink. White at 30% is the unlit bar there.
+   */
+  tone?: 'default' | 'onInk';
 }
 
 export const LectureLevelMeter: React.FC<LectureLevelMeterProps> = ({
   levelDb,
   size = 'lg',
   label = 'Microphone input level',
+  tone = 'default',
 }) => {
   const lit = lectureLevelBarCount(levelDb, LECTURE_LEVEL_BAR_COUNT);
   const height = size === 'lg' ? 'h-8' : 'h-4';
@@ -55,7 +63,11 @@ export const LectureLevelMeter: React.FC<LectureLevelMeterProps> = ({
             aria-hidden="true"
             style={{ height: `${Math.round(scale * 100)}%` }}
             className={`${width} rounded-full transition-colors ${
-              on ? 'bg-lantern-feature-recording-ink' : 'bg-lantern-border'
+              on
+                ? 'bg-lantern-feature-recording-ink'
+                : tone === 'onInk'
+                  ? 'bg-white/30'
+                  : 'bg-lantern-border'
             }`}
           />
         );

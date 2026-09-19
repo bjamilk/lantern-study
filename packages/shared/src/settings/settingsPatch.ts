@@ -310,6 +310,9 @@ function sanitizeLecture(
   return normalizeLectureSettings({
     spokenLanguage: partial.spokenLanguage ?? base.spokenLanguage,
     transcribeTo: partial.transcribeTo ?? base.transcribeTo,
+    // Only ever set forward by the consent card; a patch that omits it keeps
+    // whatever the account already answered.
+    recordingConsent: partial.recordingConsent ?? base.recordingConsent,
   });
 }
 
