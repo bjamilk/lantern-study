@@ -3,6 +3,7 @@ import { Pressable, View } from 'react-native';
 import {
   lectureAudioAttachment,
   lectureNoteParts,
+  lectureTabPillLabels,
   lectureTabs,
   lectureTranscriptLines,
   preferLectureTranscript,
@@ -65,9 +66,43 @@ export interface LectureTabsProps {
    */
   segments?: LectureSegmentUi[];
   onRetrySegment?: (seq: number) => void;
+  /**
+   * The studio's Transcript pane — the drawer's phone shape.
+   *
+   * Absent (the Library door), the Transcript tab keeps the stamped segment
+   * list it has always shown. Present, the studio draws the recorder's own
+   * states there: pre-check, consent, the growing chunks and the pill.
+   */
+  renderTranscript?: () => React.ReactNode;
+  /** A take is running, so the last tab reads "≡ Transcript" rather than Record. */
+  recordingLabel?: boolean;
   /** Controlled selection. Omit to let this component keep its own. */
   tab?: LectureTabId | null;
   onTabChange?: (tab: LectureTabId) => void;
+}
+
+/**
+ * The web pill's order and words, on the tabs this note actually has.
+ *
+ * The phone used to draw whatever `lectureTabs` returned, labelled
+ * "Transcript" and "Materials"; the web now says "Material" and "🎙 Record",
+ * and a student who uses both should not have to learn two vocabularies. The
+ * planner still decides WHICH tabs exist — an empty tab is not invented here —
+ * this only re-orders and relabels them.
+ */
+function orderedLectureTabs(
+  source: LectureTabSource,
+  recording: boolean
+): Array<{ id: LectureTabId; label: string }> {
+  const present = new Set(lectureTabs(source).map((row) => row.id));
+  const pill = lectureTabPillLabels({ recording, enhancing: false, hasEnhanced: true });
+  const order: Array<[LectureTabId, string]> = pill.map((row) => [
+    row.id === 'record' ? 'transcript' : (row.id as LectureTabId),
+    row.label,
+  ]);
+  return order
+    .filter(([id]) => present.has(id))
+    .map(([id, label]) => ({ id, label }));
 }
 
 export function LectureTabs({
@@ -80,6 +115,8 @@ export function LectureTabs({
   renderMaterials,
   segments,
   onRetrySegment,
+  renderTranscript,
+  recordingLabel,
   tab: controlledTab,
   onTabChange,
 }: LectureTabsProps) {
@@ -87,7 +124,7 @@ export function LectureTabs({
   const [ownTab, setOwnTab] = useState<LectureTabId | null>(null);
   const requested = controlledTab === undefined ? ownTab : controlledTab;
 
-  const tabs = lectureTabs(source);
+  const tabs = orderedLectureTabs(source, Boolean(recordingLabel));
   const active = resolveLectureTab(source, requested, { recording });
   const parts = lectureNoteParts(source);
   const transcriptLines = lectureTranscriptLines(
@@ -151,7 +188,9 @@ export function LectureTabs({
         )
       ) : null}
 
-      {active === 'transcript' ? (
+      {active === 'transcript' && renderTranscript ? renderTranscript() : null}
+
+      {active === 'transcript' && !renderTranscript ? (
         <View>
           <T.Label>Transcript</T.Label>
           <View className="mt-2 min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
