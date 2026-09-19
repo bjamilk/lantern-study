@@ -485,6 +485,47 @@ export function orderUnitIdsBySyllabus(
   return [...ordered, ...unitIds.filter((id) => !known.has(id))];
 }
 
+/**
+ * Reorder anything keyed by unit id into syllabus order.
+ *
+ * Runs on the timeline BEFORE `sortPlanTimeline`, never after: the sort's own
+ * `unit` order is "the order the course teaches them", and with a syllabus in
+ * hand that sentence has a literal answer for the first time. `recommended`
+ * then lifts one unit out of that order and `weakest` re-ranks it, both of
+ * which are still what they say they are.
+ */
+export function orderTimelineBySyllabus<T extends { unit: { id: string } }>(
+  timeline: readonly T[],
+  view: PlanSyllabusView | null
+): T[] {
+  if (!view) return [...timeline];
+  const byId = new Map(timeline.map((entry) => [entry.unit.id, entry]));
+  return orderUnitIdsBySyllabus([...byId.keys()], view)
+    .map((id) => byId.get(id))
+    .filter((entry): entry is T => Boolean(entry));
+}
+
+/**
+ * Rename units after the weeks they matched, leaving the rest alone.
+ *
+ * Applied to the units BEFORE the timeline is built, because `unitSources`
+ * reads `unit.title` to decide whether a single-material chip would merely
+ * repeat the heading. Renaming first is therefore what makes the material's own
+ * name appear as a chip under its new, course-given title — the name is moved,
+ * never lost.
+ */
+export function applyPlanSyllabusNames<T extends { id: string; title: string }>(
+  units: readonly T[],
+  view: PlanSyllabusView | null
+): T[] {
+  if (!view || view.matches.length === 0) return [...units];
+  const byUnit = planSyllabusMatchesByUnit(view);
+  return units.map((unit) => {
+    const title = planSyllabusUnitTitle(unit.title, byUnit.get(unit.id));
+    return title === unit.title ? unit : { ...unit, title };
+  });
+}
+
 /** A rendered row of the plan spine: a unit, or an exam marker between units. */
 export type PlanSyllabusRow =
   | { kind: 'unit'; unitId: string }

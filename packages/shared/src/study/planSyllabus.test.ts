@@ -4,7 +4,9 @@ import {
   PLAN_SYLLABUS_TITLE_MATCH,
   buildPlanSyllabusView,
   formatPlanSyllabusDate,
+  applyPlanSyllabusNames,
   matchSyllabusWeeks,
+  orderTimelineBySyllabus,
   orderUnitIdsBySyllabus,
   planSyllabusMatchesByUnit,
   planSyllabusRows,
@@ -266,6 +268,32 @@ describe('orderUnitIdsBySyllabus', () => {
       'u-x',
       'u-new',
     ]);
+  });
+});
+
+describe('orderTimelineBySyllabus / applyPlanSyllabusNames', () => {
+  const units = [unit('u-a', 'Lecture 1 — Glycolysis', 10), unit('u-b', 'Enzymes', 20)];
+  const view = buildPlanSyllabusView(
+    summaryOf([week(1, 'Enzymes'), week(2, 'Glycolysis')]),
+    units
+  );
+
+  it('reorders a timeline by unit id and keeps every entry', () => {
+    const timeline = [{ unit: { id: 'u-a' } }, { unit: { id: 'u-b' } }, { unit: { id: 'u-c' } }];
+    expect(orderTimelineBySyllabus(timeline, view).map((row) => row.unit.id)).toEqual([
+      'u-b',
+      'u-a',
+      'u-c',
+    ]);
+    expect(orderTimelineBySyllabus(timeline, null)).toEqual(timeline);
+  });
+
+  it('renames only the units a week matched, and leaves the array alone without a view', () => {
+    expect(applyPlanSyllabusNames(units, view).map((row) => row.title)).toEqual([
+      'Glycolysis',
+      'Enzymes',
+    ]);
+    expect(applyPlanSyllabusNames(units, null)).toEqual(units);
   });
 });
 
