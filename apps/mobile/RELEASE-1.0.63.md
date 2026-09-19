@@ -39,4 +39,4 @@ shared browser.
 whose topics open nothing would be a dead door), and the phone remembers "Skip
 for now" on the device rather than the account.
 
-versionCode <N> · built from main @ <sha>
+versionCode 227 · built from main @ c12f09ba
