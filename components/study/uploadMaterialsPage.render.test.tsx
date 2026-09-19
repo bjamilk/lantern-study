@@ -36,6 +36,10 @@ vi.mock('../../stores/aiJobStore', () => ({
 
 vi.mock('../../stores/noteUploadStore', () => ({
   useNoteUploadStore: (selector: (state: { jobs: unknown[] }) => unknown) => selector({ jobs: [] }),
+  // The mapper filters uploads by owner (#144), so the mock has to carry the
+  // selector it calls, not only the hook.
+  getUploadJobsForUser: (jobs: { userId?: string }[], userId: string | null | undefined) =>
+    userId ? jobs.filter((job) => Boolean(job.userId) && job.userId === userId) : [],
 }));
 
 vi.mock('../../stores/authStore', () => ({

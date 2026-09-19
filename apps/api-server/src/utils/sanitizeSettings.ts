@@ -1,4 +1,5 @@
 import {
+  PRIVILEGED_SETTINGS_KEYS,
   applySettingsPatch,
   normalizeUserSettings,
   type UserSettingsPatch,
@@ -8,17 +9,12 @@ import { isTutorStyleId } from '@lantern/shared/ai';
 /**
  * Privileged settings keys that must never be writable by end users.
  * Ban state and admin flags are set only via admin routes / service role.
+ *
+ * The list itself lives in `@lantern/shared/settings` and is re-exported here
+ * unchanged: `normalizeSyncClassSkipped` needs the same names (a client writes
+ * the KEYS of that map), and two copies would drift.
  */
-export const PRIVILEGED_SETTINGS_KEYS = new Set([
-  'is_banned',
-  'account_status',
-  'is_platform_admin',
-  'ban_reason',
-  'banned_at',
-  'banned_by',
-  'suspended_until',
-  'moderation_flags',
-]);
+export { PRIVILEGED_SETTINGS_KEYS };
 
 const SETTINGS_CATEGORY_KEYS = [
   'notifications',
@@ -35,6 +31,13 @@ const SETTINGS_CATEGORY_KEYS = [
   // replaces — so it can neither smuggle a privileged key nor un-tick a
   // surface another device already recorded.
   'onboardingVisited',
+  // Non-privileged: a flat map of study-set id → when the student tapped "Skip
+  // for now" on the Sync-with-your-class card. `applySettingsPatch` runs it
+  // through `mergeSyncClassSkipped`, which drops every key that is not
+  // id-shaped and every value that is not a timestamp, unions rather than
+  // replaces, and caps the map — so it can neither smuggle anything nor grow
+  // without bound, and no client can un-skip a card another device hid.
+  'syncClassSkipped',
   'flashcardGeneration',
   // The recorder's two language choices (W1). A category rather than a scalar
   // because there are two of them, and `applySettingsPatch` narrows both

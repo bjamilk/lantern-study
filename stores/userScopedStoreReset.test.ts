@@ -35,6 +35,7 @@ import { useTestStore } from './testStore';
 import { useFlashcardStore } from './flashcardStore';
 import { useNotesStore } from './notesStore';
 import { useAiJobStore } from './aiJobStore';
+import { useNoteUploadStore } from './noteUploadStore';
 import { getLatestAIUsage } from '../services/ai';
 
 beforeEach(() => {
@@ -53,6 +54,7 @@ describe('registry membership', () => {
       'flashcardStore',
       'notesStore',
       'aiJobStore',
+      'noteUploadStore',
       'aiUsage',
     ]) {
       expect(names).toContain(required);
@@ -105,6 +107,22 @@ describe('resetAllUserScopedStores', () => {
 
     const ids = useAiJobStore.getState().jobs.map((job) => job.id);
     expect(ids).toEqual(['live']);
+  });
+
+  // #144: unlike an AI job, an upload costs no credit and holds no generated
+  // work, so there is nothing to keep — and a file name left on a shared
+  // browser is the leak this registry exists to close.
+  it('empties the upload tray, running rows included', () => {
+    useNoteUploadStore.setState({
+      jobs: [
+        { id: 'up-1', userId: 'a', status: 'uploading' },
+        { id: 'up-2', userId: 'a', status: 'complete' },
+      ] as never,
+    });
+
+    resetAllUserScopedStores();
+
+    expect(useNoteUploadStore.getState().jobs).toEqual([]);
   });
 
   it('puts the AI usage mirror back to the honest unknown', () => {

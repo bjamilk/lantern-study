@@ -8,7 +8,8 @@
  * WHAT `visible` MEANS:
  *  - the server said the columns exist (`supported`). Before 20260918150000
  *    there is no card, rather than an upload that 503s after the wait;
- *  - the student has not skipped this set on this phone;
+ *  - the student has not skipped this set — on this phone or on any other
+ *    device, since the decision rides on the account (`syncClassSkipped`);
  *  - the set has no syllabus yet — EXCEPT for the moment right after an
  *    upload, where `foundLabel` holds the card up so the student can read the
  *    answer to what they just did.
@@ -29,6 +30,7 @@ import {
 } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useSyncClassSkipStore } from '../../stores/syncClassSkipStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 /** The two mimes the picker offers, matching `SYLLABUS_ACCEPT` on web. */
 const SYLLABUS_MIMES = [
@@ -58,6 +60,10 @@ export function useSyncWithClass(
   // Subscribing to the MAP is what re-renders the room on a skip; the
   // `isSkipped` selector returns a stable function and would not.
   const skippedMap = useSyncClassSkipStore((s) => s.skipped);
+  // And the account's own map, subscribed to rather than read once: a settings
+  // load that lands after this screen mounted has to hide the card too.
+  const accountSkipped = useSettingsStore((s) => s.settings.syncClassSkipped);
+  const settingsOwner = useSettingsStore((s) => s.ownerUserId);
 
   const [syllabus, setSyllabus] = useState<StudySetSyllabusResponse | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -167,7 +173,15 @@ export function useSyncWithClass(
 
   const refresh = useCallback(() => setReloadKey((n) => n + 1), []);
 
-  const skipped = Boolean(studySetId && userId && skippedMap[userId]?.[studySetId]);
+  const skipped = Boolean(
+    studySetId &&
+      userId &&
+      (skippedMap[userId]?.[studySetId] ||
+        // Only when the cached settings belong to THIS student: a sign-in
+        // whose load has not landed yet must not hide the last one's cards.
+        ((!settingsOwner || settingsOwner === userId) &&
+          accountSkipped?.[studySetId] !== undefined))
+  );
 
   return {
     visible: Boolean(

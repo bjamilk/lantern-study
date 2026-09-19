@@ -115,6 +115,7 @@ import {
 import { sortMaterials } from '../../components/study/viewMode';
 import { formatShortDate } from '@lantern/shared/study/setPresentation';
 import { guidedNextTopicFromPlan } from '@lantern/shared/study/planTimeline';
+import type { StudySetPlanSyllabus } from '@lantern/shared/study/planSyllabus';
 import {
   SET_ROOM_TILE_LABELS,
   SET_ROOM_TILE_ORDER,
@@ -863,6 +864,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             planUnits={plan?.units ?? []}
             planTopics={plan?.topics ?? []}
             planLoaded={plan?.loaded ?? false}
+            planSyllabus={plan?.syllabus ?? null}
             mode={(studySet?.mode as 'cram' | 'standard' | 'comprehensive') ?? 'standard'}
             onGeneratePlan={async () => {
               const built = topicsFromReadingNotes(studySetId, studyNotes);
@@ -1465,6 +1467,7 @@ function SetHomeRecommended({
   planUnits,
   planTopics,
   planLoaded,
+  planSyllabus,
   mode,
   onGeneratePlan,
   onToggleTopic,
@@ -1495,6 +1498,11 @@ function SetHomeRecommended({
   planTopics: StudySetTopic[];
   /** True only once the server has answered — "no plan" is not "not asked". */
   planLoaded: boolean;
+  /**
+   * The set's class schedule, from the plan payload. Null for every set that
+   * has never had a syllabus uploaded, and then the plan draws as it always did.
+   */
+  planSyllabus: StudySetPlanSyllabus | null;
   mode: 'cram' | 'standard' | 'comprehensive';
   onGeneratePlan: () => Promise<void>;
   onToggleTopic: (topicId: string, next: StudySetTopicStatus) => void;
@@ -1567,6 +1575,7 @@ function SetHomeRecommended({
             materials={planMaterials}
             mode={mode}
             planLoaded={planLoaded}
+            syllabus={planSyllabus}
             usingServerPlan={usingServerPlan}
             canBuildPlan={notes.length > 0}
             onGeneratePlan={onGeneratePlan}
@@ -1660,6 +1669,7 @@ function SetHomeRecommended({
           materials={planMaterials}
           mode={mode}
           planLoaded={planLoaded}
+          syllabus={planSyllabus}
           usingServerPlan={usingServerPlan}
           canBuildPlan={notes.length > 0}
           onGeneratePlan={onGeneratePlan}

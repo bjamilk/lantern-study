@@ -8,3 +8,4 @@ export * from './unitSources';
 export * from './weakTopics';
 export * from './practiceFolders';
 export * from './syllabusSummary';
+export * from './planSyllabus';

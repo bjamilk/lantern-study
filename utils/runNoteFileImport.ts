@@ -9,6 +9,9 @@ import { useNoteUploadStore, type NoteUploadKind } from '../stores/noteUploadSto
 import { useUIStore } from '../stores/uiStore';
 import { useToastStore } from '../stores/toastStore';
 import { useNotesStore } from '../stores/notesStore';
+// The upload tray is user-scoped (#144): every row is stamped with the student
+// who started it, so a shared browser cannot show the last one's file names.
+import { useAuthStore } from '../stores/authStore';
 
 function mapProgressToJobStatus(
   stage: NoteImportProgress['stage']
@@ -78,7 +81,11 @@ export async function runNoteFileImport({
   navigateToEditor,
 }: RunNoteFileImportOptions): Promise<StudyNote> {
   const uploadStore = useNoteUploadStore.getState();
-  const jobId = uploadStore.startJob(file.name, kind);
+  const jobId = uploadStore.startJob(
+    file.name,
+    kind,
+    useAuthStore.getState().currentUser?.id
+  );
   const onProgress = makeProgressCallback(jobId);
 
   try {
@@ -134,7 +141,11 @@ export async function runNoteYoutubeImport({
   navigateToEditor,
 }: RunNoteYoutubeImportOptions): Promise<StudyNote> {
   const uploadStore = useNoteUploadStore.getState();
-  const jobId = uploadStore.startJob(url, 'youtube');
+  const jobId = uploadStore.startJob(
+    url,
+    'youtube',
+    useAuthStore.getState().currentUser?.id
+  );
   const onProgress = makeProgressCallback(jobId);
 
   try {

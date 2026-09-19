@@ -15,10 +15,12 @@ import {
   type NotificationSettings,
   type OnboardingVisitedSettings,
   type PrivacySettings,
+  type SyncClassSkippedSettings,
   type StudySettings,
   type SyncSettings,
   type UserSettings,
   mergeOnboardingVisited,
+  mergeSyncClassSkipped,
   normalizeLectureSettings,
   normalizeUserSettings,
 } from './userSettings';
@@ -33,6 +35,7 @@ export type SettingsCategoryKey =
   | 'marketplace'
   | 'featureTips'
   | 'onboardingVisited'
+  | 'syncClassSkipped'
   | 'flashcardGeneration'
   | 'lecture';
 
@@ -47,6 +50,13 @@ export type UserSettingsPatch = {
   marketplace?: Partial<MarketplaceSettings>;
   featureTips?: Partial<FeatureTipsSettings>;
   onboardingVisited?: Partial<OnboardingVisitedSettings>;
+  /**
+   * A FLAT map, so the generic branches of `mergeSettingsPatches` and
+   * `subtractSettingsPatch` handle it correctly with no special case: two
+   * pending patches union key by key, and a synced key is subtracted on its
+   * own rather than taking the whole map with it.
+   */
+  syncClassSkipped?: SyncClassSkippedSettings;
   flashcardGeneration?: Partial<FlashcardGenerationSettings>;
   lecture?: Partial<LectureSettings>;
   /**
@@ -348,6 +358,12 @@ export function applySettingsPatch(
           p.onboardingVisited
         )
       : base.onboardingVisited,
+    // MONOTONIC and BOUNDED, for the same reason as the flags above: a client
+    // that is behind must not un-skip a card another device hid, and this map
+    // rides on the profile row, so `mergeSyncClassSkipped` caps it.
+    syncClassSkipped: p.syncClassSkipped
+      ? mergeSyncClassSkipped(base.syncClassSkipped, p.syncClassSkipped)
+      : base.syncClassSkipped,
     flashcardGeneration: p.flashcardGeneration
       ? sanitizeFlashcardGeneration(
           p.flashcardGeneration,
@@ -383,6 +399,7 @@ export function diffSettingsPatch(
     'marketplace',
     'featureTips',
     'onboardingVisited',
+    'syncClassSkipped',
     'flashcardGeneration',
     'lecture',
   ];
