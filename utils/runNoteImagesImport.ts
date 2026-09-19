@@ -6,6 +6,8 @@ import { useNoteUploadStore } from '../stores/noteUploadStore';
 import { useUIStore } from '../stores/uiStore';
 import { useToastStore } from '../stores/toastStore';
 import { useNotesStore } from '../stores/notesStore';
+// See runNoteFileImport: the tray row carries its owner (#144).
+import { useAuthStore } from '../stores/authStore';
 
 function mapProgressToJobStatus(
   stage: NoteImportProgress['stage']
@@ -46,7 +48,11 @@ export async function runNoteImagesImport({
 }: RunNoteImagesImportOptions): Promise<StudyNote> {
   const uploadStore = useNoteUploadStore.getState();
   const noteTitle = title?.trim() || defaultPhotoNoteTitle();
-  const jobId = uploadStore.startJob(noteTitle, 'photos');
+  const jobId = uploadStore.startJob(
+    noteTitle,
+    'photos',
+    useAuthStore.getState().currentUser?.id
+  );
   const onProgress = makeProgressCallback(jobId);
 
   try {

@@ -58,8 +58,17 @@ const AppShell: React.FC<AppShellProps> = ({
     const location = useLocation();
     const { appMode, isSidebarExpanded, isChatsSectionExpanded, activeCommunity, importProgress, clearImportProgress } = useUIStore();
     const uploadJobList = useNoteUploadStore((s) => s.jobs);
-    const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
-    const activeUploadJob = useMemo(() => getActiveUploadJob(uploadJobList), [uploadJobList]);
+    // The tray is per-BROWSER and filtered per student (#144) — read through
+    // the owner-aware selectors, never off `jobs`.
+    const uploadOwnerId = useAuthStore((s) => s.currentUser?.id);
+    const uploadJobs = useMemo(
+        () => getVisibleUploadJobs(uploadJobList, uploadOwnerId),
+        [uploadJobList, uploadOwnerId]
+    );
+    const activeUploadJob = useMemo(
+        () => getActiveUploadJob(uploadJobList, uploadOwnerId),
+        [uploadJobList, uploadOwnerId]
+    );
     const dismissUploadJob = useNoteUploadStore((s) => s.dismissJob);
     const { activeTestSession, activeStudySession, activeGameSession } = useTestStore();
     const isCompanionOpen = useCompanionStore((s) => s.isOpen);

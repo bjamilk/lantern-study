@@ -42,6 +42,7 @@ const aiJob = (over: Partial<AiJob> = {}): AiJob =>
 
 const uploadJob = (over: Partial<NoteUploadJob> = {}): NoteUploadJob => ({
   id: 'up-1',
+  userId: 'me',
   fileName: 'Slides.pptx',
   kind: 'presentation',
   status: 'uploading',
@@ -62,8 +63,27 @@ describe('toCreationEntries', () => {
     expect(rows.map((r) => r.id)).toEqual(['a']);
   });
 
+  // #144: the same rule on the other list. The upload tray is one persisted
+  // list per browser too, and it used to be read unfiltered here.
+  it('shows only the uploads belonging to the signed-in student', () => {
+    const rows = toCreationEntries(
+      [],
+      [
+        uploadJob({ id: 'mine', userId: 'me', fileName: 'Mine.pdf' }),
+        uploadJob({ id: 'theirs', userId: 'someone-else', fileName: 'Theirs.pdf' }),
+      ],
+      'me'
+    );
+    expect(rows.map((r) => r.id)).toEqual(['mine']);
+  });
+
+  it('drops an upload row with no owner — a record written before #144', () => {
+    const rows = toCreationEntries([], [uploadJob({ id: 'legacy', userId: '' })], 'me');
+    expect(rows).toEqual([]);
+  });
+
   it('shows nothing at all when nobody is signed in', () => {
-    expect(toCreationEntries([aiJob()], [], undefined)).toEqual([]);
+    expect(toCreationEntries([aiJob()], [uploadJob()], undefined)).toEqual([]);
   });
 
   it('maps the three status words each store uses onto the three tabs', () => {
