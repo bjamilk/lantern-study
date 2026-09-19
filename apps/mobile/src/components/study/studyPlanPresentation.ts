@@ -33,6 +33,17 @@ import {
   type StudySetUnit,
 } from '@lantern/shared/learning';
 import { unitSources, type UnitSource, type UnitSourceMaterial } from '@lantern/shared/study';
+import {
+  applyPlanSyllabusNames,
+  orderUnitIdsBySyllabus,
+  planSyllabusMatchesByUnit,
+  planSyllabusRows,
+  planSyllabusUnitEyebrow,
+  planSyllabusViewFor,
+  type PlanComingUpWeek,
+  type PlanSyllabusRow,
+  type StudySetPlanSyllabus,
+} from '@lantern/shared/study/planSyllabus';
 
 export interface PlanTopicRow {
   id: string;
@@ -75,10 +86,28 @@ export interface PlanUnitRow {
    * disagree about where a unit came from.
    */
   sources: UnitSource[];
+  /**
+   * `Week 3 · 10 Oct` — the syllabus week this unit turned out to be, or null
+   * for every unit the class schedule does not mention (and for every set that
+   * has no schedule at all, which is most of them).
+   */
+  weekLabel: string | null;
 }
 
 export interface StudyPlanModel {
   units: PlanUnitRow[];
+  /**
+   * The spine to draw: the units above, with the syllabus's exam markers folded
+   * in between them. Without a syllabus it is exactly `units`, one row each, so
+   * the panel has one loop rather than two branches.
+   */
+  rows: PlanSyllabusRow[];
+  /**
+   * Syllabus weeks with no material behind them. A LIST, never units and never
+   * topics: a week nothing matched has nothing to open, and the panel draws it
+   * as text with one `Add materials` door. Empty without a syllabus.
+   */
+  comingUp: PlanComingUpWeek[];
   progress: StudySetPlanProgress;
   /** 0..100, the header bar. */
   percent: number;
@@ -149,8 +178,41 @@ export function buildStudyPlanModel(input: {
   topics: readonly StudySetTopic[];
   materials: readonly UnitSourceMaterial[];
   mode?: StudySetMode;
+  /**
+   * The set's class schedule, as `GET …/plan` answered it — absent for every
+   * set that has never had a syllabus uploaded, and then every line below
+   * behaves exactly as it did before this argument existed.
+   */
+  syllabus?: StudySetPlanSyllabus | null;
 }): StudyPlanModel {
-  const grouped = planUnitsAndTopics(input);
+  const regrouped = planUnitsAndTopics(input);
+  // The view is recomputed here rather than taken from the payload whenever the
+  // units on screen are not the server's — a plan that was never saved is
+  // regrouped locally from its materials, and those ids the server has never
+  // seen. `planSyllabusViewFor` makes that choice once, for both platforms.
+  const view = planSyllabusViewFor({
+    payload: input.syllabus ?? null,
+    summary: input.syllabus?.summary ?? null,
+    units: regrouped.units,
+  });
+  const syllabusByUnit = planSyllabusMatchesByUnit(view);
+  // Renamed BEFORE `unitSources` runs below: that rule suppresses a single
+  // material's chip while the unit merely repeats its title, so taking the
+  // course's name for the unit is what brings the material's own name back as
+  // a chip underneath it.
+  const named = applyPlanSyllabusNames(regrouped.units, view);
+  const order = orderUnitIdsBySyllabus(
+    named.map((unit) => unit.id),
+    view
+  );
+  const byId = new Map(named.map((unit) => [unit.id, unit]));
+  const grouped = {
+    topics: regrouped.topics,
+    units: order
+      .map((id) => byId.get(id))
+      .filter((unit): unit is StudySetUnit => Boolean(unit)),
+  };
+
   const progress = studySetPlanProgress(grouped.topics);
   const ordered = grouped.units.flatMap((unit) => topicsInUnit(grouped.topics, unit.id));
   const nextTopicId = findNextTopicId(ordered);
@@ -188,6 +250,10 @@ export function buildStudyPlanModel(input: {
       progressLabel: `${covered} of ${rows.length} covered`,
       holdsNext: rows.some((row) => row.next),
       sources: unitSources(unit, topicsInUnit(grouped.topics, unit.id), input.materials),
+      weekLabel: (() => {
+        const match = syllabusByUnit.get(unit.id);
+        return match ? planSyllabusUnitEyebrow(match) : null;
+      })(),
     };
   });
 
@@ -196,6 +262,11 @@ export function buildStudyPlanModel(input: {
 
   return {
     units,
+    // 'unit' — the phone's spine has no Sort menu, so it is always in course
+    // order, which is the one order an exam marker's "everything above this"
+    // is true in.
+    rows: planSyllabusRows(units.map((unit) => unit.id), view, 'unit'),
+    comingUp: view?.comingUp ?? [],
     progress,
     percent: studySetProgressPercent(progress),
     detailLabel: `${progress.topics} Topics · ${progress.covered} Covered · ${progress.mastered} Mastered`,
