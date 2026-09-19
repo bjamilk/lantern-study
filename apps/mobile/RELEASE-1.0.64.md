@@ -26,4 +26,4 @@ student's upload titles; it now belongs to whoever is signed in.
 so if the level meter or the quality reading looks wrong in a real room, tell
 us — the recording and transcript underneath are unchanged from 1.0.63.
 
-versionCode <N> · built from main @ <sha>
+versionCode 228 · built from main @ 497e9093
