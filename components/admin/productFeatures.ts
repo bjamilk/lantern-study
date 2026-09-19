@@ -46,6 +46,105 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'lecture-recorder-precheck-1-0-63',
+    title: 'Lecture recorder: check your sound and connection before you start',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'Before a lecture starts recording, the recorder shows a live level bar, an audio-quality reading with the reason ("too quiet — move closer", "clipping — move back"), an internet reading, and a microphone picker; a settings popover sets the language you are speaking (passed to the transcriber) and whether to transcribe into English. Enhancing notes can take a one-line "how much do you already know" hint and a material from the set as context.',
+    details: [
+      'Audio quality is classified from the last two seconds of RMS and clipping on a short pre-check microphone stream that is separate from the take; the thresholds (−45 / −30 / −8 dBFS, 0.5 % / 2 % clipping) are shared with the phone, which already used them for its Level row.',
+      'Internet is Great / Fair / Offline from navigator.onLine and navigator.connection (or a timed /health HEAD where the browser has no connection API). Only Offline disables Start.',
+      'The speaking language is stored per user (settings.lecture) and sent to Whisper as `language`; "Transcribe to" only offers English because that is the only translation target the transcriber supports.',
+      'While recording, a small level meter sits beside the elapsed clock. Stop and the other controls carry labels.',
+      'Enhance notes accepts `skillLevelHint` (≤ 200 chars, placed after the existing prompt rules) and `contextNoteId` (must be the same owner and set; refused with 404 otherwise).',
+    ],
+    howToUse: [
+      'Web: a set → Record lecture → tick the consent box; the pre-check appears. ⚙ in the recorder header for language and mic. After stopping, Enhance notes → the hint field and "Attach a material".',
+      'Phone: the same pre-flight card sits on the consent screen; language pickers in the same place. The phone shows "No signal yet" for level before Start (its recorder only meters a running take) and has no mic picker (no API for it).',
+    ],
+    surfaces: ['web', 'mobile', 'api'],
+    adminNotes: [
+      'No migration. The language and translate settings ride on profiles.settings under a new allowlisted `lecture` category.',
+      'Nothing here was device-tested when it shipped: a real microphone, a throttled radio and switching mics are the three things a support pass should try.',
+    ],
+    commits: ['be13827a'],
+  },
+  {
+    id: 'sync-with-your-class-1-0-63',
+    title: 'Sync with your class: a syllabus and an exam date on every set',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'A brand-new or empty set now opens on a "Sync with your class" card: upload the syllabus (PDF or Word) and Lantern reads out the weeks and any exam dates, or add an exam date by hand. The set header counts down to the exam, and the phone\'s Home "Upcoming exam" card finally shows a real date.',
+    details: [
+      'The syllabus is filed as an ordinary note of the set; study_sets records which note it is and a capped, validated schedule (weeks, titles, dates, exam labels).',
+      'Reading the syllabus is one AI use, charged as the generate_questions feature; the migration gate sits above the meter so nobody is charged for a 503, and every no-work path refunds. A real answer that finds no schedule is not refunded, so it cannot become a free retry loop.',
+      'This release found that the exam-date feature had been built end to end over a column that was never applied to the live database; the same migration adds it, so the countdown, the calendar blocker and the mobile Home card all switched on together.',
+      'Three dead doors were removed with it: web\'s "Add syllabus" (it opened the generic upload page) and two mobile empty-state cards (one went to the same sheet, the other to a calendar whose date only ever wrote a course enrolment).',
+      'The study plan does not yet use week titles as units — a plan whose topics open nothing would be a dead door. That is the named follow-up once materials exist.',
+      '"Skip for now" hides the card for that set; web remembers it on the account, the phone remembers it on the device.',
+    ],
+    howToUse: [
+      'Web / phone: open any set with no materials — the card is at the top. Upload syllabus (.pdf / .docx) or + Add exam. Existing sets get the exam date from the set header / Overview.',
+    ],
+    surfaces: ['web', 'mobile', 'api', 'database'],
+    adminNotes: [
+      'Migration supabase/migrations/20260918150000_study_set_syllabus_exam.sql (exam_date, syllabus_note_id, syllabus_summary on study_sets) — applied by hand on 2026-09-18. Until applied the API answered 503 on syllabus routes and hid the card.',
+      'Endpoints: POST/GET/DELETE /api/v1/users/me/study-sets/:id/syllabus; PATCH …/study-sets/:id accepts examDate.',
+    ],
+    commits: ['204c59f1'],
+  },
+  {
+    id: 'import-progress-and-creations-1-0-63',
+    title: 'Imports show their stages, ask where to go next, and list every creation',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'Importing a file now shows three stage cards driven by what is really happening (uploaded → processed → flashcards and quiz generated), a failure lands on the card that caused it with Retry, and a finished import asks "Where would you like to go next?" (View material / View study plan). A labelled Creation progress button in the set header lists recent imports and generations under All · Processing · Done · Failed. Plain text (.txt, .md) and iPhone HEIC photos are accepted.',
+    details: [
+      'No fake percentages: the upload card shows real XHR upload progress, the processing card shows none (the server reports no fraction), and the generation card follows the generator\'s own stage index.',
+      '.txt and .md are read on the device and become a note through the paste path — no upload, no server work, no credit.',
+      'HEIC is decoded on the server with sharp (already a dependency) on the note-photo path only, and re-encoded to WebP before storage; a deploy whose libvips lacks HEIF tells the student to switch the camera to "Most compatible".',
+      'A real bug was fixed in passing: the set page\'s "Recent uploads" read the job store unfiltered, so a shared browser could show a previous student\'s titles. It now uses the owner-filtered mapper. The upload tray\'s localStorage key is still not user-scoped — tracked as issue #144.',
+    ],
+    howToUse: [
+      'Web / phone: a set → Add materials → any door; watch the stages; pick where to go. The Creation progress icon sits in the set room header.',
+    ],
+    surfaces: ['web', 'mobile', 'api'],
+    adminNotes: [
+      'No migration and no new route: both platforms already keep user-scoped persisted job lists; a server listing would have returned less (an upload in flight has no server row).',
+    ],
+    commits: ['d03ab569'],
+  },
+  {
+    id: 'segmented-lecture-recording-1-0-63',
+    title: 'Lecture recording in segments: the transcript grows live and a crash loses nothing',
+    area: 'notes',
+    status: 'shipped',
+    shippedAt: '2026-09-18',
+    summary:
+      'A lecture is now recorded in five-minute segments that upload as each one closes and are transcribed on arrival, so timestamped transcript cards ([0:00], [5:00] …) appear while the class is still going. Closing the tab or the app mid-lecture keeps everything already uploaded; reopening offers "Carry on" or "Finish". An Audio files tab plays and downloads each segment.',
+    details: [
+      'Each segment is a standalone file: the recorder is stopped and restarted on the same stream, so every piece plays on its own. Segments are note_attachments rows (type audio) with a lectureSegment block in metadata — no new table, no migration.',
+      'Pricing is cumulative, not per segment: the running total is priced with the existing per-15-minute meter and only the difference is charged, proven equal to the old whole-take price at every minute from 1 to 180. A 47-minute lecture still costs 4 AI uses.',
+      'Idempotency key noteId:sessionId:seq — a re-sent segment is answered from the note, never transcribed or charged twice, and its text lands in order.',
+      'A segment whose transcription fails shows Retry on its own card; its audio is already safe.',
+    ],
+    howToUse: [
+      'Web / phone: Record lecture as before. Cards appear in the Transcript tab as segments land; Audio files tab for playback and download.',
+    ],
+    surfaces: ['web', 'mobile', 'api'],
+    adminNotes: [
+      'Old single-take recordings (rows without the lectureSegment block) still render as one take on both clients.',
+      'Needs a real-microphone pass: 12+ minutes with cards at 0:00/5:00/10:00 while recording, kill the tab at minute 7 and reopen, go offline for one segment then Retry it (no second charge), background the phone app mid-lecture.',
+    ],
+    commits: ['5b0de85b'],
+  },
+  {
     id: 'set-room-upload-chips-1-0-62',
     title: 'Set room: the Add-materials chips open the picker they name',
     area: 'notes',
