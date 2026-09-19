@@ -14,12 +14,10 @@
  * field only ever wrote a COURSE enrolment — so a course-less set, which is
  * most of them, could not keep a date at all.
  *
- * NEVER A WALL. `Skip for now` hides it for this set. The phone keeps that flag
- * in `syncClassSkipStore` (AsyncStorage, per user, per set) — the same shape
- * web keeps in `useUIStore.syncClassSkipped`, but NOT the same storage: web's
- * rides in account settings and this one does not, so skipping here does not
- * skip on the laptop. That gap is deliberate and documented on the store; it
- * costs one extra tap per device.
+ * NEVER A WALL. `Skip for now` hides it for this set, on every device: the
+ * decision is written to the account (`settings.syncClassSkipped`, the key the
+ * browser writes too), with `syncClassSkipStore`'s AsyncStorage copy kept as
+ * the offline cache so a failed write still hides the card here.
  *
  * DEGRADATION. The parent renders this only when the server said `supported`.
  * 20260918150000 is hand-applied, so before it lands there is no card — rather

@@ -17,6 +17,7 @@ import {
   recordSurfaceVisit,
   syncOnboardingVisitedFromSettings,
 } from '../utils/onboardingVisited';
+import { syncClassSkippedFromSettings } from '../utils/syncClassSkipped';
 import { hydrateAppRoute } from './useRouteHydration';
 
 export function useRouteSync() {
@@ -67,6 +68,9 @@ export function useRouteSync() {
     const user = useAuthStore.getState().currentUser;
     if (user?.id !== currentUserId) return;
     syncOnboardingVisitedFromSettings(currentUserId, user.settings);
+    // The same merge, for the same reason, on the "Skip for now" decisions:
+    // a card hidden on the phone must stay hidden on the laptop (#142).
+    syncClassSkippedFromSettings(currentUserId, user.settings);
   }, [currentUserId]);
 
   useEffect(() => {
