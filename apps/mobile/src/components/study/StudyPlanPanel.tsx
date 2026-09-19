@@ -49,6 +49,12 @@ import {
 } from '@lantern/shared/design';
 import type { StudySetTopic, StudySetTopicStatus, StudySetUnit } from '@lantern/shared/learning';
 import { unitSourceLabel, type UnitSource, type UnitSourceKind, type UnitSourceMaterial } from '@lantern/shared/study';
+import {
+  formatPlanSyllabusDate,
+  type PlanComingUpWeek,
+  type PlanExamDivider,
+  type StudySetPlanSyllabus,
+} from '@lantern/shared/study/planSyllabus';
 import { Button, Card, SheetShell, T } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { useTheme } from '../../theme';
@@ -374,6 +380,12 @@ function UnitCard({
         <AppIcon name={expanded ? 'chevron-up' : 'chevron-down'} size={20} />
         <ProgressRing fraction={unit.ring} size={DISC - 10} color={accent.ink} track={accent.tint} />
         <View className="flex-1">
+          {/* The syllabus week this unit turned out to be. An eyebrow rather
+              than part of the title: the title is the course's name for the
+              thing, and the week is where it sits. */}
+          {unit.weekLabel ? (
+            <T.Caption style={{ color: accent.ink }}>{unit.weekLabel}</T.Caption>
+          ) : null}
           <T.Body numberOfLines={2}>{unit.label}</T.Body>
           <T.Caption tone="tertiary">{unit.progressLabel}</T.Caption>
         </View>
@@ -395,6 +407,88 @@ function UnitCard({
           ))}
         </View>
       ) : null}
+    </Card>
+  );
+}
+
+/**
+ * `Exam 1 · 10 Oct` — a marker on the rail between two units.
+ *
+ * Not a card and not a door. It opens nothing, because there is nothing behind
+ * an exam except the units either side of it, which are already on the screen.
+ * It sits ON the spine, in the rail's own ink, so it reads as part of the route
+ * rather than as a notice laid over it.
+ */
+function ExamMarker({ divider }: { divider: PlanExamDivider }) {
+  const accent = useAiAccent();
+  return (
+    <SpineRow
+      disc={
+        <View
+          style={{
+            width: DISC - 14,
+            height: DISC - 14,
+            borderRadius: (DISC - 14) / 2,
+            borderWidth: 2,
+            borderColor: accent.ink,
+          }}
+        />
+      }
+    >
+      <View className="py-2" accessibilityRole="text" accessibilityLabel={divider.label}>
+        <T.Caption style={{ color: accent.ink }}>{divider.label}</T.Caption>
+      </View>
+    </SpineRow>
+  );
+}
+
+/**
+ * `Coming up in your syllabus` — the weeks with no material behind them.
+ *
+ * THE HONEST HALF. A week nothing in the set matched has no topics, no progress
+ * and nothing to open, so drawing it as a unit would be a row of doors onto
+ * empty rooms — which is exactly why #142 left the plan out of the syllabus
+ * feature. It is a LIST: text rows, not pressable, no ring, no chevron, and one
+ * door for the whole block, which is the door that would change the situation.
+ */
+function ComingUpCard({
+  weeks,
+  onAddMaterials,
+}: {
+  weeks: readonly PlanComingUpWeek[];
+  onAddMaterials: () => void;
+}) {
+  const accent = useAiAccent();
+  if (weeks.length === 0) return null;
+  const one = weeks.length === 1;
+  return (
+    <Card className="mb-3">
+      <T.Body>Coming up in your syllabus</T.Body>
+      <T.Caption tone="secondary" className="mt-1">
+        {one ? 'One week has' : `${weeks.length} weeks have`} nothing filed under
+        {one ? ' it' : ' them'} yet, so {one ? 'it is' : 'they are'} not in the plan.
+      </T.Caption>
+      <View className="mt-3 gap-2">
+        {weeks.map((week) => (
+          <View key={week.week} className="flex-row items-center gap-2">
+            <T.Caption tone="tertiary" style={{ minWidth: 56 }}>
+              Week {week.week}
+            </T.Caption>
+            <T.Caption numberOfLines={1} className="flex-1">
+              {week.title}
+            </T.Caption>
+            {week.examLabel ? (
+              <T.Caption style={{ color: accent.ink }}>{week.examLabel}</T.Caption>
+            ) : null}
+            {week.date ? (
+              <T.Caption tone="secondary">{formatPlanSyllabusDate(week.date)}</T.Caption>
+            ) : null}
+          </View>
+        ))}
+      </View>
+      <Button size="sm" variant="secondary" className="mt-3 self-start" onPress={onAddMaterials}>
+        Add materials
+      </Button>
     </Card>
   );
 }
@@ -425,7 +519,15 @@ export interface StudyPlanPanelProps {
    */
   onOpenSource?: (source: UnitSource) => void;
   onAddSyllabus: () => void;
+  /**
+   * The `Coming up in your syllabus` door. Falls back to `onAddSyllabus` so the
+   * list is never drawn with a door that goes nowhere — but the two are
+   * different offers, and a caller that has a materials route should pass it.
+   */
+  onAddMaterials?: () => void;
   onAddExam: () => void;
+  /** The set's class schedule, from `GET …/plan`. Absent for most sets. */
+  syllabus?: StudySetPlanSyllabus | null;
   onViewSchedule: () => void;
   examDate?: string | null;
   /** `YYYY-MM-DD`. Injected so "is this exam past" is testable. */
@@ -445,16 +547,22 @@ export function StudyPlanPanel({
   onContinue,
   onOpenSource,
   onAddSyllabus,
+  onAddMaterials,
   onAddExam,
   onViewSchedule,
   examDate,
   today,
+  syllabus,
 }: StudyPlanPanelProps) {
   const accent = useAiAccent();
   const { colors } = useTheme();
   const model = useMemo(
-    () => buildStudyPlanModel({ units, topics, materials, mode }),
-    [units, topics, materials, mode]
+    () => buildStudyPlanModel({ units, topics, materials, mode, syllabus }),
+    [units, topics, materials, mode, syllabus]
+  );
+  const unitsById = useMemo(
+    () => new Map(model.units.map((unit) => [unit.id, unit])),
+    [model.units]
   );
   // `null` means "not chosen yet", so the seed can follow the plan as it fills
   // in rather than freezing whichever unit was open on first paint.
@@ -579,19 +687,34 @@ export function StudyPlanPanel({
         </View>
       </SpineRow>
 
-      {model.units.map((unit) => (
-        <UnitCard
-          key={unit.id}
-          unit={unit}
-          expanded={openId === unit.id}
-          onToggleUnit={() => setOpenUnitId(openId === unit.id ? '' : unit.id)}
-          onToggleTopic={onToggleTopic}
-          onContinue={onContinue}
-          onOpenSource={onOpenSource}
-        />
-      ))}
+      {model.rows.map((row) => {
+        if (row.kind === 'exam') {
+          return <ExamMarker key={row.divider.id} divider={row.divider} />;
+        }
+        const unit = unitsById.get(row.unitId);
+        if (!unit) return null;
+        return (
+          <UnitCard
+            key={unit.id}
+            unit={unit}
+            expanded={openId === unit.id}
+            onToggleUnit={() => setOpenUnitId(openId === unit.id ? '' : unit.id)}
+            onToggleTopic={onToggleTopic}
+            onContinue={onContinue}
+            onOpenSource={onOpenSource}
+          />
+        );
+      })}
+
       </>
       )}
+
+      {/* OUTSIDE the empty guard, deliberately. A set with a syllabus and no
+          materials yet is the emptiest plan there is and the one whose owner
+          most needs to see what the course is about to cover — hiding the list
+          with the spine would hide it exactly when it is the only thing on the
+          screen worth reading. */}
+      <ComingUpCard weeks={model.comingUp} onAddMaterials={onAddMaterials ?? onAddSyllabus} />
 
       <PlanSelfRatingSheet
         visible={ratingRows.length > 0}

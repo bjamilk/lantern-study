@@ -2,7 +2,16 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { planTimeline, sortPlanTimeline, type StudySetTopic, type StudySetUnit } from '@lantern/shared';
+import {
+  applyPlanSyllabusNames,
+  buildPlanSyllabusView,
+  orderTimelineBySyllabus,
+  planTimeline,
+  sortPlanTimeline,
+  type PlanComingUpWeek,
+  type StudySetTopic,
+  type StudySetUnit,
+} from '@lantern/shared';
 
 /**
  * The study plan page at the dimensions measured off StudyFetch on 2026-09-17
@@ -23,7 +32,7 @@ import { planTimeline, sortPlanTimeline, type StudySetTopic, type StudySetUnit }
  */
 import { PlanCustomizeBar } from './PlanCustomizeBar';
 import { UnitPreAssessmentCard } from './UnitPreAssessmentCard';
-import { StudyPlanTimeline } from './StudyPlanTimeline';
+import { PlanComingUpList, StudyPlanTimeline } from './StudyPlanTimeline';
 
 const SET = '8f1b0c2e-2222-4a2b-9c3d-000000000002';
 
@@ -195,5 +204,132 @@ describe('Sort By reorders the page', () => {
   it('recommended lifts the unit holding Continue', () => {
     const built = planTimeline(UNITS, TOPICS, 'c');
     expect(sortPlanTimeline(built, 'recommended')[0]?.unit.title).toBe('Genetics');
+  });
+});
+
+/**
+ * The syllabus half of the page: units NAMED and ORDERED by the class schedule,
+ * exam markers between them, and the weeks with nothing behind them kept OUT of
+ * the plan and listed instead.
+ *
+ * The rule under every assertion here is the one #142 refused to break: a week
+ * may become a unit only when real material matched it. So the interesting
+ * cases are the negative ones — the unmatched week that must not appear as a
+ * unit, and the no-syllabus render that must be byte-for-byte what it was.
+ */
+describe('the plan against the syllabus', () => {
+  const summary = {
+    weeks: [
+      { week: 1, title: 'Genetics', date: '2026-09-07', examLabel: null },
+      { week: 2, title: 'Cell biology', date: '2026-09-14', examLabel: null },
+      { week: 3, title: 'Photosynthesis', date: '2026-09-21', examLabel: null },
+      { week: 4, title: 'Midterm', date: '2026-10-10', examLabel: 'Exam 1' },
+    ],
+    examDates: ['2026-10-10'],
+    extractedAt: '2026-09-18T00:00:00.000Z',
+  };
+  const view = buildPlanSyllabusView(summary, UNITS);
+  const named = applyPlanSyllabusNames(UNITS, view);
+  const timeline = orderTimelineBySyllabus(planTimeline(named, TOPICS, 'b'), view);
+
+  const page = (extra: Partial<React.ComponentProps<typeof StudyPlanTimeline>> = {}) =>
+    renderToStaticMarkup(
+      <StudyPlanTimeline
+        timeline={timeline}
+        openUnitIds={{}}
+        onToggleUnit={() => {}}
+        onCycleStatus={() => {}}
+        onStartTopic={() => {}}
+        syllabus={view}
+        sort="unit"
+        {...extra}
+      />
+    );
+
+  it('puts the syllabus week over each unit it named', () => {
+    const html = page();
+    expect(html).toContain('Week 1 · 7 Sep');
+    expect(html).toContain('Week 2 · 14 Sep');
+  });
+
+  it('runs the units in syllabus order, not plan order', () => {
+    // Plan order is Cell biology then Genetics; the syllabus teaches Genetics
+    // in week 1, so it leads.
+    expect(timeline.map((row) => row.unit.title)).toEqual(['Genetics', 'Cell biology']);
+  });
+
+  it('draws the exam as a marker between units, not as a unit', () => {
+    const html = page();
+    expect(html).toContain('Exam 1 · 10 Oct');
+    expect(html).toContain('role="separator"');
+    // A marker is not a stop on the route: the units are still 01 and 02.
+    expect(html).toContain('02');
+    expect(html).not.toContain('03');
+  });
+
+  it('drops the exam marker under the sort that re-ranks everything', () => {
+    expect(page({ sort: 'weakest' })).not.toContain('Exam 1 · 10 Oct');
+  });
+
+  it('renders exactly what it rendered before when there is no syllabus', () => {
+    const plain = renderToStaticMarkup(
+      <StudyPlanTimeline
+        timeline={planTimeline(UNITS, TOPICS, 'b')}
+        openUnitIds={{}}
+        onToggleUnit={() => {}}
+        onCycleStatus={() => {}}
+        onStartTopic={() => {}}
+      />
+    );
+    const withNullSyllabus = renderToStaticMarkup(
+      <StudyPlanTimeline
+        timeline={planTimeline(UNITS, TOPICS, 'b')}
+        openUnitIds={{}}
+        onToggleUnit={() => {}}
+        onCycleStatus={() => {}}
+        onStartTopic={() => {}}
+        syllabus={null}
+        sort="recommended"
+      />
+    );
+    expect(withNullSyllabus).toBe(plain);
+    expect(plain).not.toContain('Week 1');
+  });
+});
+
+describe('Coming up in your syllabus', () => {
+  const list = (weeks: PlanComingUpWeek[], onAdd?: () => void) =>
+    renderToStaticMarkup(<PlanComingUpList weeks={weeks} onAddMaterials={onAdd} />);
+
+  it('lists an unmatched week as text with its date, never as a topic', () => {
+    const html = list([
+      { week: 3, title: 'Photosynthesis', date: '2026-09-21', examLabel: null },
+    ]);
+    expect(html).toContain('Coming up in your syllabus');
+    expect(html).toContain('Week 3');
+    expect(html).toContain('Photosynthesis');
+    expect(html).toContain('21 Sep');
+    // One door for the block, and nothing per week.
+    expect(html.split('<button').length - 1).toBe(0);
+  });
+
+  it('carries an exam label through', () => {
+    expect(
+      list([{ week: 4, title: 'Midterm', date: '2026-10-10', examLabel: 'Exam 1' }])
+    ).toContain('Exam 1');
+  });
+
+  it('offers one Add materials door, at 44px', () => {
+    const html = list(
+      [{ week: 3, title: 'Photosynthesis', date: null, examLabel: null }],
+      () => {}
+    );
+    expect(html.split('<button').length - 1).toBe(1);
+    expect(html).toContain('Add materials');
+    expect(html).toContain('min-h-[44px]');
+  });
+
+  it('draws nothing at all when every week has material behind it', () => {
+    expect(list([])).toBe('');
   });
 });
