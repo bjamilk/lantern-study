@@ -266,7 +266,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // set's Add-materials chips open the file picker they name (PDF, slides,
   // Word) and the two that named a file type nothing could read — Audio and
   // Video — are replaced by the lecture recorder, which does transcribe.
-  version: '1.0.63',
+  version: '1.0.64',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
